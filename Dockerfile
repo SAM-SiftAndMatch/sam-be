@@ -19,12 +19,12 @@ RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw package -DskipTests && \
     mv target/*.jar target/app.jar
 
-# Stage 3: Giải nén JAR file thành các lớp (layertools)
+# Stage 3: Giải nén JAR file (dùng tools mode của Spring Boot 3.3+)
 FROM package AS extract
 
 WORKDIR /build
 
-RUN java -Djarmode=layertools -jar target/app.jar extract --destination target/extracted
+RUN java -Djarmode=tools -jar target/app.jar extract --launcher --destination target/extracted
 
 # Stage 4: Runtime Image tối ưu dung lượng và bảo mật
 FROM eclipse-temurin:21-jre-jammy AS final
@@ -44,11 +44,14 @@ RUN adduser \
 
 WORKDIR /app
 
-# Copy các layer đã giải nén với quyền sở hữu thuộc về appuser
-COPY --chown=appuser:appuser --from=extract /build/target/extracted/dependencies/ ./
-COPY --chown=appuser:appuser --from=extract /build/target/extracted/spring-boot-loader/ ./
-COPY --chown=appuser:appuser --from=extract /build/target/extracted/snapshot-dependencies/ ./
-COPY --chown=appuser:appuser --from=extract /build/target/extracted/application/ ./
+# Phân tách layer tối ưu cache Docker:
+# 1. Thư viện phụ thuộc (nặng, ít thay đổi)
+COPY --chown=appuser:appuser --from=extract /build/target/extracted/BOOT-INF/lib/ ./BOOT-INF/lib/
+# 2. Loader và metadata
+COPY --chown=appuser:appuser --from=extract /build/target/extracted/org/ ./org/
+COPY --chown=appuser:appuser --from=extract /build/target/extracted/META-INF/ ./META-INF/
+# 3. Mã nguồn và cấu hình ứng dụng (thay đổi thường xuyên)
+COPY --chown=appuser:appuser --from=extract /build/target/extracted/BOOT-INF/classes/ ./BOOT-INF/classes/
 
 # Đổi sang user bảo mật phi root
 USER appuser
