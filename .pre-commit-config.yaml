@@ -1,0 +1,52 @@
+minimum_pre_commit_version: "3.6.0"
+
+default_stages: [pre-commit]
+fail_fast: true
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+        name: "🧨 check merge conflicts"
+
+      - id: trailing-whitespace
+        name: "🧽 trim trailing whitespace"
+
+      - id: check-yaml
+        name: "🧾 validate YAML"
+
+      - id: mixed-line-ending
+        name: "🔁 normalize line endings (LF)"
+        args: ["--fix=lf"]
+
+      - id: check-added-large-files
+        name: "📦 block large files"
+        args: ["--maxkb=512"]
+
+      - id: detect-private-key
+        name: "🔐 detect private keys"
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: "🛡️ gitleaks (staged secrets scan)"
+        args: ["protect", "--redact", "--staged"]
+
+  - repo: local
+    hooks:
+      - id: java-precommit
+        name: "☕ Java: spotless + checkstyle"
+        entry: bash scripts/precommit-java.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+  - repo: local
+    hooks:
+      - id: commit-msg-conventional
+        name: "📝 commit-msg: conventional commits"
+        entry: bash scripts/commit-msg.sh
+        language: system
+        stages: [commit-msg]

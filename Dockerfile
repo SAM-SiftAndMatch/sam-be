@@ -29,7 +29,10 @@ RUN java -Djarmode=layertools -jar target/app.jar extract --destination target/e
 # Stage 4: Runtime Image tối ưu dung lượng và bảo mật
 FROM eclipse-temurin:21-jre-jammy AS final
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 ARG UID=10001
+
 RUN adduser \
     --disabled-password \
     --gecos "" \
