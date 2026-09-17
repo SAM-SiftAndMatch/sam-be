@@ -1,4 +1,4 @@
-.PHONY: setup pc fmt redis-up redis-down redis-reset redis-logs redis-ping redis-cli up down logs
+.PHONY: setup pc fmt up down logs infra-up infra-down redis-up redis-down redis-reset redis-logs redis-ping redis-cli
 
 up:
 	docker compose up -d
@@ -8,6 +8,12 @@ down:
 
 logs:
 	docker compose logs -f
+
+infra-up:
+	docker compose up -d postgres redis
+
+infra-down:
+	docker compose stop postgres redis
 
 setup:
 	bash scripts/setup-precommit.sh
@@ -19,16 +25,16 @@ fmt:
 	./mvnw -q -DskipTests spotless:apply
 
 redis-up:
-	docker compose -f src/main/java/com/sam/be/infrastructure/cache/images/docker-compose.yaml up -d
+	docker compose up -d redis
 
 redis-down:
-	docker compose -f src/main/java/com/sam/be/infrastructure/cache/images/docker-compose.yaml down
+	docker compose stop redis
 
 redis-reset:
-	docker compose -f src/main/java/com/sam/be/infrastructure/cache/images/docker-compose.yaml down -v
+	docker compose rm -f -s -v redis
 
 redis-logs:
-	docker compose -f src/main/java/com/sam/be/infrastructure/cache/images/docker-compose.yaml logs -f redis
+	docker compose logs -f redis
 
 redis-ping:
 	docker exec -it sam-redis redis-cli ping

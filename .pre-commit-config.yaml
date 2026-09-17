@@ -37,7 +37,7 @@ repos:
   - repo: local
     hooks:
       - id: java-precommit
-        name: "☕ Java: spotless + checkstyle"
+        name: "☕ Java: format reminder & check"
         entry: bash scripts/precommit-java.sh
         language: system
         pass_filenames: false

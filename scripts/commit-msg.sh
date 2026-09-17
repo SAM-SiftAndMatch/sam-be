@@ -10,6 +10,11 @@ fi
 
 COMMIT_MSG=$(head -n 1 "$COMMIT_MSG_FILE")
 
+# Allow automatic git merge and revert commits
+if [[ "$COMMIT_MSG" =~ ^Merge[[:space:]] || "$COMMIT_MSG" =~ ^Revert[[:space:]] ]]; then
+    exit 0
+fi
+
 # Regex pattern for Conventional Commits
 PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_\.\-]+\))?!?: .{1,100}$"
 
