@@ -87,6 +87,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(body, ec.getStatus());
     }
 
+    // Handle lỗi không đủ quyền truy cập (Spring Security), trả về 403 FORBIDDEN.
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex,
+            HttpServletRequest request) {
+        ErrorCode ec = ErrorCode.FORBIDDEN_ACTION;
+        return ResponseEntity.status(ec.getStatus())
+                .body(
+                        buildError(
+                                ec.getCode(),
+                                ec.getDefaultMessage(),
+                                request.getRequestURI(),
+                                null));
+    }
+
     // Handle lỗi ràng buộc DB (unique/FK...), hiện map chung về DUPLICATE_RESOURCE (thường 409).
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Object>> handleDataIntegrity(
