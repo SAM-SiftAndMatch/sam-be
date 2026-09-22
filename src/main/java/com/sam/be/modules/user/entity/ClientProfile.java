@@ -1,9 +1,8 @@
 package com.sam.be.modules.user.entity;
 
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "client_profiles")

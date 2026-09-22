@@ -3,11 +3,10 @@ package com.sam.be.modules.payment.entity;
 import com.sam.be.common.constant.enums.PaymentStatus;
 import com.sam.be.modules.contract.entity.Contract;
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "payments")

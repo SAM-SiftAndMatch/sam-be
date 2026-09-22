@@ -1,10 +1,9 @@
 package com.sam.be.modules.user.entity;
 
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.math.BigDecimal;
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "freelancer_profiles")

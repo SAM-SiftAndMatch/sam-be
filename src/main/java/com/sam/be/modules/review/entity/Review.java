@@ -3,11 +3,10 @@ package com.sam.be.modules.review.entity;
 import com.sam.be.modules.contract.entity.Contract;
 import com.sam.be.modules.user.entity.User;
 import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-
 import java.time.LocalDateTime;
 import java.util.UUID;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
 @Table(name = "reviews")

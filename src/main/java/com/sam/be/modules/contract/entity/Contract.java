@@ -5,12 +5,11 @@ import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.proposal.entity.Proposal;
 import com.sam.be.modules.user.entity.User;
 import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
 @Table(name = "contracts")

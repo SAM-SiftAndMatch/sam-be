@@ -2,10 +2,9 @@ package com.sam.be.modules.user.entity;
 
 import com.sam.be.modules.skill.entity.Skill;
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.io.Serializable;
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "freelancer_skills")
@@ -16,8 +15,7 @@ import java.util.UUID;
 @Builder
 public class FreelancerSkill {
 
-    @EmbeddedId
-    private FreelancerSkillId id;
+    @EmbeddedId private FreelancerSkillId id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @MapsId("freelancerId")

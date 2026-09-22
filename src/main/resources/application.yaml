@@ -66,3 +66,4 @@ jwt:
   signer-key-base64: ${JWT_SIGNER_KEY_BASE64:}
   access-expiration: ${JWT_ACCESS_EXPIRATION:900}
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800}
+  issuer: ${JWT_ISSUER:sam-be}
