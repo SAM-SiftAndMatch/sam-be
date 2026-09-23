@@ -30,6 +30,8 @@ spring:
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
       timeout: 3000ms
+      repositories:
+        enabled: false
 
   # JPA & Hibernate: Chuyển ddl-auto thành validate để Flyway làm chủ quản lý schema
   jpa:
