@@ -22,6 +22,10 @@ public enum ErrorCode {
     SESSION_EXPIRED(1012, "Session expired or revoked", HttpStatus.UNAUTHORIZED),
     INVALID_REFRESH_TOKEN(1013, "Refresh token is invalid or expired", HttpStatus.UNAUTHORIZED),
     ACCOUNT_DISABLED(1014, "Account has been disabled", HttpStatus.FORBIDDEN),
+    TOKEN_COMPROMISED(
+            1016,
+            "Security violation: Compromised token detected. All sessions terminated.",
+            HttpStatus.UNAUTHORIZED),
     UNEXPECTED_ERROR(9999, "Internal server error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final int code;

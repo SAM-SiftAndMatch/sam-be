@@ -107,8 +107,27 @@ public class AuthServiceImpl implements AuthService {
 
         Session oldSession =
                 sessionRepository
-                        .findByRefreshTokenAndIsRevokedFalse(refreshToken)
+                        .findByRefreshToken(refreshToken)
                         .orElseThrow(() -> new ApiException(ErrorCode.INVALID_REFRESH_TOKEN));
+
+        // ⚠️ RFC 6819 Token Reuse Detection: Phát hiện token đã bị thu hồi trước đó nhưng lại được
+        // dùng lại
+        if (Boolean.TRUE.equals(oldSession.getIsRevoked())) {
+            User user = oldSession.getUser();
+            log.error(
+                    "SECURITY ALERT: Compromised token reuse detected for userId={}! Revoking ALL sessions.",
+                    user.getId());
+
+            // 1. Thu hồi toàn bộ session của tài khoản này trong Database
+            sessionRepository.revokeAllByUserId(user.getId());
+
+            // 2. Chặn session này ngay lập tức trên Redis Blacklist
+            sessionCacheService.markRevoked(oldSession.getId(), Duration.ofDays(7));
+            sessionCacheService.clearActive(oldSession.getId());
+            sessionCacheService.clearAuthz(oldSession.getId());
+
+            throw new ApiException(ErrorCode.TOKEN_COMPROMISED);
+        }
 
         if (oldSession.getExpiresAt().isBefore(LocalDateTime.now())) {
             oldSession.setIsRevoked(true);

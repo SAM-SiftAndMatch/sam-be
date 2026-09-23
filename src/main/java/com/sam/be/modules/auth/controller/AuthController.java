@@ -2,6 +2,7 @@ package com.sam.be.modules.auth.controller;
 
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.annotation.RateLimit;
+import com.sam.be.common.security.jwt.JwtProperties;
 import com.sam.be.modules.auth.dto.request.LoginRequest;
 import com.sam.be.modules.auth.dto.request.RefreshTokenRequest;
 import com.sam.be.modules.auth.dto.request.RegisterRequest;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     AuthService authService;
+    JwtProperties jwtProperties;
 
     @RateLimit(action = "login", limit = 5, duration = 60, type = RateLimit.Type.IP_ADDRESS)
     @PostMapping("/login")
@@ -119,7 +121,7 @@ public class AuthController {
         ResponseCookie cookie =
                 ResponseCookie.from("refresh_token", refreshToken != null ? refreshToken : "")
                         .httpOnly(true)
-                        .secure(false) // Đặt true trên Production với HTTPS
+                        .secure(jwtProperties.isCookieSecure())
                         .sameSite("Lax")
                         .path("/api/v1/auth")
                         .maxAge(maxAgeSeconds)

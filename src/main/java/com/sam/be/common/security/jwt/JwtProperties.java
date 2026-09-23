@@ -12,7 +12,8 @@ import org.springframework.context.annotation.Configuration;
 public class JwtProperties {
 
     private String signerKeyBase64;
-    private long accessExpiration = 900; // 15 phút (giây)
-    private long refreshExpiration = 604800; // 7 ngày (giây)
-    private String issuer = "sam-be";
+    private long accessExpiration;
+    private long refreshExpiration;
+    private String issuer;
+    private boolean cookieSecure;
 }
