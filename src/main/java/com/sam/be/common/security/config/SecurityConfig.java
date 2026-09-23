@@ -79,8 +79,17 @@ public class SecurityConfig {
                         "/actuator/**",
                         "/v3/api-docs",
                         "/v3/api-docs/**",
+                        "/swagger-ui",
+                        "/swagger-ui/",
                         "/swagger-ui/**",
-                        "/swagger-ui.html")
+                        "/swagger-ui.html",
+                        "/swagger",
+                        "/swagger/**",
+                        "/docs",
+                        "/docs/**",
+                        "/swagger-resources",
+                        "/swagger-resources/**",
+                        "/error")
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
