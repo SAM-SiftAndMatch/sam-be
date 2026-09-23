@@ -5,6 +5,7 @@ import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.jwt.CustomJwtDecoder;
 import java.time.Instant;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -21,6 +22,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -39,19 +43,53 @@ public class SecurityConfig {
     }
 
     /**
-     * Public Chain (@Order(0)): Cho phép truy cập không cần xác thực JWT Đối với các endpoint auth
-     * (login, register,...), healthcheck và swagger.
+     * Cấu hình CORS tập trung cho toàn bộ ứng dụng. Cho phép các client Web (React/Next.js) gọi API
+     * với credentials (cookies/authorization headers).
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOriginPatterns(List.of("*"));
+        configuration.setAllowedMethods(
+                List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    /**
+     * Public Chain (@Order(0)): Cho phép truy cập không cần xác thực JWT. Chỉ liệt kê chính xác các
+     * endpoint public của auth, health check và tài liệu Swagger. Các endpoint auth cần xác thực
+     * (như /logout, /me) sẽ tự động rơi vào apiChain.
      */
     @Bean
     @Order(0)
     public SecurityFilterChain publicAuthChain(HttpSecurity http) throws Exception {
         http.securityMatcher(
-                        "/api/v1/auth/**",
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/forgot-password/**",
+                        "/api/v1/auth/reset-password/**",
                         "/api/v1/internal/healthz",
                         "/actuator/**",
+                        "/v3/api-docs",
                         "/v3/api-docs/**",
+                        "/swagger-ui",
+                        "/swagger-ui/",
                         "/swagger-ui/**",
-                        "/swagger-ui.html")
+                        "/swagger-ui.html",
+                        "/swagger",
+                        "/swagger/**",
+                        "/docs",
+                        "/docs/**",
+                        "/swagger-resources",
+                        "/swagger-resources/**",
+                        "/error")
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
@@ -61,7 +99,7 @@ public class SecurityConfig {
     }
 
     /**
-     * API Chain (@Order(1)): Yêu cầu xác thực qua Bearer JWT Bảo vệ toàn bộ /api/**, sử dụng
+     * API Chain (@Order(1)): Yêu cầu xác thực qua Bearer JWT. Bảo vệ toàn bộ /api/**, sử dụng
      * CustomJwtDecoder và JwtAuthenticationConverter.
      */
     @Bean
@@ -129,11 +167,16 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /** Fallback Chain (@Order(2)) cho các request còn lại. */
+    /**
+     * Fallback Chain (@Order(2)): Chặn toàn bộ các request không khớp các chain trên (Fail-Closed).
+     * Đảm bảo không có endpoint nào vô tình bị mở công khai do thiếu tiền tố /api/ hay routing lỗi.
+     */
     @Bean
     @Order(2)
     public SecurityFilterChain fallbackChain(HttpSecurity http) throws Exception {
-        http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        http.csrf(AbstractHttpConfigurer::disable)
+                .cors(Customizer.withDefaults())
+                .authorizeHttpRequests(auth -> auth.anyRequest().denyAll());
         return http.build();
     }
 }

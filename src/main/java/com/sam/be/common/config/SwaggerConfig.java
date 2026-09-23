@@ -9,12 +9,21 @@ import io.swagger.v3.oas.models.servers.Server;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
-public class SwaggerConfig {
+public class SwaggerConfig implements WebMvcConfigurer {
 
     /** Tên scheme dùng cho các endpoint tích hợp đối tác (/api/v1/integration/**). */
     public static final String API_KEY_SCHEME = "apiKeyAuth";
+
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addRedirectViewController("/swagger", "/swagger-ui/index.html");
+        registry.addRedirectViewController("/swagger-ui", "/swagger-ui/index.html");
+        registry.addRedirectViewController("/docs", "/swagger-ui/index.html");
+    }
 
     @Bean
     public OpenAPI customOpenAPI() {

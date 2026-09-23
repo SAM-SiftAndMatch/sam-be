@@ -3,9 +3,8 @@ package com.sam.be.modules.user.entity;
 import com.sam.be.common.audit.AbstractAuditEntity;
 import com.sam.be.common.constant.enums.UserRole;
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "users")

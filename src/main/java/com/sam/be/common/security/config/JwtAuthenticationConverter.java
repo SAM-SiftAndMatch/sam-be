@@ -14,7 +14,6 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
@@ -38,7 +37,8 @@ public class JwtAuthenticationConverter implements Converter<Jwt, AbstractAuthen
         Instant exp = jwt.getExpiresAt();
 
         if (userIdRaw == null || sessionIdRaw == null || exp == null) {
-            throw new JwtException("Missing required JWT claims (user_id, session_id, exp)");
+            throw new InvalidBearerTokenException(
+                    "Missing required JWT claims (user_id, session_id, exp)");
         }
 
         UUID userId;
@@ -47,7 +47,7 @@ public class JwtAuthenticationConverter implements Converter<Jwt, AbstractAuthen
             userId = UUID.fromString(userIdRaw);
             sessionId = UUID.fromString(sessionIdRaw);
         } catch (IllegalArgumentException e) {
-            throw new JwtException("Invalid UUID format in JWT claims", e);
+            throw new InvalidBearerTokenException("Invalid UUID format in JWT claims", e);
         }
 
         SessionAuthzCache authz;
@@ -62,10 +62,15 @@ public class JwtAuthenticationConverter implements Converter<Jwt, AbstractAuthen
         // Map Roles (ROLE_FREELANCER, ROLE_CLIENT, ROLE_ADMIN, ...)
         if (authz.roles() != null && !authz.roles().isEmpty()) {
             for (String role : authz.roles()) {
-                authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+                String roleAuthority = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+                authorities.add(new SimpleGrantedAuthority(roleAuthority));
             }
         } else if (authz.accountType() != null) {
-            authorities.add(new SimpleGrantedAuthority("ROLE_" + authz.accountType()));
+            String roleAuthority =
+                    authz.accountType().startsWith("ROLE_")
+                            ? authz.accountType()
+                            : "ROLE_" + authz.accountType();
+            authorities.add(new SimpleGrantedAuthority(roleAuthority));
         } else {
             authorities.add(new SimpleGrantedAuthority("ROLE_FREELANCER"));
         }
@@ -73,7 +78,8 @@ public class JwtAuthenticationConverter implements Converter<Jwt, AbstractAuthen
         // Map Permissions chi tiết (PERM_JOB_CREATE, PERM_PROPOSAL_SUBMIT, ...)
         if (authz.permissions() != null) {
             for (String perm : authz.permissions()) {
-                authorities.add(new SimpleGrantedAuthority("PERM_" + perm));
+                String permAuthority = perm.startsWith("PERM_") ? perm : "PERM_" + perm;
+                authorities.add(new SimpleGrantedAuthority(permAuthority));
             }
         }
 

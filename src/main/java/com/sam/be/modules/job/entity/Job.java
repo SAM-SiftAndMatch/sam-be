@@ -5,12 +5,11 @@ import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.modules.skill.entity.Skill;
 import com.sam.be.modules.user.entity.User;
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Set;
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "jobs")
@@ -52,7 +51,6 @@ public class Job extends AbstractAuditEntity {
     @JoinTable(
             name = "job_skills",
             joinColumns = @JoinColumn(name = "job_id"),
-            inverseJoinColumns = @JoinColumn(name = "skill_id")
-    )
+            inverseJoinColumns = @JoinColumn(name = "skill_id"))
     private Set<Skill> skills;
 }
