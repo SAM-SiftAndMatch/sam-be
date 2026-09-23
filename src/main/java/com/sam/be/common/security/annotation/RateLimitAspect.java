@@ -49,15 +49,20 @@ public class RateLimitAspect {
     }
 
     private String resolveFullKey(ProceedingJoinPoint joinPoint, RateLimit rateLimit) {
+        String action =
+                !rateLimit.action().isBlank()
+                        ? rateLimit.action()
+                        : joinPoint.getSignature().getName();
+
         return switch (rateLimit.type()) {
-            case IP_ADDRESS -> RedisKeys.rateLimitIp(getClientIp());
+            case IP_ADDRESS -> RedisKeys.rateLimitIp(action, getClientIp());
             case USER_ID -> {
                 UUID userId = SecurityUtils.getCurrentUserId();
-                yield RedisKeys.rateLimitUser(userId);
+                yield RedisKeys.rateLimitUser(action, userId);
             }
             case REQUEST_FIELD -> {
                 String val = getFieldFromArgs(joinPoint, rateLimit.fieldName());
-                yield RedisKeys.rateLimitField(val);
+                yield RedisKeys.rateLimitField(action, val);
             }
         };
     }

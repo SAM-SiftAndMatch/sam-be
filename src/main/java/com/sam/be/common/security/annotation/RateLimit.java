@@ -16,6 +16,12 @@ public @interface RateLimit {
 
     Type type() default Type.IP_ADDRESS;
 
+    /**
+     * Tên định danh hành động (ví dụ: "login", "register", "job_create"). Nếu để trống, hệ thống sẽ
+     * tự động dùng tên phương thức (method name).
+     */
+    String action() default "";
+
     String fieldName() default "";
 
     enum Type {

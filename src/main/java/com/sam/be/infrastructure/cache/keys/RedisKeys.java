@@ -26,12 +26,24 @@ public final class RedisKeys {
         return PREFIX_SESSION_AUTHZ + sessionId;
     }
 
+    public static String rateLimitUser(String action, UUID userId) {
+        return PREFIX_RATE_LIMIT_USER + action + ":" + userId;
+    }
+
     public static String rateLimitUser(UUID userId) {
         return PREFIX_RATE_LIMIT_USER + userId;
     }
 
+    public static String rateLimitIp(String action, String ip) {
+        return PREFIX_RATE_LIMIT_IP + action + ":" + ip;
+    }
+
     public static String rateLimitIp(String ip) {
         return PREFIX_RATE_LIMIT_IP + ip;
+    }
+
+    public static String rateLimitField(String action, String field) {
+        return PREFIX_RATE_LIMIT_FIELD + action + ":" + field;
     }
 
     public static String rateLimitField(String field) {

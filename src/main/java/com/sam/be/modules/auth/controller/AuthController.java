@@ -35,7 +35,7 @@ public class AuthController {
 
     AuthService authService;
 
-    @RateLimit(limit = 5, duration = 60, type = RateLimit.Type.IP_ADDRESS)
+    @RateLimit(action = "login", limit = 5, duration = 60, type = RateLimit.Type.IP_ADDRESS)
     @PostMapping("/login")
     public ApiResponse<AuthResponse> login(
             @Valid @RequestBody LoginRequest request,
@@ -50,7 +50,7 @@ public class AuthController {
                 .build();
     }
 
-    @RateLimit(limit = 5, duration = 60, type = RateLimit.Type.IP_ADDRESS)
+    @RateLimit(action = "register", limit = 3, duration = 60, type = RateLimit.Type.IP_ADDRESS)
     @PostMapping("/register")
     public ApiResponse<AuthResponse> register(
             @Valid @RequestBody RegisterRequest request,
