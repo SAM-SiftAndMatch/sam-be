@@ -1,0 +1,71 @@
+[
+  {
+    "id": "base_q1",
+    "type": "SELECT",
+    "questionText": "Hệ thống/Website này sinh ra để giải quyết vấn đề gì, và ai là người sẽ sử dụng nó hàng ngày?",
+    "options": [
+      "Bán hàng trực tiếp cho người tiêu dùng (E-commerce B2C)",
+      "Sàn kết nối 2 bên (VD: thợ - khách, mua - bán xe)",
+      "Hệ thống quản lý nội bộ doanh nghiệp",
+      "Nền tảng đặt lịch / khóa học trực tuyến / MXH ngách"
+    ],
+    "allowCustomInput": true,
+    "hint": "Giúp AI xác định danh mục sản phẩm và nhóm người dùng chính."
+  },
+  {
+    "id": "base_q2",
+    "type": "TEXT",
+    "questionText": "Có website, ứng dụng nào đang hoạt động trên thị trường mà bạn thấy có ý tưởng gần giống nhất với mong muốn của bạn không?",
+    "options": [],
+    "allowCustomInput": false,
+    "hint": "Cung cấp link hoặc tên (VD: Giống Shopee, Uber). Nêu rõ bạn thích điểm gì nhất ở trang đó."
+  },
+  {
+    "id": "base_q3",
+    "type": "MULTI_SELECT",
+    "questionText": "Khi vào website, sẽ có những nhóm người nào truy cập và họ vào đó để làm gì?",
+    "options": [
+      "Khách vãng lai (Chỉ xem, không đăng nhập)",
+      "Thành viên (Cần đăng ký để mua hàng, nộp hồ sơ)",
+      "Bên cung cấp dịch vụ (Người bán, thợ, đối tác)",
+      "Quản trị viên (Cần Dashboard quản lý duyệt bài, doanh thu)"
+    ],
+    "allowCustomInput": true,
+    "hint": "Định hình cây phân quyền cho hệ thống."
+  },
+  {
+    "id": "base_q4",
+    "type": "TEXT",
+    "questionText": "Hãy mô tả một chu trình quan trọng nhất diễn ra từ đầu đến cuối trên web của bạn?",
+    "options": [],
+    "allowCustomInput": false,
+    "hint": "VD: Khách tìm thợ -> Xem hồ sơ -> Đặt lịch -> Thanh toán cọc -> Gửi email xác nhận."
+  },
+  {
+    "id": "base_q5",
+    "type": "MULTI_SELECT",
+    "questionText": "Hệ thống có phát sinh giao dịch tiền nong hoặc cần kết nối với hệ thống bên ngoài nào không?",
+    "options": [
+      "Không cần thanh toán online (Thu tiền mặt / Chuyển khoản tay)",
+      "Thanh toán tự động (VNPay, MoMo, Thẻ tín dụng)",
+      "Gửi thông báo (Email, SMS, Zalo OA, Telegram)",
+      "Kết nối hãng vận chuyển (GHTK, GHN, Viettel Post)"
+    ],
+    "allowCustomInput": true,
+    "hint": "Phát hiện các rào cản kỹ thuật về API bên thứ ba."
+  },
+  {
+    "id": "base_q6",
+    "type": "MULTI_SELECT",
+    "questionText": "Người dùng của bạn chủ yếu truy cập bằng thiết bị nào, và bạn đã chuẩn bị được những gì?",
+    "options": [
+      "Ưu tiên Website chạy tốt trên điện thoại",
+      "Web chạy trên máy tính là chính (Dashboard)",
+      "Muốn làm hẳn App tải về (App Store / Google Play)",
+      "Đã có sẵn bản vẽ giao diện (Figma), logo",
+      "Chưa có gì cả, cần làm trọn gói từ đầu"
+    ],
+    "allowCustomInput": true,
+    "hint": "Chốt nền tảng triển khai và khối lượng công việc UI/UX."
+  }
+]

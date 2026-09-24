@@ -47,6 +47,24 @@ public class Job extends AbstractAuditEntity {
 
     private LocalDateTime deadline;
 
+    @Column(name = "srs_document_url", length = 500)
+    private String srsDocumentUrl;
+
+    @Column(name = "risk_level", length = 20)
+    private String riskLevel;
+
+    @Column(name = "is_featured", nullable = false)
+    @Builder.Default
+    private Boolean isFeatured = false;
+
+    @Column(name = "is_urgent_hiring", nullable = false)
+    @Builder.Default
+    private Boolean isUrgentHiring = false;
+
+    @Column(name = "requires_ai_qa", nullable = false)
+    @Builder.Default
+    private Boolean requiresAiQa = false;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "job_skills",

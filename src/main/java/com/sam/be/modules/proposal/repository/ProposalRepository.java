@@ -11,4 +11,6 @@ public interface ProposalRepository extends JpaRepository<Proposal, UUID> {
     List<Proposal> findAllByJobId(UUID jobId);
 
     List<Proposal> findAllByFreelancerId(UUID freelancerId);
+
+    long countByJobId(UUID jobId);
 }

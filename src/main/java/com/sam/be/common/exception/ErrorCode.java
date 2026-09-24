@@ -26,6 +26,7 @@ public enum ErrorCode {
             1016,
             "Security violation: Compromised token detected. All sessions terminated.",
             HttpStatus.UNAUTHORIZED),
+    JOB_CANNOT_BE_CANCELLED(1017, "Only OPEN jobs can be cancelled", HttpStatus.BAD_REQUEST),
     UNEXPECTED_ERROR(9999, "Internal server error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final int code;
