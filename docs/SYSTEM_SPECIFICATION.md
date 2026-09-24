@@ -72,17 +72,3 @@ Họ có tiền và sẵn sàng chi trả để đổi lấy "Tốc độ" và "
     *   Giá thuê bao: **149.000 VNĐ / tháng** (Mức giá rất "mềm", bằng một ly cafe hoặc gói Netflix, sinh viên hay Dev đều dễ dàng chi trả).
     *   Vũ khí giành Job: Kích hoạt tính năng **AI Job Matcher & Instant Claim**. Nhận thông báo việc làm độc quyền trước người khác 5 phút, bấm 1 nút nhận việc luôn không cần đấu thầu.
     *   Vũ khí bảo vệ: Kích hoạt **Smart Scope Shield**. Tự động chặn yêu cầu phát sinh và quăng báo giá cho khách, Dev cứ ung dung code.
-
----
-
-## PHẦN III: DANH SÁCH TÀI KHOẢN KIỂM THỬ (SEED DATA)
-Dữ liệu đã được nạp sẵn vào Database qua công cụ Flyway, các bảng dữ liệu đã được móc nối quan hệ hoàn chỉnh.
-
-**Mật khẩu dùng chung cho toàn bộ tài khoản:** `123456`
-
-| Vai trò (Role) | Cấp độ | Email Đăng nhập | Tên hiển thị | Ghi chú & Dữ liệu đi kèm |
-| :--- | :--- | :--- | :--- | :--- |
-| **ADMIN** | Quản trị | `admin@sam.com` | System Admin | Tài khoản quản trị cấp cao toàn hệ thống. |
-| **CLIENT** | BASE | `client@fpt.com` | FPT Software | Khách hàng Doanh nghiệp. **Đã đăng 2 Job:** Job A (Backend) đang OPEN, Job B (Frontend) đang IN_PROGRESS. Đã nạp 800$ vào ví Escrow. |
-| **FREELANCER** | PRO DEV | `long.be@gmail.com` | Long Dương (Backend) | 3 năm exp Java, 2 năm Spring Boot. **Được AI gợi ý Job A (Match 98%)**. Đã nộp Proposal chờ FPT duyệt. |
-| **FREELANCER** | PRO DEV | `long.fe@gmail.com` | Quang Long (Frontend) | 2 năm exp React, TypeScript. **Đã ký hợp đồng làm Job B**. Được FPT đánh giá 5 sao. |
