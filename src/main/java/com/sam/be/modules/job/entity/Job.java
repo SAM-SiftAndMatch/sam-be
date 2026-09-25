@@ -65,10 +65,6 @@ public class Job extends AbstractAuditEntity {
     @Builder.Default
     private Boolean requiresAiQa = false;
 
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-            name = "job_skills",
-            joinColumns = @JoinColumn(name = "job_id"),
-            inverseJoinColumns = @JoinColumn(name = "skill_id"))
-    private Set<Skill> skills;
+    @OneToMany(mappedBy = "job", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private Set<JobSkill> jobSkills;
 }
