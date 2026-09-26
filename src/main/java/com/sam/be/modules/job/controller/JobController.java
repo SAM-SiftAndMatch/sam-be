@@ -3,6 +3,7 @@ package com.sam.be.modules.job.controller;
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
 import com.sam.be.modules.job.service.JobService;
@@ -73,10 +74,10 @@ public class JobController {
 
     @PostMapping("/{jobId}/recommendations/{recId}/accept")
     @PreAuthorize("hasRole('FREELANCER')")
-    @Operation(summary = "Accept AI job invitation", description = "Freelancer accepts the 1-touch claim invitation from client")
-    public ApiResponse<Void> acceptInvitation(@PathVariable UUID jobId, @PathVariable UUID recId) {
-        jobService.acceptJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
-        return ApiResponse.<Void>builder().build();
+    @Operation(summary = "Accept AI job invitation", description = "Freelancer accepts the invitation and joins chat room")
+    public ApiResponse<AcceptInvitationResponse> acceptInvitation(@PathVariable UUID jobId, @PathVariable UUID recId) {
+        AcceptInvitationResponse response = jobService.acceptJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
+        return ApiResponse.<AcceptInvitationResponse>builder().result(response).build();
     }
 
     @PostMapping("/{jobId}/recommendations/{recId}/reject")
