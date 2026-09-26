@@ -1,6 +1,7 @@
 package com.sam.be.modules.job.service;
 
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
 
 import java.util.List;
@@ -11,4 +12,6 @@ public interface JobService {
     JobResponse cancelJob(UUID clientId, UUID jobId);
     JobResponse getJobById(UUID jobId);
     List<JobResponse> getJobsByClientId(UUID clientId);
+    List<AiRecommendationResponse> getJobRecommendations(UUID clientId, UUID jobId);
+    void inviteCandidate(UUID clientId, UUID jobId, UUID recommendationId);
 }
