@@ -1,6 +1,7 @@
 package com.sam.be.modules.job.service;
 
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
 
@@ -14,6 +15,6 @@ public interface JobService {
     List<JobResponse> getJobsByClientId(UUID clientId);
     List<AiRecommendationResponse> getJobRecommendations(UUID clientId, UUID jobId);
     void inviteCandidate(UUID clientId, UUID jobId, UUID recommendationId);
-    void acceptJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId);
+    AcceptInvitationResponse acceptJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId);
     void rejectJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId);
 }

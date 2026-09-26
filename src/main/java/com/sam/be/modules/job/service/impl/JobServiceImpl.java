@@ -9,7 +9,9 @@ import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.modules.ai.dto.response.AiCandidateScore;
 import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
 import com.sam.be.modules.ai.service.AiService;
+import com.sam.be.modules.chat.service.ChatService;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
 import com.sam.be.modules.job.dto.response.SkillExperienceDto;
@@ -62,6 +64,7 @@ public class JobServiceImpl implements JobService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final NotificationService notificationService;
+    private final ChatService chatService;
     @Override
     @Transactional
     public JobResponse createJob(UUID clientId, JobCreateRequest request) {
@@ -328,15 +331,20 @@ public class JobServiceImpl implements JobService {
 
     @Override
     @Transactional
-    public void acceptJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId) {
+    public AcceptInvitationResponse acceptJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId) {
         AiJobRecommendation recommendation = validateAndGetInvitation(freelancerId, jobId, recommendationId);
 
-        // Đổi trạng thái sang ACCEPTED
+        // 1. Cập nhật trạng thái ứng viên (KHÔNG đổi JobStatus, vẫn giữ OPEN)
         recommendation.setStatus(RecommendationStatus.ACCEPTED);
         aiJobRecommendationRepository.save(recommendation);
 
-        // TODO: (Mở rộng sau) Sếp có thể gọi ProposalService ở đây để tự động tạo một Proposal
-        // với ngân sách bằng ngân sách của Job và trạng thái là ACCEPTED, tiết kiệm bước báo giá cho Dev.
+        // 2. Tạo hoặc lấy phòng Chat
+        com.sam.be.modules.chat.entity.ChatRoom room = chatService.getOrCreateRoom(recommendation.getJob(), recommendation.getFreelancer());
+
+        // 3. Trả về roomId cho Frontend
+        return AcceptInvitationResponse.builder()
+                .roomId(room.getId())
+                .build();
     }
 
     @Override
