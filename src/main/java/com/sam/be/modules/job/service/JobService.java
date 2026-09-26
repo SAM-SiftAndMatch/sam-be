@@ -14,4 +14,6 @@ public interface JobService {
     List<JobResponse> getJobsByClientId(UUID clientId);
     List<AiRecommendationResponse> getJobRecommendations(UUID clientId, UUID jobId);
     void inviteCandidate(UUID clientId, UUID jobId, UUID recommendationId);
+    void acceptJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId);
+    void rejectJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId);
 }

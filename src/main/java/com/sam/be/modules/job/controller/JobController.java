@@ -70,4 +70,20 @@ public class JobController {
         jobService.inviteCandidate(SecurityUtils.getCurrentUserId(), jobId, recId);
         return ApiResponse.<Void>builder().build();
     }
+
+    @PostMapping("/{jobId}/recommendations/{recId}/accept")
+    @PreAuthorize("hasRole('FREELANCER')")
+    @Operation(summary = "Accept AI job invitation", description = "Freelancer accepts the 1-touch claim invitation from client")
+    public ApiResponse<Void> acceptInvitation(@PathVariable UUID jobId, @PathVariable UUID recId) {
+        jobService.acceptJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
+        return ApiResponse.<Void>builder().build();
+    }
+
+    @PostMapping("/{jobId}/recommendations/{recId}/reject")
+    @PreAuthorize("hasRole('FREELANCER')")
+    @Operation(summary = "Reject AI job invitation", description = "Freelancer rejects the invitation")
+    public ApiResponse<Void> rejectInvitation(@PathVariable UUID jobId, @PathVariable UUID recId) {
+        jobService.rejectJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
+        return ApiResponse.<Void>builder().build();
+    }
 }

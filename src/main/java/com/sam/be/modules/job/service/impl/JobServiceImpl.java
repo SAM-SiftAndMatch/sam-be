@@ -325,4 +325,49 @@ public class JobServiceImpl implements JobService {
                 recommendation.getMatchScore()
         );
     }
+
+    @Override
+    @Transactional
+    public void acceptJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId) {
+        AiJobRecommendation recommendation = validateAndGetInvitation(freelancerId, jobId, recommendationId);
+
+        // Đổi trạng thái sang ACCEPTED
+        recommendation.setStatus(RecommendationStatus.ACCEPTED);
+        aiJobRecommendationRepository.save(recommendation);
+
+        // TODO: (Mở rộng sau) Sếp có thể gọi ProposalService ở đây để tự động tạo một Proposal
+        // với ngân sách bằng ngân sách của Job và trạng thái là ACCEPTED, tiết kiệm bước báo giá cho Dev.
+    }
+
+    @Override
+    @Transactional
+    public void rejectJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId) {
+        AiJobRecommendation recommendation = validateAndGetInvitation(freelancerId, jobId, recommendationId);
+
+        // Đổi trạng thái sang REJECTED
+        recommendation.setStatus(RecommendationStatus.REJECTED);
+        aiJobRecommendationRepository.save(recommendation);
+    }
+
+    // Hàm dùng chung để validate bảo mật tránh Dev này nhận bừa job của Dev khác
+    private AiJobRecommendation validateAndGetInvitation(UUID freelancerId, UUID jobId, UUID recommendationId) {
+        AiJobRecommendation recommendation = aiJobRecommendationRepository.findById(recommendationId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (!recommendation.getJob().getId().equals(jobId)) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED);
+        }
+
+        // Bắt buộc người gọi API phải chính là Freelancer được AI đề xuất
+        if (!recommendation.getFreelancer().getId().equals(freelancerId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+
+        // Chỉ cho phép thao tác khi Client đã gửi lời mời (INVITED)
+        if (recommendation.getStatus() != RecommendationStatus.INVITED) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Lời mời không hợp lệ hoặc đã được xử lý");
+        }
+
+        return recommendation;
+    }
 }
