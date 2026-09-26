@@ -3,6 +3,7 @@ package com.sam.be.modules.job.controller;
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
 import com.sam.be.modules.job.service.JobService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -52,5 +53,21 @@ public class JobController {
     public ApiResponse<List<JobResponse>> getMyJobs() {
         List<JobResponse> response = jobService.getJobsByClientId(SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<JobResponse>>builder().result(response).build();
+    }
+
+    @GetMapping("/{jobId}/recommendations")
+    @PreAuthorize("hasRole('CLIENT')")
+    @Operation(summary = "Get AI recommendations", description = "Client reviews top 5 AI matched candidates with skill experiences")
+    public ApiResponse<List<AiRecommendationResponse>> getRecommendations(@PathVariable UUID jobId) {
+        List<AiRecommendationResponse> response = jobService.getJobRecommendations(SecurityUtils.getCurrentUserId(), jobId);
+        return ApiResponse.<List<AiRecommendationResponse>>builder().result(response).build();
+    }
+
+    @PostMapping("/{jobId}/recommendations/{recId}/invite")
+    @PreAuthorize("hasRole('CLIENT')")
+    @Operation(summary = "Invite AI recommended candidate", description = "Client selects a candidate and triggers 1-touch claim notification")
+    public ApiResponse<Void> inviteCandidate(@PathVariable UUID jobId, @PathVariable UUID recId) {
+        jobService.inviteCandidate(SecurityUtils.getCurrentUserId(), jobId, recId);
+        return ApiResponse.<Void>builder().build();
     }
 }

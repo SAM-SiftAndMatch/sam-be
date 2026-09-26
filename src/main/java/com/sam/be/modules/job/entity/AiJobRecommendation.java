@@ -1,5 +1,6 @@
 package com.sam.be.modules.job.entity;
 
+import com.sam.be.common.constant.enums.RecommendationStatus;
 import com.sam.be.modules.user.entity.User;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
@@ -42,4 +43,9 @@ public class AiJobRecommendation {
 
     @Column(name = "ai_comment", columnDefinition = "TEXT")
     private String aiComment;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    @Builder.Default
+    private RecommendationStatus status = RecommendationStatus.PENDING;
 }

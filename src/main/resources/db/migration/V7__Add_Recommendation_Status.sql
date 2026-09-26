@@ -1,0 +1,2 @@
+ALTER TABLE ai_job_recommendations
+    ADD COLUMN status VARCHAR(20) DEFAULT 'PENDING' NOT NULL;

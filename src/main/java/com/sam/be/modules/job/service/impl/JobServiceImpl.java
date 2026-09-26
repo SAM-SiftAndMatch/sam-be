@@ -2,6 +2,7 @@ package com.sam.be.modules.job.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.be.common.constant.enums.JobStatus;
+import com.sam.be.common.constant.enums.RecommendationStatus;
 import com.sam.be.common.constant.enums.SubscriptionStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
@@ -9,7 +10,9 @@ import com.sam.be.modules.ai.dto.response.AiCandidateScore;
 import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
 import com.sam.be.modules.ai.service.AiService;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
+import com.sam.be.modules.job.dto.response.SkillExperienceDto;
 import com.sam.be.modules.job.entity.AiJobRecommendation;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.job.entity.JobSkill;
@@ -17,6 +20,7 @@ import com.sam.be.modules.job.repository.AiJobRecommendationRepository;
 import com.sam.be.modules.job.repository.JobRepository;
 import com.sam.be.modules.job.repository.JobSkillRepository;
 import com.sam.be.modules.job.service.JobService;
+import com.sam.be.modules.notification.service.NotificationService;
 import com.sam.be.modules.skill.dto.response.SkillResponse;
 import com.sam.be.modules.skill.entity.Skill;
 import com.sam.be.modules.skill.repository.SkillRepository;
@@ -57,7 +61,7 @@ public class JobServiceImpl implements JobService {
     private final AiService aiService;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
-
+    private final NotificationService notificationService;
     @Override
     @Transactional
     public JobResponse createJob(UUID clientId, JobCreateRequest request) {
@@ -256,5 +260,69 @@ public class JobServiceImpl implements JobService {
                 .createdAt(job.getCreatedAt())
                 .updatedAt(job.getUpdatedAt())
                 .build();
+    }
+    @Override
+    @Transactional(readOnly = true)
+    public List<AiRecommendationResponse> getJobRecommendations(UUID clientId, UUID jobId) {
+        Job job = jobRepository.findById(jobId).orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!job.getClient().getId().equals(clientId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+
+        List<AiJobRecommendation> recommendations = aiJobRecommendationRepository.findAllByJobIdOrderByMatchScoreDesc(jobId);
+
+        return recommendations.stream().map(rec -> {
+            User dev = rec.getFreelancer();
+            FreelancerProfile profile = freelancerProfileRepository.findByUserId(dev.getId()).orElse(null);
+            List<FreelancerSkill> fSkills = freelancerSkillRepository.findByFreelancerIdIn(List.of(dev.getId()));
+
+            List<SkillExperienceDto> skillDtos = fSkills.stream()
+                    .map(fs -> SkillExperienceDto.builder()
+                            .skillName(fs.getSkill().getName())
+                            .yearsOfExperience(fs.getYearsOfExperience())
+                            .build())
+                    .toList();
+
+            return AiRecommendationResponse.builder()
+                    .id(rec.getId())
+                    .freelancerId(dev.getId())
+                    .fullName(dev.getFullName())
+                    .headline(profile != null ? profile.getHeadline() : "")
+                    .matchScore(rec.getMatchScore())
+                    .aiComment(rec.getAiComment())
+                    .status(rec.getStatus())
+                    .skills(skillDtos)
+                    .build();
+        }).toList();
+    }
+
+    @Override
+    @Transactional
+    public void inviteCandidate(UUID clientId, UUID jobId, UUID recommendationId) {
+        Job job = jobRepository.findById(jobId).orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!job.getClient().getId().equals(clientId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+
+        AiJobRecommendation recommendation = aiJobRecommendationRepository.findById(recommendationId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (!recommendation.getJob().getId().equals(jobId)) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED);
+        }
+
+        if (recommendation.getStatus() != RecommendationStatus.PENDING) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED);
+        }
+
+        recommendation.setStatus(RecommendationStatus.INVITED);
+        aiJobRecommendationRepository.save(recommendation);
+
+        notificationService.sendInviteNotification(
+                recommendation.getFreelancer().getId(),
+                job.getId(),
+                job.getTitle(),
+                recommendation.getMatchScore()
+        );
     }
 }
