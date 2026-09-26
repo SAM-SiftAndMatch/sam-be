@@ -140,10 +140,19 @@ public class JobServiceImpl implements JobService {
                 .limit(5)
                 .toList();
 
+        // KỸ THUẬT ALIAS MAPPING: Tráo đổi UUID thành A, B, C, D, E để AI khỏi bị ngáo
+        java.util.Map<String, UUID> idMapping = new java.util.HashMap<>();
+
+        // FIX LỖI: Dùng mảng 1 phần tử để lách luật "effectively final" của Java Lambda
+        char[] alias = {'A'};
+
         List<Map<String, Object>> candidateData = top5Candidates.stream().map(p -> {
-            List<String> skillNames = devSkillMap.getOrDefault(p.getUser().getId(), List.of()).stream().map(fs -> fs.getSkill().getName()).toList();
+            String shortId = String.valueOf(alias[0]++); // Lấy giá trị ở index 0 rồi tự tăng lên B, C...
+            idMapping.put(shortId, p.getUser().getId()); // Lưu vào bộ nhớ để tí map lại
+
+            List<String> skillNames = devSkillMap.getOrDefault(p.getUser().getId(), java.util.List.of()).stream().map(fs -> fs.getSkill().getName()).toList();
             return Map.<String, Object>of(
-                    "freelancerId", p.getUser().getId(),
+                    "candidateId", shortId, // Gửi ID ngắn cho AI
                     "headline", p.getHeadline() != null ? p.getHeadline() : "",
                     "bio", p.getBio() != null ? p.getBio() : "",
                     "skills", skillNames
@@ -156,7 +165,11 @@ public class JobServiceImpl implements JobService {
         List<AiCandidateScore> aiScores = aiService.evaluateCandidates(srsContent, candidatesJson);
 
         List<AiJobRecommendation> recommendations = aiScores.stream().map(score -> {
-            User dev = userRepository.findById(score.getFreelancerId()).orElse(null);
+            // MAP NGƯỢC LẠI: Lấy UUID thật từ chữ cái A, B, C
+            UUID realId = idMapping.get(score.getCandidateId());
+            if (realId == null) return null;
+
+            User dev = userRepository.findById(realId).orElse(null);
             if (dev == null) return null;
             return AiJobRecommendation.builder()
                     .job(job)
