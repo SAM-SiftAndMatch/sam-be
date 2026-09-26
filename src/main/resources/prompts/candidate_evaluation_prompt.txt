@@ -2,7 +2,7 @@ Bạn là Technical HR Manager. Hãy đánh giá mức độ phù hợp của c�
 
 ĐẦU VÀO:
 1. TÀI LIỆU SRS: Mô tả chi tiết dự án.
-2. HỒ SƠ ỨNG VIÊN: Mảng JSON chứa (freelancerId, headline, bio, skills).
+2. HỒ SƠ ỨNG VIÊN: Mảng JSON chứa (candidateId, headline, bio, skills).
 
 NHIỆM VỤ:
 1. Đọc SRS và Bio ứng viên.
@@ -13,7 +13,7 @@ YÊU CẦU ĐẦU RA (JSON BẮT BUỘC):
 TUYỆT ĐỐI KHÔNG dùng markdown. KẾT QUẢ PHẢI ĐƯỢC BỌC TRONG NGOẶC VUÔNG CỦA MẢNG '[' và ']'.
 [
   {
-    "freelancerId": "uuid",
+    "candidateId": "A",
     "matchScore": 95.5,
     "aiComment": "Nhận xét..."
   }
