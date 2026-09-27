@@ -29,7 +29,7 @@ public class Contract {
     private Job job;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "proposal_id", nullable = false, unique = true)
+    @JoinColumn(name = "proposal_id", unique = true)
     private Proposal proposal;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -46,7 +46,22 @@ public class Contract {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private ContractStatus status = ContractStatus.ACTIVE;
+    private ContractStatus status = ContractStatus.DRAFT;
+
+    @Column(name = "terms_and_conditions", columnDefinition = "TEXT")
+    private String termsAndConditions;
+
+    @Column(name = "revision_limit")
+    @Builder.Default
+    private Integer revisionLimit = 2;
+
+    @Column(name = "client_agreed")
+    @Builder.Default
+    private Boolean clientAgreed = false;
+
+    @Column(name = "freelancer_agreed")
+    @Builder.Default
+    private Boolean freelancerAgreed = false;
 
     @CreationTimestamp
     @Column(name = "started_at", updatable = false)
