@@ -89,7 +89,9 @@ public class SecurityConfig {
                         "/docs/**",
                         "/swagger-resources",
                         "/swagger-resources/**",
-                        "/error")
+                        "/error",
+                        "/ws",
+                        "/ws/**")
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
