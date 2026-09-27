@@ -1,10 +1,9 @@
 package com.sam.be.modules.ai.service;
 
 import com.sam.be.modules.ai.dto.request.AiChatRequest;
-import com.sam.be.modules.ai.dto.response.AiCandidateScore;
-import com.sam.be.modules.ai.dto.response.AiChatResponse;
-import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
-import com.sam.be.modules.ai.dto.response.AiQuestion;
+import com.sam.be.modules.ai.dto.response.*;
+
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface AiService {
@@ -13,4 +12,5 @@ public interface AiService {
     AiChatResponse chatWithAiRisk(AiChatRequest request);
     List<AiExtractedSkill> extractSkillsForJob(String srsContent, String availableSkillsJson);
     List<AiCandidateScore> evaluateCandidates(String srsContent, String candidatesJson);
+    AiContractDraft generateContractDraft(String srsContent, BigDecimal minBudget, BigDecimal maxBudget);
 }

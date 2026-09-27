@@ -8,10 +8,7 @@ import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.storage.service.StorageService;
 import com.sam.be.modules.ai.dto.request.AiChatRequest;
-import com.sam.be.modules.ai.dto.response.AiCandidateScore;
-import com.sam.be.modules.ai.dto.response.AiChatResponse;
-import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
-import com.sam.be.modules.ai.dto.response.AiQuestion;
+import com.sam.be.modules.ai.dto.response.*;
 import com.sam.be.modules.ai.service.AiService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -33,6 +31,8 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class AiServiceImpl implements AiService {
+
+    private static final String BA_REDIS_PREFIX = "ai:ba:session:";
 
     @Value("classpath:prompts/ba_system_prompt.txt")
     private Resource baPromptResource;
@@ -49,18 +49,20 @@ public class AiServiceImpl implements AiService {
     @Value("classpath:prompts/candidate_evaluation_prompt.txt")
     private Resource candidateEvaluationPromptResource;
 
+    @Value("classpath:prompts/contract_generator_prompt.txt")
+    private Resource contractPromptResource;
+
     private String baSystemPrompt;
     private String riskSystemPrompt;
     private String skillMatchingPrompt;
     private String candidateEvaluationPrompt;
+    private String contractSystemPrompt;
     private List<AiQuestion> baseQuestions;
 
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final GeminiClient geminiClient;
     private final StorageService storageService;
-
-    private static final String BA_REDIS_PREFIX = "ai:ba:session:";
 
     @PostConstruct
     public void init() {
@@ -69,6 +71,7 @@ public class AiServiceImpl implements AiService {
             riskSystemPrompt = StreamUtils.copyToString(riskPromptResource.getInputStream(), StandardCharsets.UTF_8);
             skillMatchingPrompt = StreamUtils.copyToString(skillMatchingPromptResource.getInputStream(), StandardCharsets.UTF_8);
             candidateEvaluationPrompt = StreamUtils.copyToString(candidateEvaluationPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            contractSystemPrompt = StreamUtils.copyToString(contractPromptResource.getInputStream(), StandardCharsets.UTF_8);
             String questionsJson = StreamUtils.copyToString(baseQuestionsResource.getInputStream(), StandardCharsets.UTF_8);
             baseQuestions = objectMapper.readValue(questionsJson, new TypeReference<List<AiQuestion>>() {});
         } catch (Exception e) {
@@ -113,9 +116,12 @@ public class AiServiceImpl implements AiService {
         history.add(createMessage("user", userMessage));
 
         String aiResponseJson = geminiClient.generateContent(skillMatchingPrompt, history);
-        String cleanedJson = cleanJsonResponse(aiResponseJson);
+        String cleanedJson = cleanJson(aiResponseJson);
 
         try {
+            if (!cleanedJson.startsWith("[")) {
+                cleanedJson = "[" + cleanedJson + "]";
+            }
             return objectMapper.readValue(cleanedJson, new TypeReference<List<AiExtractedSkill>>() {});
         } catch (Exception e) {
             log.error("AI Skill Matcher failed. Raw: {}", aiResponseJson, e);
@@ -130,9 +136,12 @@ public class AiServiceImpl implements AiService {
         history.add(createMessage("user", userMessage));
 
         String aiResponseJson = geminiClient.generateContent(candidateEvaluationPrompt, history);
-        String cleanedJson = cleanJsonResponse(aiResponseJson);
+        String cleanedJson = cleanJson(aiResponseJson);
 
         try {
+            if (!cleanedJson.startsWith("[")) {
+                cleanedJson = "[" + cleanedJson + "]";
+            }
             return objectMapper.readValue(cleanedJson, new TypeReference<List<AiCandidateScore>>() {});
         } catch (Exception e) {
             log.error("AI Candidate Evaluation failed. Raw: {}", aiResponseJson, e);
@@ -140,12 +149,29 @@ public class AiServiceImpl implements AiService {
         }
     }
 
-    // --- HÀM MỚI: Dọn dẹp JSON từ AI ---
-    private String cleanJsonResponse(String raw) {
-        if (raw == null) return "[]";
+    @Override
+    public AiContractDraft generateContractDraft(String srsContent, BigDecimal minBudget, BigDecimal maxBudget) {
+        String userMessage = String.format("TÀI LIỆU SRS:\n%s\n\nNGÂN SÁCH DỰ KIẾN: Từ %s đến %s",
+                srsContent, minBudget, maxBudget);
+
+        List<Map<String, Object>> history = new ArrayList<>();
+        history.add(createMessage("user", userMessage));
+
+        String aiResponseJson = geminiClient.generateContent(contractSystemPrompt, history);
+        String cleanedJson = cleanJson(aiResponseJson);
+
+        try {
+            return objectMapper.readValue(cleanedJson, AiContractDraft.class);
+        } catch (Exception e) {
+            log.error("AI Contract Generation failed. Raw: {}", aiResponseJson, e);
+            throw new ApiException(ErrorCode.UNEXPECTED_ERROR);
+        }
+    }
+
+    private String cleanJson(String raw) {
+        if (raw == null) return "";
         String cleaned = raw.trim();
 
-        // Loại bỏ markdown block nếu có
         if (cleaned.startsWith("```json")) {
             cleaned = cleaned.substring(7);
         } else if (cleaned.startsWith("```")) {
@@ -154,13 +180,8 @@ public class AiServiceImpl implements AiService {
         if (cleaned.endsWith("```")) {
             cleaned = cleaned.substring(0, cleaned.length() - 3);
         }
-        cleaned = cleaned.trim();
 
-        // Cứu hộ lỗi AI quên bọc ngoặc vuông: { ... }, { ... }
-        if (cleaned.startsWith("{") && cleaned.endsWith("}")) {
-            cleaned = "[" + cleaned + "]";
-        }
-        return cleaned;
+        return cleaned.trim();
     }
 
     private AiChatResponse parseAndUploadSrs(String sessionId, String aiResponseJson) {
@@ -168,12 +189,7 @@ public class AiServiceImpl implements AiService {
             ObjectMapper permissiveMapper = objectMapper.copy()
                     .configure(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature(), true);
 
-            String cleaned = cleanJsonResponse(aiResponseJson);
-            // Dành riêng cho Chat (trả về 1 object), nếu bị bọc mảng thì gỡ ra
-            if (cleaned.startsWith("[") && cleaned.endsWith("]")) {
-                cleaned = cleaned.substring(1, cleaned.length() - 1);
-            }
-
+            String cleaned = cleanJson(aiResponseJson);
             AiChatResponse response = permissiveMapper.readValue(cleaned, AiChatResponse.class);
 
             if (response.getSrsContent() != null && !response.getSrsContent().trim().isEmpty()) {
@@ -191,8 +207,11 @@ public class AiServiceImpl implements AiService {
     private List<Map<String, Object>> loadHistory(String key) {
         String data = stringRedisTemplate.opsForValue().get(key);
         if (data != null) {
-            try { return objectMapper.readValue(data, new TypeReference<List<Map<String, Object>>>() {}); }
-            catch (Exception e) { log.warn("Failed to load history from Redis", e); }
+            try {
+                return objectMapper.readValue(data, new TypeReference<List<Map<String, Object>>>() {});
+            } catch (Exception e) {
+                log.warn("Failed to load history from Redis", e);
+            }
         }
         return new ArrayList<>();
     }
@@ -201,7 +220,9 @@ public class AiServiceImpl implements AiService {
         try {
             String data = objectMapper.writeValueAsString(history);
             stringRedisTemplate.opsForValue().set(key, data, Duration.ofHours(24));
-        } catch (Exception e) { log.warn("Failed to save history to Redis", e); }
+        } catch (Exception e) {
+            log.warn("Failed to save history to Redis", e);
+        }
     }
 
     private Map<String, Object> createMessage(String role, String text) {
