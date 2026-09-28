@@ -1,4 +1,4 @@
-.PHONY: setup pc fmt up down logs infra-up infra-down redis-up redis-down redis-reset redis-logs redis-ping redis-cli
+.PHONY: setup pc fmt up down logs infra-up infra-down backend-up redis-up redis-down redis-reset redis-logs redis-ping redis-cli
 
 up:
 	docker compose up -d
@@ -14,6 +14,9 @@ infra-up:
 
 infra-down:
 	docker compose stop postgres redis
+
+backend-up:
+	docker compose up -d --build backend
 
 setup:
 	bash scripts/setup-precommit.sh
