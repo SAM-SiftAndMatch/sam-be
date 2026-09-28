@@ -1,9 +1,9 @@
-name: CI - Main Branch
+name: CI - Develop Branch
 
 on:
   push:
     branches:
-      - main
+      - develop
 
 jobs:
   build-and-verify:
@@ -81,6 +81,6 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          tags: sam-be:main-test
+          tags: sam-be:develop-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
