@@ -45,17 +45,6 @@ services:
     container_name: sam-backend
     env_file:
       - .env
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      HIBERNATE_DDL_AUTO: validate
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     healthcheck:
