@@ -13,8 +13,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class FreelancerSkillRequest {
 
-    @NotNull(message = "Skill ID is required")
     private Integer skillId;
+
+    private String skillName;
 
     @NotNull(message = "Years of experience is required")
     @Min(value = 0, message = "Years of experience cannot be negative")

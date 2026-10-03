@@ -15,8 +15,7 @@ import lombok.*;
 @Builder
 public class JobSkill {
 
-    @EmbeddedId
-    private JobSkillId id;
+    @EmbeddedId private JobSkillId id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @MapsId("jobId")

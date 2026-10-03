@@ -3,13 +3,12 @@ package com.sam.be.modules.job.dto.request;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Data
 @Builder
@@ -17,24 +16,17 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class JobCreateRequest {
 
-    @NotBlank
-    private String title;
+    @NotBlank private String title;
 
-    @NotBlank
-    private String description;
+    @NotBlank private String description;
 
-    @NotNull
-    private BigDecimal budgetMin;
+    @NotNull private BigDecimal budgetMin;
 
-    @NotNull
-    private BigDecimal budgetMax;
+    @NotNull private BigDecimal budgetMax;
 
-    @NotNull
-    @Future
-    private LocalDateTime deadline;
+    @NotNull @Future private LocalDateTime deadline;
 
-    @NotBlank
-    private String srsDocumentUrl;
+    @NotBlank private String srsDocumentUrl;
 
     private Boolean isFeatured;
 

@@ -4,16 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Component
@@ -61,27 +60,40 @@ public class GeminiClient {
     }
 
     private String executeRequest(String systemPrompt, List<Map<String, Object>> history) {
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+        String url =
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                        + model
+                        + ":generateContent?key="
+                        + apiKey;
 
         Map<String, Object> generationConfig = new HashMap<>();
         generationConfig.put("responseMimeType", "application/json");
         generationConfig.put("maxOutputTokens", 8192);
 
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("systemInstruction", Map.of("parts", List.of(Map.of("text", systemPrompt))));
+        requestBody.put(
+                "systemInstruction", Map.of("parts", List.of(Map.of("text", systemPrompt))));
         requestBody.put("contents", history);
         requestBody.put("generationConfig", generationConfig);
 
-        String responseStr = restClient.post()
-                .uri(url)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(requestBody)
-                .retrieve()
-                .body(String.class);
+        String responseStr =
+                restClient
+                        .post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(requestBody)
+                        .retrieve()
+                        .body(String.class);
 
         try {
             JsonNode rootNode = objectMapper.readTree(responseStr);
-            JsonNode textNode = rootNode.path("candidates").path(0).path("content").path("parts").path(0).path("text");
+            JsonNode textNode =
+                    rootNode.path("candidates")
+                            .path(0)
+                            .path("content")
+                            .path("parts")
+                            .path(0)
+                            .path("text");
 
             if (textNode.isMissingNode() || textNode.asText().isBlank()) {
                 throw new RuntimeException("Empty response from Gemini API");

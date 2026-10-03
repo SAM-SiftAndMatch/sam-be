@@ -1,8 +1,8 @@
 package com.sam.be.modules.job.dto.response;
 
+import java.util.UUID;
 import lombok.Builder;
 import lombok.Data;
-import java.util.UUID;
 
 @Data
 @Builder

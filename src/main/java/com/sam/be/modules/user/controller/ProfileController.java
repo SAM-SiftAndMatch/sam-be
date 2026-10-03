@@ -24,33 +24,48 @@ public class ProfileController {
 
     @GetMapping("/freelancer/me")
     @PreAuthorize("hasRole('FREELANCER')")
-    @Operation(summary = "Get current freelancer profile", description = "Retrieve profile and skills of the logged-in freelancer")
+    @Operation(
+            summary = "Get current freelancer profile",
+            description = "Retrieve profile and skills of the logged-in freelancer")
     public ApiResponse<FreelancerProfileResponse> getMyFreelancerProfile() {
-        FreelancerProfileResponse response = profileService.getFreelancerProfile(SecurityUtils.getCurrentUserId());
+        FreelancerProfileResponse response =
+                profileService.getFreelancerProfile(SecurityUtils.getCurrentUserId());
         return ApiResponse.<FreelancerProfileResponse>builder().result(response).build();
     }
 
     @PutMapping("/freelancer/me")
     @PreAuthorize("hasRole('FREELANCER')")
-    @Operation(summary = "Update current freelancer profile", description = "Update profile details and replace all skills for the logged-in freelancer")
-    public ApiResponse<FreelancerProfileResponse> updateMyFreelancerProfile(@Valid @RequestBody FreelancerProfileRequest request) {
-        FreelancerProfileResponse response = profileService.updateFreelancerProfile(SecurityUtils.getCurrentUserId(), request);
+    @Operation(
+            summary = "Update current freelancer profile",
+            description =
+                    "Update profile details and replace all skills for the logged-in freelancer")
+    public ApiResponse<FreelancerProfileResponse> updateMyFreelancerProfile(
+            @Valid @RequestBody FreelancerProfileRequest request) {
+        FreelancerProfileResponse response =
+                profileService.updateFreelancerProfile(SecurityUtils.getCurrentUserId(), request);
         return ApiResponse.<FreelancerProfileResponse>builder().result(response).build();
     }
 
     @GetMapping("/client/me")
     @PreAuthorize("hasRole('CLIENT')")
-    @Operation(summary = "Get current client profile", description = "Retrieve profile details of the logged-in client")
+    @Operation(
+            summary = "Get current client profile",
+            description = "Retrieve profile details of the logged-in client")
     public ApiResponse<ClientProfileResponse> getMyClientProfile() {
-        ClientProfileResponse response = profileService.getClientProfile(SecurityUtils.getCurrentUserId());
+        ClientProfileResponse response =
+                profileService.getClientProfile(SecurityUtils.getCurrentUserId());
         return ApiResponse.<ClientProfileResponse>builder().result(response).build();
     }
 
     @PutMapping("/client/me")
     @PreAuthorize("hasRole('CLIENT')")
-    @Operation(summary = "Update current client profile", description = "Update company and industry details for the logged-in client")
-    public ApiResponse<ClientProfileResponse> updateMyClientProfile(@Valid @RequestBody ClientProfileRequest request) {
-        ClientProfileResponse response = profileService.updateClientProfile(SecurityUtils.getCurrentUserId(), request);
+    @Operation(
+            summary = "Update current client profile",
+            description = "Update company and industry details for the logged-in client")
+    public ApiResponse<ClientProfileResponse> updateMyClientProfile(
+            @Valid @RequestBody ClientProfileRequest request) {
+        ClientProfileResponse response =
+                profileService.updateClientProfile(SecurityUtils.getCurrentUserId(), request);
         return ApiResponse.<ClientProfileResponse>builder().result(response).build();
     }
 }

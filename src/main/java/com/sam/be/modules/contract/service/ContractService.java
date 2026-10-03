@@ -7,6 +7,8 @@ import java.util.UUID;
 
 public interface ContractService {
     ContractDraftResponse createAiDraft(UUID roomId, UUID userId);
+
     void syncContract(UUID contractId, ContractSyncPayload payload);
+
     void signContract(UUID contractId, ContractSignPayload payload);
 }
