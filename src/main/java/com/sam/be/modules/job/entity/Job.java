@@ -2,7 +2,6 @@ package com.sam.be.modules.job.entity;
 
 import com.sam.be.common.audit.AbstractAuditEntity;
 import com.sam.be.common.constant.enums.JobStatus;
-import com.sam.be.modules.skill.entity.Skill;
 import com.sam.be.modules.user.entity.User;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
@@ -65,6 +64,10 @@ public class Job extends AbstractAuditEntity {
     @Builder.Default
     private Boolean requiresAiQa = false;
 
-    @OneToMany(mappedBy = "job", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(
+            mappedBy = "job",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY)
     private Set<JobSkill> jobSkills;
 }

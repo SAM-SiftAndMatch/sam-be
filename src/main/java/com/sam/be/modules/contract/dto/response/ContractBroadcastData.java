@@ -1,8 +1,8 @@
 package com.sam.be.modules.contract.dto.response;
 
+import java.math.BigDecimal;
 import lombok.Builder;
 import lombok.Data;
-import java.math.BigDecimal;
 
 @Data
 @Builder

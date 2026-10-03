@@ -1,11 +1,10 @@
 package com.sam.be.modules.notification.dto;
 
-import lombok.Builder;
-import lombok.Data;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import lombok.Builder;
+import lombok.Data;
 
 @Data
 @Builder

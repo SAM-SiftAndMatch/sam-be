@@ -2,13 +2,12 @@ package com.sam.be.modules.user.dto.request;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.math.BigDecimal;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.math.BigDecimal;
-import java.util.List;
 
 @Data
 @Builder
@@ -27,6 +26,5 @@ public class FreelancerProfileRequest {
 
     private String portfolioUrl;
 
-    @Valid
-    private List<FreelancerSkillRequest> skills;
+    @Valid private List<FreelancerSkillRequest> skills;
 }

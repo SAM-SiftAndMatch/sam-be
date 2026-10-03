@@ -23,9 +23,13 @@ public class StorageController {
 
     @PostMapping("/upload-srs")
     @PreAuthorize("hasRole('CLIENT')")
-    @Operation(summary = "Upload SRS Markdown", description = "Converts markdown text to a file on Cloudinary and returns the secure URL")
+    @Operation(
+            summary = "Upload SRS Markdown",
+            description =
+                    "Converts markdown text to a file on Cloudinary and returns the secure URL")
     public ApiResponse<String> uploadSrs(@Valid @RequestBody UploadSrsRequest request) {
-        String secureUrl = storageService.uploadMarkdown(request.getContent(), request.getFileName());
+        String secureUrl =
+                storageService.uploadMarkdown(request.getContent(), request.getFileName());
         return ApiResponse.<String>builder().result(secureUrl).build();
     }
 }

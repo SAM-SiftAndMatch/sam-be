@@ -11,11 +11,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AiChatRequest {
-    @NotBlank
-    private String sessionId;
+    @NotBlank private String sessionId;
 
-    @NotBlank
-    private String userMessage;
+    @NotBlank private String userMessage;
 
     private String currentSrsContent;
 }

@@ -76,6 +76,8 @@ public class SecurityConfig {
                         "/api/v1/auth/forgot-password/**",
                         "/api/v1/auth/reset-password/**",
                         "/api/v1/internal/healthz",
+                        "/api/v1/skills",
+                        "/api/v1/skills/**",
                         "/actuator/**",
                         "/v3/api-docs",
                         "/v3/api-docs/**",
