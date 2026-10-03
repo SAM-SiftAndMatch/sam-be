@@ -64,6 +64,7 @@ management:
 
 server:
   port: ${BACKEND_PORT}
+  forward-headers-strategy: framework
 
 # JWT Security Configuration thuần biến môi trường (không dùng fallback :default)
 jwt:
@@ -72,3 +73,9 @@ jwt:
   refresh-expiration: ${JWT_REFRESH_EXPIRATION}
   issuer: ${JWT_ISSUER}
   cookie-secure: ${JWT_COOKIE_SECURE}
+
+# Swagger UI Authentication (chỉ bật khi SWAGGER_AUTH_ENABLED=true và SWAGGER_PASSWORD được set)
+swagger:
+  auth-enabled: ${SWAGGER_AUTH_ENABLED:false}
+  username: ${SWAGGER_USERNAME}
+  password: ${SWAGGER_PASSWORD}
