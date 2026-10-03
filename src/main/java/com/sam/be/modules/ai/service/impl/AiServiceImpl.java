@@ -11,14 +11,6 @@ import com.sam.be.modules.ai.dto.request.AiChatRequest;
 import com.sam.be.modules.ai.dto.response.*;
 import com.sam.be.modules.ai.service.AiService;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Service;
-import org.springframework.util.StreamUtils;
-
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -26,6 +18,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StreamUtils;
 
 @Slf4j
 @Service
@@ -67,13 +66,27 @@ public class AiServiceImpl implements AiService {
     @PostConstruct
     public void init() {
         try {
-            baSystemPrompt = StreamUtils.copyToString(baPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            riskSystemPrompt = StreamUtils.copyToString(riskPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            skillMatchingPrompt = StreamUtils.copyToString(skillMatchingPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            candidateEvaluationPrompt = StreamUtils.copyToString(candidateEvaluationPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            contractSystemPrompt = StreamUtils.copyToString(contractPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            String questionsJson = StreamUtils.copyToString(baseQuestionsResource.getInputStream(), StandardCharsets.UTF_8);
-            baseQuestions = objectMapper.readValue(questionsJson, new TypeReference<List<AiQuestion>>() {});
+            baSystemPrompt =
+                    StreamUtils.copyToString(
+                            baPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            riskSystemPrompt =
+                    StreamUtils.copyToString(
+                            riskPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            skillMatchingPrompt =
+                    StreamUtils.copyToString(
+                            skillMatchingPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            candidateEvaluationPrompt =
+                    StreamUtils.copyToString(
+                            candidateEvaluationPromptResource.getInputStream(),
+                            StandardCharsets.UTF_8);
+            contractSystemPrompt =
+                    StreamUtils.copyToString(
+                            contractPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            String questionsJson =
+                    StreamUtils.copyToString(
+                            baseQuestionsResource.getInputStream(), StandardCharsets.UTF_8);
+            baseQuestions =
+                    objectMapper.readValue(questionsJson, new TypeReference<List<AiQuestion>>() {});
         } catch (Exception e) {
             log.error("Failed to load AI resources", e);
             throw new RuntimeException("Failed to load AI resources", e);
@@ -98,11 +111,13 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public AiChatResponse chatWithAiRisk(AiChatRequest request) {
-        String userPrompt = String.format(
-                "TÀI LIỆU SRS HIỆN TẠI TỪ KHÁCH HÀNG:\n%s\n\nYÊU CẦU CỦA KHÁCH HÀNG: %s",
-                request.getCurrentSrsContent() != null ? request.getCurrentSrsContent() : "(Chưa có)",
-                request.getUserMessage()
-        );
+        String userPrompt =
+                String.format(
+                        "TÀI LIỆU SRS HIỆN TẠI TỪ KHÁCH HÀNG:\n%s\n\nYÊU CẦU CỦA KHÁCH HÀNG: %s",
+                        request.getCurrentSrsContent() != null
+                                ? request.getCurrentSrsContent()
+                                : "(Chưa có)",
+                        request.getUserMessage());
         List<Map<String, Object>> singleTurnHistory = new ArrayList<>();
         singleTurnHistory.add(createMessage("user", userPrompt));
         String aiResponseJson = geminiClient.generateContent(riskSystemPrompt, singleTurnHistory);
@@ -110,8 +125,12 @@ public class AiServiceImpl implements AiService {
     }
 
     @Override
-    public List<AiExtractedSkill> extractSkillsForJob(String srsContent, String availableSkillsJson) {
-        String userMessage = String.format("TÀI LIỆU SRS:\n%s\n\nDANH SÁCH SKILLS:\n%s", srsContent, availableSkillsJson);
+    public List<AiExtractedSkill> extractSkillsForJob(
+            String srsContent, String availableSkillsJson) {
+        String userMessage =
+                String.format(
+                        "TÀI LIỆU SRS:\n%s\n\nDANH SÁCH SKILLS:\n%s",
+                        srsContent, availableSkillsJson);
         List<Map<String, Object>> history = new ArrayList<>();
         history.add(createMessage("user", userMessage));
 
@@ -122,7 +141,8 @@ public class AiServiceImpl implements AiService {
             if (!cleanedJson.startsWith("[")) {
                 cleanedJson = "[" + cleanedJson + "]";
             }
-            return objectMapper.readValue(cleanedJson, new TypeReference<List<AiExtractedSkill>>() {});
+            return objectMapper.readValue(
+                    cleanedJson, new TypeReference<List<AiExtractedSkill>>() {});
         } catch (Exception e) {
             log.error("AI Skill Matcher failed. Raw: {}", aiResponseJson, e);
             return new ArrayList<>();
@@ -131,7 +151,9 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public List<AiCandidateScore> evaluateCandidates(String srsContent, String candidatesJson) {
-        String userMessage = String.format("TÀI LIỆU SRS:\n%s\n\nHỒ SƠ ỨNG VIÊN:\n%s", srsContent, candidatesJson);
+        String userMessage =
+                String.format(
+                        "TÀI LIỆU SRS:\n%s\n\nHỒ SƠ ỨNG VIÊN:\n%s", srsContent, candidatesJson);
         List<Map<String, Object>> history = new ArrayList<>();
         history.add(createMessage("user", userMessage));
 
@@ -142,7 +164,8 @@ public class AiServiceImpl implements AiService {
             if (!cleanedJson.startsWith("[")) {
                 cleanedJson = "[" + cleanedJson + "]";
             }
-            return objectMapper.readValue(cleanedJson, new TypeReference<List<AiCandidateScore>>() {});
+            return objectMapper.readValue(
+                    cleanedJson, new TypeReference<List<AiCandidateScore>>() {});
         } catch (Exception e) {
             log.error("AI Candidate Evaluation failed. Raw: {}", aiResponseJson, e);
             return new ArrayList<>();
@@ -150,9 +173,12 @@ public class AiServiceImpl implements AiService {
     }
 
     @Override
-    public AiContractDraft generateContractDraft(String srsContent, BigDecimal minBudget, BigDecimal maxBudget) {
-        String userMessage = String.format("TÀI LIỆU SRS:\n%s\n\nNGÂN SÁCH DỰ KIẾN: Từ %s đến %s",
-                srsContent, minBudget, maxBudget);
+    public AiContractDraft generateContractDraft(
+            String srsContent, BigDecimal minBudget, BigDecimal maxBudget) {
+        String userMessage =
+                String.format(
+                        "TÀI LIỆU SRS:\n%s\n\nNGÂN SÁCH DỰ KIẾN: Từ %s đến %s",
+                        srsContent, minBudget, maxBudget);
 
         List<Map<String, Object>> history = new ArrayList<>();
         history.add(createMessage("user", userMessage));
@@ -186,15 +212,20 @@ public class AiServiceImpl implements AiService {
 
     private AiChatResponse parseAndUploadSrs(String sessionId, String aiResponseJson) {
         try {
-            ObjectMapper permissiveMapper = objectMapper.copy()
-                    .configure(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature(), true);
+            ObjectMapper permissiveMapper =
+                    objectMapper
+                            .copy()
+                            .configure(
+                                    JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature(),
+                                    true);
 
             String cleaned = cleanJson(aiResponseJson);
             AiChatResponse response = permissiveMapper.readValue(cleaned, AiChatResponse.class);
 
             if (response.getSrsContent() != null && !response.getSrsContent().trim().isEmpty()) {
                 String fileName = "srs-" + sessionId + "-" + System.currentTimeMillis();
-                String secureUrl = storageService.uploadMarkdown(response.getSrsContent(), fileName);
+                String secureUrl =
+                        storageService.uploadMarkdown(response.getSrsContent(), fileName);
                 response.setCurrentSrsUrl(secureUrl);
             }
             return response;
@@ -208,7 +239,8 @@ public class AiServiceImpl implements AiService {
         String data = stringRedisTemplate.opsForValue().get(key);
         if (data != null) {
             try {
-                return objectMapper.readValue(data, new TypeReference<List<Map<String, Object>>>() {});
+                return objectMapper.readValue(
+                        data, new TypeReference<List<Map<String, Object>>>() {});
             } catch (Exception e) {
                 log.warn("Failed to load history from Redis", e);
             }

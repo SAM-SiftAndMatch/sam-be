@@ -3,12 +3,11 @@ package com.sam.be.modules.chat.entity;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.user.entity.User;
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
+import java.util.UUID;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Entity
 @Table(name = "chat_rooms")

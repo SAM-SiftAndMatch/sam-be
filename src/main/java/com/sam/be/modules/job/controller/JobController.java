@@ -10,12 +10,11 @@ import com.sam.be.modules.job.service.JobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/jobs")
@@ -27,7 +26,9 @@ public class JobController {
 
     @PostMapping
     @PreAuthorize("hasRole('CLIENT')")
-    @Operation(summary = "Create a new job", description = "Client creates a new job post after SRS is generated")
+    @Operation(
+            summary = "Create a new job",
+            description = "Client creates a new job post after SRS is generated")
     public ApiResponse<JobResponse> createJob(@Valid @RequestBody JobCreateRequest request) {
         JobResponse response = jobService.createJob(SecurityUtils.getCurrentUserId(), request);
         return ApiResponse.<JobResponse>builder().result(response).build();
@@ -35,7 +36,9 @@ public class JobController {
 
     @PatchMapping("/{jobId}/cancel")
     @PreAuthorize("hasRole('CLIENT') and @jobAccessGuard.isOwner(#jobId)")
-    @Operation(summary = "Cancel a job", description = "Client cancels an OPEN job. Cannot be updated once published.")
+    @Operation(
+            summary = "Cancel a job",
+            description = "Client cancels an OPEN job. Cannot be updated once published.")
     public ApiResponse<JobResponse> cancelJob(@PathVariable UUID jobId) {
         JobResponse response = jobService.cancelJob(SecurityUtils.getCurrentUserId(), jobId);
         return ApiResponse.<JobResponse>builder().result(response).build();
@@ -50,7 +53,9 @@ public class JobController {
 
     @GetMapping("/client/me")
     @PreAuthorize("hasRole('CLIENT')")
-    @Operation(summary = "Get jobs of current client", description = "Retrieve all jobs posted by the logged-in client")
+    @Operation(
+            summary = "Get jobs of current client",
+            description = "Retrieve all jobs posted by the logged-in client")
     public ApiResponse<List<JobResponse>> getMyJobs() {
         List<JobResponse> response = jobService.getJobsByClientId(SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<JobResponse>>builder().result(response).build();
@@ -58,15 +63,21 @@ public class JobController {
 
     @GetMapping("/{jobId}/recommendations")
     @PreAuthorize("hasRole('CLIENT')")
-    @Operation(summary = "Get AI recommendations", description = "Client reviews top 5 AI matched candidates with skill experiences")
-    public ApiResponse<List<AiRecommendationResponse>> getRecommendations(@PathVariable UUID jobId) {
-        List<AiRecommendationResponse> response = jobService.getJobRecommendations(SecurityUtils.getCurrentUserId(), jobId);
+    @Operation(
+            summary = "Get AI recommendations",
+            description = "Client reviews top 5 AI matched candidates with skill experiences")
+    public ApiResponse<List<AiRecommendationResponse>> getRecommendations(
+            @PathVariable UUID jobId) {
+        List<AiRecommendationResponse> response =
+                jobService.getJobRecommendations(SecurityUtils.getCurrentUserId(), jobId);
         return ApiResponse.<List<AiRecommendationResponse>>builder().result(response).build();
     }
 
     @PostMapping("/{jobId}/recommendations/{recId}/invite")
     @PreAuthorize("hasRole('CLIENT')")
-    @Operation(summary = "Invite AI recommended candidate", description = "Client selects a candidate and triggers 1-touch claim notification")
+    @Operation(
+            summary = "Invite AI recommended candidate",
+            description = "Client selects a candidate and triggers 1-touch claim notification")
     public ApiResponse<Void> inviteCandidate(@PathVariable UUID jobId, @PathVariable UUID recId) {
         jobService.inviteCandidate(SecurityUtils.getCurrentUserId(), jobId, recId);
         return ApiResponse.<Void>builder().build();
@@ -74,15 +85,21 @@ public class JobController {
 
     @PostMapping("/{jobId}/recommendations/{recId}/accept")
     @PreAuthorize("hasRole('FREELANCER')")
-    @Operation(summary = "Accept AI job invitation", description = "Freelancer accepts the invitation and joins chat room")
-    public ApiResponse<AcceptInvitationResponse> acceptInvitation(@PathVariable UUID jobId, @PathVariable UUID recId) {
-        AcceptInvitationResponse response = jobService.acceptJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
+    @Operation(
+            summary = "Accept AI job invitation",
+            description = "Freelancer accepts the invitation and joins chat room")
+    public ApiResponse<AcceptInvitationResponse> acceptInvitation(
+            @PathVariable UUID jobId, @PathVariable UUID recId) {
+        AcceptInvitationResponse response =
+                jobService.acceptJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
         return ApiResponse.<AcceptInvitationResponse>builder().result(response).build();
     }
 
     @PostMapping("/{jobId}/recommendations/{recId}/reject")
     @PreAuthorize("hasRole('FREELANCER')")
-    @Operation(summary = "Reject AI job invitation", description = "Freelancer rejects the invitation")
+    @Operation(
+            summary = "Reject AI job invitation",
+            description = "Freelancer rejects the invitation")
     public ApiResponse<Void> rejectInvitation(@PathVariable UUID jobId, @PathVariable UUID recId) {
         jobService.rejectJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
         return ApiResponse.<Void>builder().build();

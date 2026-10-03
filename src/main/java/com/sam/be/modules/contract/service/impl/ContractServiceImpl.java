@@ -1,8 +1,8 @@
 package com.sam.be.modules.contract.service.impl;
 
+import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
-import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.modules.ai.dto.response.AiContractDraft;
 import com.sam.be.modules.ai.service.AiService;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
@@ -16,15 +16,14 @@ import com.sam.be.modules.contract.dto.response.ContractBroadcastData;
 import com.sam.be.modules.contract.dto.response.ContractDraftResponse;
 import com.sam.be.modules.contract.entity.Contract;
 import com.sam.be.modules.contract.repository.ContractRepository;
+import com.sam.be.modules.contract.service.ContractService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.job.repository.JobRepository;
-import com.sam.be.modules.contract.service.ContractService;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -40,10 +39,13 @@ public class ContractServiceImpl implements ContractService {
     @Override
     @Transactional
     public ContractDraftResponse createAiDraft(UUID roomId, UUID userId) {
-        ChatRoom room = chatRoomRepository.findById(roomId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        ChatRoom room =
+                chatRoomRepository
+                        .findById(roomId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        if (!room.getClient().getId().equals(userId) && !room.getFreelancer().getId().equals(userId)) {
+        if (!room.getClient().getId().equals(userId)
+                && !room.getFreelancer().getId().equals(userId)) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
@@ -58,22 +60,29 @@ public class ContractServiceImpl implements ContractService {
 
         String srsData = job.getTitle() + "\n" + job.getDescription();
 
-        AiContractDraft aiDraft = aiService.generateContractDraft(srsData, job.getBudgetMin(), job.getBudgetMax());
+        AiContractDraft aiDraft =
+                aiService.generateContractDraft(srsData, job.getBudgetMin(), job.getBudgetMax());
 
-        Contract contract = Contract.builder()
-                .job(job)
-                .client(room.getClient())
-                .freelancer(room.getFreelancer())
-                .agreedAmount(aiDraft.getSuggestedPrice() != null ? aiDraft.getSuggestedPrice() : job.getBudgetMax())
-                .revisionLimit(aiDraft.getRevisionLimit() != null ? aiDraft.getRevisionLimit() : 2)
-                .termsAndConditions(aiDraft.getTermsAndConditions())
-                .build();
+        Contract contract =
+                Contract.builder()
+                        .job(job)
+                        .client(room.getClient())
+                        .freelancer(room.getFreelancer())
+                        .agreedAmount(
+                                aiDraft.getSuggestedPrice() != null
+                                        ? aiDraft.getSuggestedPrice()
+                                        : job.getBudgetMax())
+                        .revisionLimit(
+                                aiDraft.getRevisionLimit() != null ? aiDraft.getRevisionLimit() : 2)
+                        .termsAndConditions(aiDraft.getTermsAndConditions())
+                        .build();
 
         contract = contractRepository.save(contract);
 
         SendMessagePayload chatPayload = new SendMessagePayload();
         chatPayload.setSenderId(userId);
-        chatPayload.setContent("Tôi vừa khởi tạo bản nháp Hợp đồng. Chúng ta cùng xem và chốt nhé!");
+        chatPayload.setContent(
+                "Tôi vừa khởi tạo bản nháp Hợp đồng. Chúng ta cùng xem và chốt nhé!");
         ChatMessageDto savedMsg = chatService.saveAndBroadcastMessage(room.getId(), chatPayload);
         messagingTemplate.convertAndSend("/topic/chat/" + room.getId(), savedMsg);
 
@@ -89,11 +98,13 @@ public class ContractServiceImpl implements ContractService {
     @Override
     @Transactional
     public void syncContract(UUID contractId, ContractSyncPayload payload) {
-        Contract contract = contractRepository.findById(contractId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        Contract contract =
+                contractRepository
+                        .findById(contractId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        if (!contract.getClient().getId().equals(payload.getSenderId()) &&
-                !contract.getFreelancer().getId().equals(payload.getSenderId())) {
+        if (!contract.getClient().getId().equals(payload.getSenderId())
+                && !contract.getFreelancer().getId().equals(payload.getSenderId())) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
@@ -106,20 +117,24 @@ public class ContractServiceImpl implements ContractService {
 
         contractRepository.save(contract);
 
-        ContractBroadcastData broadcastData = ContractBroadcastData.builder()
-                .type("SYNC")
-                .agreedAmount(contract.getAgreedAmount())
-                .revisionLimit(contract.getRevisionLimit())
-                .termsAndConditions(contract.getTermsAndConditions())
-                .clientAgreed(contract.getClientAgreed())
-                .freelancerAgreed(contract.getFreelancerAgreed())
-                .contractStatus(contract.getStatus().name())
-                .build();
+        ContractBroadcastData broadcastData =
+                ContractBroadcastData.builder()
+                        .type("SYNC")
+                        .agreedAmount(contract.getAgreedAmount())
+                        .revisionLimit(contract.getRevisionLimit())
+                        .termsAndConditions(contract.getTermsAndConditions())
+                        .clientAgreed(contract.getClientAgreed())
+                        .freelancerAgreed(contract.getFreelancerAgreed())
+                        .contractStatus(contract.getStatus().name())
+                        .build();
 
         messagingTemplate.convertAndSend("/topic/contracts/" + contractId, broadcastData);
 
-        ChatRoom room = chatRoomRepository.findByJobIdAndFreelancerId(contract.getJob().getId(), contract.getFreelancer().getId())
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        ChatRoom room =
+                chatRoomRepository
+                        .findByJobIdAndFreelancerId(
+                                contract.getJob().getId(), contract.getFreelancer().getId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         SendMessagePayload chatPayload = new SendMessagePayload();
         chatPayload.setSenderId(payload.getSenderId());
@@ -131,8 +146,10 @@ public class ContractServiceImpl implements ContractService {
     @Override
     @Transactional
     public void signContract(UUID contractId, ContractSignPayload payload) {
-        Contract contract = contractRepository.findById(contractId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        Contract contract =
+                contractRepository
+                        .findById(contractId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         boolean isClient = contract.getClient().getId().equals(payload.getSenderId());
         boolean isFreelancer = contract.getFreelancer().getId().equals(payload.getSenderId());
@@ -150,7 +167,8 @@ public class ContractServiceImpl implements ContractService {
         String broadcastType = "SIGN";
         String chatMsg = "Tôi đã thay đổi trạng thái chữ ký xác nhận Hợp đồng.";
 
-        if (Boolean.TRUE.equals(contract.getClientAgreed()) && Boolean.TRUE.equals(contract.getFreelancerAgreed())) {
+        if (Boolean.TRUE.equals(contract.getClientAgreed())
+                && Boolean.TRUE.equals(contract.getFreelancerAgreed())) {
             contract.setStatus(com.sam.be.common.constant.enums.ContractStatus.ACTIVE);
 
             Job job = contract.getJob();
@@ -163,20 +181,24 @@ public class ContractServiceImpl implements ContractService {
 
         contractRepository.save(contract);
 
-        ContractBroadcastData broadcastData = ContractBroadcastData.builder()
-                .type(broadcastType)
-                .agreedAmount(contract.getAgreedAmount())
-                .revisionLimit(contract.getRevisionLimit())
-                .termsAndConditions(contract.getTermsAndConditions())
-                .clientAgreed(contract.getClientAgreed())
-                .freelancerAgreed(contract.getFreelancerAgreed())
-                .contractStatus(contract.getStatus().name())
-                .build();
+        ContractBroadcastData broadcastData =
+                ContractBroadcastData.builder()
+                        .type(broadcastType)
+                        .agreedAmount(contract.getAgreedAmount())
+                        .revisionLimit(contract.getRevisionLimit())
+                        .termsAndConditions(contract.getTermsAndConditions())
+                        .clientAgreed(contract.getClientAgreed())
+                        .freelancerAgreed(contract.getFreelancerAgreed())
+                        .contractStatus(contract.getStatus().name())
+                        .build();
 
         messagingTemplate.convertAndSend("/topic/contracts/" + contractId, broadcastData);
 
-        ChatRoom room = chatRoomRepository.findByJobIdAndFreelancerId(contract.getJob().getId(), contract.getFreelancer().getId())
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        ChatRoom room =
+                chatRoomRepository
+                        .findByJobIdAndFreelancerId(
+                                contract.getJob().getId(), contract.getFreelancer().getId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         SendMessagePayload chatPayload = new SendMessagePayload();
         chatPayload.setSenderId(payload.getSenderId());

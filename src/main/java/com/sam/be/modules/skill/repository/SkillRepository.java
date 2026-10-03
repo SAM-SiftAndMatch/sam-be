@@ -10,4 +10,6 @@ public interface SkillRepository extends JpaRepository<Skill, Integer> {
     Optional<Skill> findByNameIgnoreCase(String name);
 
     boolean existsByNameIgnoreCase(String name);
+
+    java.util.List<Skill> findByNameContainingIgnoreCase(String name);
 }

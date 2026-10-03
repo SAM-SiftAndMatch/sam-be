@@ -7,6 +7,8 @@ import com.sam.be.modules.chat.dto.SendMessagePayload;
 import com.sam.be.modules.chat.service.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -16,9 +18,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/chat")
@@ -31,9 +30,12 @@ public class ChatController {
 
     // 1. REST API: FE gọi lúc vừa mở màn hình để load lịch sử
     @GetMapping("/rooms/{roomId}/messages")
-    @Operation(summary = "Get chat history", description = "Retrieve all previous messages for a specific room")
+    @Operation(
+            summary = "Get chat history",
+            description = "Retrieve all previous messages for a specific room")
     public ApiResponse<List<ChatMessageDto>> getChatHistory(@PathVariable UUID roomId) {
-        List<ChatMessageDto> response = chatService.getMessageHistory(roomId, SecurityUtils.getCurrentUserId());
+        List<ChatMessageDto> response =
+                chatService.getMessageHistory(roomId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<ChatMessageDto>>builder().result(response).build();
     }
 

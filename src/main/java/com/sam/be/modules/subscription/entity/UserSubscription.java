@@ -4,10 +4,9 @@ import com.sam.be.common.audit.AbstractAuditEntity;
 import com.sam.be.common.constant.enums.SubscriptionStatus;
 import com.sam.be.modules.user.entity.User;
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.time.LocalDateTime;
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "user_subscriptions")

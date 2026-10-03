@@ -5,11 +5,10 @@ import com.cloudinary.utils.ObjectUtils;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.storage.service.StorageService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -22,11 +21,11 @@ public class CloudinaryStorageServiceImpl implements StorageService {
         try {
             byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
 
-            Map<String, Object> params = ObjectUtils.asMap(
-                    "resource_type", "raw",
-                    "public_id", "srs/" + fileName,
-                    "format", "txt"
-            );
+            Map<String, Object> params =
+                    ObjectUtils.asMap(
+                            "resource_type", "raw",
+                            "public_id", "srs/" + fileName,
+                            "format", "txt");
 
             Map uploadResult = cloudinary.uploader().upload(contentBytes, params);
             return uploadResult.get("secure_url").toString();

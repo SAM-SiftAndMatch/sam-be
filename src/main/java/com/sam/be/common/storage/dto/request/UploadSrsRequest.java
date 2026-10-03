@@ -11,9 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UploadSrsRequest {
-    @NotBlank
-    private String content;
+    @NotBlank private String content;
 
-    @NotBlank
-    private String fileName;
+    @NotBlank private String fileName;
 }

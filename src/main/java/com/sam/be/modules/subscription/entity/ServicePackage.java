@@ -3,10 +3,9 @@ package com.sam.be.modules.subscription.entity;
 import com.sam.be.common.audit.AbstractAuditEntity;
 import com.sam.be.common.constant.enums.PackageType;
 import jakarta.persistence.*;
-import lombok.*;
-
 import java.math.BigDecimal;
 import java.util.UUID;
+import lombok.*;
 
 @Entity
 @Table(name = "service_packages")
