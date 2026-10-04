@@ -315,9 +315,11 @@ Thêm vào `sam-be/.env` + `.env.example` (không hardcode — AIRule §5):
 # VNPay Sandbox Configuration (IPN + tạo URL thanh toán)
 VNPAY_TMN_CODE=your_tmn_code_here
 VNPAY_HASH_SECRET=your_hash_secret_here
-VNPAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+VNPAY_API_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+VNPAY_API_QUERY_URL=https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
 VNPAY_RETURN_URL=http://localhost:5173/client/payment/vnpay-return
 VNPAY_IPN_URL=http://localhost:8080/api/v1/payments/vnpay-ipn
+VNPAY_DEFAULT_CLIENT_IP=127.0.0.1
 ```
 
 > `VNPAY_RETURN_URL` trỏ về FE để hứng redirect sau thanh toán
