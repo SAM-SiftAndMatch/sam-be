@@ -7,6 +7,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component("paymentAccessGuard")
 @RequiredArgsConstructor
@@ -16,6 +17,7 @@ public class PaymentAccessGuard {
     PaymentRepository paymentRepository;
 
     /** Kiểm tra quyền xem giao dịch ký quỹ (Escrow): Phải là một bên trong hợp đồng hoặc Admin. */
+    @Transactional(readOnly = true)
     public boolean canAccess(UUID paymentId) {
         if (paymentId == null) {
             return false;
@@ -54,6 +56,7 @@ public class PaymentAccessGuard {
      * Kiểm tra quyền giải ngân (Release Escrow): Chỉ có Client của hợp đồng hoặc Admin mới được
      * giải ngân.
      */
+    @Transactional(readOnly = true)
     public boolean canRelease(UUID paymentId) {
         if (paymentId == null) {
             return false;
