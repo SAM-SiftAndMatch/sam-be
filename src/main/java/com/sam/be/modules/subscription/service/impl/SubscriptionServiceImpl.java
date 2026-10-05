@@ -206,6 +206,39 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
+    @Transactional
+    public UserSubscriptionResponse confirmPayment(UUID userId, UUID subscriptionId) {
+        UserSubscription subscription =
+                userSubscriptionRepository
+                        .findById(subscriptionId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // Verify ownership
+        if (subscription.getUser() == null || !subscription.getUser().getId().equals(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+
+        // Only activate if still PENDING
+        if (subscription.getStatus() == SubscriptionStatus.PENDING) {
+            subscription.setStatus(SubscriptionStatus.ACTIVE);
+            if (subscription.getServicePackage() != null
+                    && subscription.getServicePackage().getType() != PackageType.PAY_PER_USE) {
+                subscription.setEndDate(LocalDateTime.now().plusDays(30));
+            }
+            subscription = userSubscriptionRepository.save(subscription);
+
+            notificationService.sendSubscriptionNotification(
+                    subscription.getUser().getId(),
+                    subscription.getId(),
+                    "SUBSCRIPTION_ACTIVE",
+                    "Gói " + subscription.getServicePackage().getName() + " đã được kích hoạt.");
+            log.info("Subscription activated by FE confirm: {}", subscription.getId());
+        }
+
+        return toResponse(subscription, null);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<UserSubscriptionResponse> getMine(UUID userId) {
         return userSubscriptionRepository.findByUser_Id(userId).stream()

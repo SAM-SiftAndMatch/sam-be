@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -40,6 +41,16 @@ public class SubscriptionController {
             description = "Server-to-server callback from VNPay, checksum verified, no JWT needed")
     public ResponseEntity<Map<String, String>> vnpayIpn(@RequestParam Map<String, String> params) {
         return ResponseEntity.ok(subscriptionService.handleVnpayIpn(params));
+    }
+
+    @PostMapping("/{id}/confirm-payment")
+    @Operation(
+            summary = "Confirm subscription payment after VNPay redirect",
+            description = "FE calls this after VNPay redirects back with success code to activate pending subscription")
+    public ApiResponse<UserSubscriptionResponse> confirmPayment(@PathVariable String id) {
+        UserSubscriptionResponse response =
+                subscriptionService.confirmPayment(SecurityUtils.getCurrentUserId(), UUID.fromString(id));
+        return ApiResponse.<UserSubscriptionResponse>builder().result(response).build();
     }
 
     @GetMapping("/me")
