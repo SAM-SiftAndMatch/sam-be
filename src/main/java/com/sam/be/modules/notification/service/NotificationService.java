@@ -14,4 +14,7 @@ public interface NotificationService {
             BigDecimal amount,
             String type,
             String message);
+
+    void sendSubscriptionNotification(
+            UUID userId, UUID subscriptionId, String type, String message);
 }
