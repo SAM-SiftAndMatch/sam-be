@@ -47,4 +47,8 @@ public class UserSubscription extends AbstractAuditEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private SubscriptionStatus status;
+
+    // Mã tham chiếu VNPay (vnp_TxnRef) để đối soát IPN.
+    @Column(name = "gateway_txn_ref")
+    private String gatewayTxnRef;
 }

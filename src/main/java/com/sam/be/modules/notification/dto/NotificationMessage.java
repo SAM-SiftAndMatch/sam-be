@@ -16,6 +16,7 @@ public class NotificationMessage {
     private UUID contractId; // Nullable: chỉ dùng cho sự kiện payment
     private UUID paymentId; // Nullable: chỉ dùng cho sự kiện payment
     private BigDecimal amount; // Nullable: chỉ dùng cho sự kiện payment
+    private UUID subscriptionId; // Nullable: chỉ dùng cho sự kiện subscription
     private String message;
     private LocalDateTime timestamp;
 }

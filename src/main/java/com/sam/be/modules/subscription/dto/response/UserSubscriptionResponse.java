@@ -25,4 +25,7 @@ public class UserSubscriptionResponse {
     private LocalDateTime endDate;
 
     private UUID targetProjectId;
+
+    // URL VNPay, chỉ có khi vừa tạo đơn PENDING (FE redirect sang đó).
+    private String vnpayUrl;
 }
