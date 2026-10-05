@@ -12,4 +12,6 @@ import org.springframework.stereotype.Repository;
 public interface UserSubscriptionRepository extends JpaRepository<UserSubscription, UUID> {
     List<UserSubscription> findByServicePackage_NameAndStatusAndEndDateAfter(
             String packageName, SubscriptionStatus status, LocalDateTime date);
+
+    List<UserSubscription> findByUser_Id(UUID userId);
 }
