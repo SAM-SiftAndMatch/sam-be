@@ -93,10 +93,23 @@ public class PaymentServiceImpl implements PaymentService {
         String txnRef = payment.getId().toString().replace("-", "");
         payment.setPaymentGatewayId(txnRef);
 
+        String returnUrl = request.getReturnUrl();
+        if (returnUrl != null && !returnUrl.isBlank()) {
+            if (!vnpayProperties.isReturnUrlAllowed(returnUrl)) {
+                throw new ApiException(ErrorCode.INVALID_RETURN_URL);
+            }
+        } else {
+            returnUrl = vnpayProperties.getDefaultReturnUrl();
+        }
+
         long amountVnd = amount.multiply(BigDecimal.valueOf(100)).longValueExact();
         String vnpayUrl =
                 vnpayClient.buildPaymentUrl(
-                        txnRef, amountVnd, "Thanh toán ký quỹ hợp đồng " + contract.getId(), null);
+                        txnRef,
+                        amountVnd,
+                        "Thanh toán ký quỹ hợp đồng " + contract.getId(),
+                        null,
+                        returnUrl);
 
         log.info(
                 "Created escrow payment {} (installment {}) for contract {}",

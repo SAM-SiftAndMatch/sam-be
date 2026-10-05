@@ -86,6 +86,6 @@ vnpay:
   hash-secret: ${VNPAY_HASH_SECRET}
   api-url: ${VNPAY_API_URL}
   api-query-url: ${VNPAY_API_QUERY_URL}
-  return-url: ${VNPAY_RETURN_URL}
+  allowed-return-urls: ${VNPAY_ALLOWED_RETURN_URLS}
   ipn-url: ${VNPAY_IPN_URL}
   default-client-ip: ${VNPAY_DEFAULT_CLIENT_IP}

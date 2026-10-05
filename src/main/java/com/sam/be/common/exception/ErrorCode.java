@@ -34,6 +34,7 @@ public enum ErrorCode {
             HttpStatus.CONFLICT),
     INVALID_PAYMENT_SIGNATURE(1020, "Invalid payment gateway signature", HttpStatus.BAD_REQUEST),
     PACKAGE_NOT_AVAILABLE(1021, "Service package is not available", HttpStatus.BAD_REQUEST),
+    INVALID_RETURN_URL(1022, "Return URL is not in allowed whitelist", HttpStatus.BAD_REQUEST),
     UNEXPECTED_ERROR(9999, "Internal server error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final int code;
