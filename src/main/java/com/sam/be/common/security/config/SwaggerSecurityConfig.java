@@ -5,7 +5,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.User;
@@ -15,7 +14,7 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Bảo vệ Swagger UI bằng HTTP Basic Authentication. Chỉ được kích hoạt khi biến môi trường
+ * Bảo vệ Swagger UI bằng Form Login Authentication. Chỉ được kích hoạt khi biến môi trường
  * SWAGGER_AUTH_ENABLED=true (thông qua property swagger.auth-enabled). Khi không set hoặc =false
  * (ví dụ local dev), bean này không tồn tại và publicAuthChain trong SecurityConfig sẽ xử lý
  * Swagger URLs với permitAll như bình thường.
@@ -24,7 +23,7 @@ import org.springframework.security.web.SecurityFilterChain;
 @ConditionalOnProperty(name = "swagger.auth-enabled", havingValue = "true")
 public class SwaggerSecurityConfig {
 
-    @Value("${swagger.username}")
+    @Value("${swagger.username:admin}")
     private String swaggerUsername;
 
     @Value("${swagger.password}")
@@ -46,8 +45,8 @@ public class SwaggerSecurityConfig {
     }
 
     /**
-     * SecurityFilterChain ưu tiên cao nhất (@Order(-1)), chỉ match các URL Swagger/OpenAPI. Yêu cầu
-     * HTTP Basic Authentication với user từ swaggerUserDetailsManager.
+     * SecurityFilterChain ưu tiên cao nhất (@Order(-1)), chỉ match các URL Swagger/OpenAPI và login/logout.
+     * Sử dụng giao diện Form Login chuẩn của Spring Security thay vì popup HTTP Basic Auth.
      */
     @Bean
     @Order(-1)
@@ -66,11 +65,25 @@ public class SwaggerSecurityConfig {
                         "/docs",
                         "/docs/**",
                         "/swagger-resources",
-                        "/swagger-resources/**")
+                        "/swagger-resources/**",
+                        "/login",
+                        "/logout")
                 .csrf(AbstractHttpConfigurer::disable)
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .authorizeHttpRequests(
+                        auth ->
+                                auth.requestMatchers("/login", "/logout")
+                                        .permitAll()
+                                        .anyRequest()
+                                        .authenticated())
                 .userDetailsService(swaggerUserDetailsManager)
-                .httpBasic(Customizer.withDefaults());
+                .formLogin(
+                        form ->
+                                form.defaultSuccessUrl("/swagger-ui/index.html", false)
+                                        .permitAll())
+                .logout(
+                        logout ->
+                                logout.logoutSuccessUrl("/login?logout")
+                                        .permitAll());
 
         return http.build();
     }
