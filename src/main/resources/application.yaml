@@ -79,3 +79,13 @@ swagger:
   auth-enabled: ${SWAGGER_AUTH_ENABLED:false}
   username: ${SWAGGER_USERNAME}
   password: ${SWAGGER_PASSWORD}
+
+# VNPay Sandbox Configuration (thanh toán ký quỹ Escrow)
+vnpay:
+  tmn-code: ${VNPAY_TMN_CODE}
+  hash-secret: ${VNPAY_HASH_SECRET}
+  api-url: ${VNPAY_API_URL}
+  api-query-url: ${VNPAY_API_QUERY_URL}
+  allowed-return-urls: ${VNPAY_ALLOWED_RETURN_URLS}
+  ipn-url: ${VNPAY_IPN_URL}
+  default-client-ip: ${VNPAY_DEFAULT_CLIENT_IP}

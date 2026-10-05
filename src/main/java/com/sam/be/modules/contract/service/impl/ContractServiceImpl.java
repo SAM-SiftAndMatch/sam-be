@@ -206,4 +206,12 @@ public class ContractServiceImpl implements ContractService {
         ChatMessageDto savedMsg = chatService.saveAndBroadcastMessage(room.getId(), chatPayload);
         messagingTemplate.convertAndSend("/topic/chat/" + room.getId(), savedMsg);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Contract getContractById(UUID contractId) {
+        return contractRepository
+                .findById(contractId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
 }
