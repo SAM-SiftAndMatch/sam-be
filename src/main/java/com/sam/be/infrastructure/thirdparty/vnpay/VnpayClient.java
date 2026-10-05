@@ -1,5 +1,7 @@
 package com.sam.be.infrastructure.thirdparty.vnpay;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -38,7 +40,7 @@ public class VnpayClient {
         params.put("vnp_Version", "2.1.0");
         params.put("vnp_Command", "pay");
         params.put("vnp_TmnCode", properties.getTmnCode());
-        params.put("vnp_Amount", String.valueOf(amountVnd * 100));
+        params.put("vnp_Amount", String.valueOf(amountVnd));  // amountVnd already multiplied by 100 in service layer
         params.put("vnp_CurrCode", "VND");
         params.put("vnp_TxnRef", txnRef);
         params.put("vnp_OrderInfo", orderInfo);
@@ -60,6 +62,13 @@ public class VnpayClient {
 
         String query = signer.buildHashData(params);
         String secureHash = signer.sign(params, properties.getHashSecret());
-        return properties.getApiUrl() + "?" + query + "&vnp_SecureHash=" + secureHash;
+        String paymentUrl = properties.getApiUrl() + "?" + query + "&vnp_SecureHash=" + secureHash;
+
+        // Add NotifyUrl after signature to avoid breaking hash validation
+        if (properties.getIpnUrl() != null && !properties.getIpnUrl().isBlank()) {
+            paymentUrl += "&vnp_NotifyUrl=" + URLEncoder.encode(properties.getIpnUrl(), StandardCharsets.UTF_8);
+        }
+
+        return paymentUrl;
     }
 }

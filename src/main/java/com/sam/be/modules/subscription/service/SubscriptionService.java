@@ -11,5 +11,7 @@ public interface SubscriptionService {
 
     Map<String, String> handleVnpayIpn(Map<String, String> params);
 
+    UserSubscriptionResponse confirmPayment(UUID userId, UUID subscriptionId);
+
     List<UserSubscriptionResponse> getMine(UUID userId);
 }
