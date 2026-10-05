@@ -28,6 +28,11 @@ public class VnpayClient {
      */
     public String buildPaymentUrl(
             String txnRef, long amountVnd, String orderInfo, String clientIp) {
+        return buildPaymentUrl(txnRef, amountVnd, orderInfo, clientIp, null);
+    }
+
+    public String buildPaymentUrl(
+            String txnRef, long amountVnd, String orderInfo, String clientIp, String returnUrl) {
         LocalDateTime now = LocalDateTime.now(VNPAY_ZONE);
         Map<String, String> params = new HashMap<>();
         params.put("vnp_Version", "2.1.0");
@@ -39,7 +44,12 @@ public class VnpayClient {
         params.put("vnp_OrderInfo", orderInfo);
         params.put("vnp_OrderType", "other");
         params.put("vnp_Locale", "vn");
-        params.put("vnp_ReturnUrl", properties.getReturnUrl());
+
+        String effectiveReturnUrl =
+                (returnUrl != null && !returnUrl.isBlank())
+                        ? returnUrl.trim()
+                        : properties.getDefaultReturnUrl();
+        params.put("vnp_ReturnUrl", effectiveReturnUrl);
         params.put(
                 "vnp_IpAddr",
                 clientIp != null && !clientIp.isBlank()

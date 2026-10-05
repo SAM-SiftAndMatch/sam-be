@@ -13,4 +13,6 @@ public class CreateEscrowRequest {
 
     @NotNull(message = "Contract id is required")
     private UUID contractId;
+
+    private String returnUrl;
 }

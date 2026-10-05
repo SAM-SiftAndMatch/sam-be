@@ -14,4 +14,6 @@ public class PurchaseSubscriptionRequest {
 
     // Bắt buộc với gói lẻ PAY_PER_USE (project áp dụng), bỏ trống với gói tháng.
     private UUID projectId;
+
+    private String returnUrl;
 }

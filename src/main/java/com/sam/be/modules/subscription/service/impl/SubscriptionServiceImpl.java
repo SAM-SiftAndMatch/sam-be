@@ -120,12 +120,21 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         String txnRef = subscription.getId().toString().replace("-", "");
         subscription.setGatewayTxnRef(txnRef);
 
+        String returnUrl = request.getReturnUrl();
+        if (returnUrl != null && !returnUrl.isBlank()) {
+            if (!vnpayProperties.isReturnUrlAllowed(returnUrl)) {
+                throw new ApiException(ErrorCode.INVALID_RETURN_URL);
+            }
+        } else {
+            returnUrl = vnpayProperties.getDefaultReturnUrl();
+        }
+
         BigDecimal price =
                 servicePackage.getPrice() != null ? servicePackage.getPrice() : BigDecimal.ZERO;
         long amountVnd = price.multiply(BigDecimal.valueOf(100)).longValueExact();
         String vnpayUrl =
                 vnpayClient.buildPaymentUrl(
-                        txnRef, amountVnd, "Mua gói " + servicePackage.getName(), null);
+                        txnRef, amountVnd, "Mua gói " + servicePackage.getName(), null, returnUrl);
 
         log.info(
                 "User {} created PENDING subscription {} (package {})",

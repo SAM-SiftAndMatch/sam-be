@@ -324,14 +324,13 @@ VNPAY_TMN_CODE=your_tmn_code_here
 VNPAY_HASH_SECRET=your_hash_secret_here
 VNPAY_API_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
 VNPAY_API_QUERY_URL=https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
-VNPAY_RETURN_URL=http://localhost:5173/client/payment/vnpay-return
+VNPAY_ALLOWED_RETURN_URLS=http://localhost:5173/client/payment/vnpay-return,https://sam-main.vercel.app/client/payment/vnpay-return,https://sam-develop.vercel.app/client/payment/vnpay-return
 VNPAY_IPN_URL=http://localhost:8080/api/v1/payments/vnpay-ipn
 VNPAY_DEFAULT_CLIENT_IP=127.0.0.1
 ```
 
-> `VNPAY_RETURN_URL` trỏ về FE để hứng redirect sau thanh toán
-> (FE đọc query, sau đó chờ WS chứ không tự kết luận thành công — chống giả mạo kết quả ở client).
-> Khi lên production chỉ đổi giá trị env, không sửa code.
+> `VNPAY_ALLOWED_RETURN_URLS` là danh sách các URL Frontend được phép nhận redirect sau thanh toán (phân cách bằng dấu phẩy).
+> FE có thể chủ động truyền `returnUrl` trong Request Body khi tạo thanh toán; BE sẽ validate theo whitelist này để hỗ trợ nhiều môi trường (local, develop, main). Nếu FE không truyền, BE sẽ dùng URL đầu tiên làm mặc định.
 
 ---
 
