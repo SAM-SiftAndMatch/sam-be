@@ -3,6 +3,7 @@ package com.sam.be.modules.contract.service;
 import com.sam.be.modules.contract.dto.request.ContractSignPayload;
 import com.sam.be.modules.contract.dto.request.ContractSyncPayload;
 import com.sam.be.modules.contract.dto.response.ContractDraftResponse;
+import com.sam.be.modules.contract.entity.Contract;
 import java.util.UUID;
 
 public interface ContractService {
@@ -11,4 +12,6 @@ public interface ContractService {
     void syncContract(UUID contractId, ContractSyncPayload payload);
 
     void signContract(UUID contractId, ContractSignPayload payload);
+
+    Contract getContractById(UUID contractId);
 }

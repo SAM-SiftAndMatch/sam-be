@@ -78,6 +78,8 @@ public class SecurityConfig {
                         "/api/v1/internal/healthz",
                         "/api/v1/skills",
                         "/api/v1/skills/**",
+                        "/api/v1/payments/vnpay-ipn",
+                        "/api/v1/subscriptions/vnpay-ipn",
                         "/actuator/**",
                         "/v3/api-docs",
                         "/v3/api-docs/**",

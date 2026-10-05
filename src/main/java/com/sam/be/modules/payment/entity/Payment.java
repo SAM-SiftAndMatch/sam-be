@@ -28,6 +28,10 @@ public class Payment {
     @Column(nullable = false)
     private BigDecimal amount;
 
+    @Column(name = "installment_no", nullable = false)
+    @Builder.Default
+    private Integer installmentNo = 1;
+
     @Column(nullable = false)
     @Builder.Default
     private String currency = "VND";

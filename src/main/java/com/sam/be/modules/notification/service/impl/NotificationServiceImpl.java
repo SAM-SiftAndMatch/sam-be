@@ -39,4 +39,47 @@ public class NotificationServiceImpl implements NotificationService {
 
         log.info("🔔 [WEBSOCKET] Đã đẩy Noti tới kênh: {}", destination);
     }
+
+    @Override
+    public void sendPaymentNotification(
+            UUID userId,
+            UUID contractId,
+            UUID paymentId,
+            BigDecimal amount,
+            String type,
+            String message) {
+        NotificationMessage payload =
+                NotificationMessage.builder()
+                        .type(type)
+                        .contractId(contractId)
+                        .paymentId(paymentId)
+                        .amount(amount)
+                        .message(message)
+                        .timestamp(LocalDateTime.now())
+                        .build();
+
+        String destination = "/topic/users/" + userId + "/notifications";
+
+        messagingTemplate.convertAndSend(destination, payload);
+
+        log.info("🔔 [WEBSOCKET] Đã đẩy Noti thanh toán ({}) tới kênh: {}", type, destination);
+    }
+
+    @Override
+    public void sendSubscriptionNotification(
+            UUID userId, UUID subscriptionId, String type, String message) {
+        NotificationMessage payload =
+                NotificationMessage.builder()
+                        .type(type)
+                        .subscriptionId(subscriptionId)
+                        .message(message)
+                        .timestamp(LocalDateTime.now())
+                        .build();
+
+        String destination = "/topic/users/" + userId + "/notifications";
+
+        messagingTemplate.convertAndSend(destination, payload);
+
+        log.info("🔔 [WEBSOCKET] Đã đẩy Noti gói dịch vụ ({}) tới kênh: {}", type, destination);
+    }
 }
