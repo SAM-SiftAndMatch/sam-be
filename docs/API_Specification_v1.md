@@ -186,7 +186,7 @@ Cuộc hội thoại **đơn lượt (Stateless)**. Mỗi request phải gửi k
     "questions":     [],
     "srsContent":    "Tài liệu SRS đã được AI điều chỉnh...",
     "currentSrsUrl": "https://res.cloudinary.com/.../srs-ten-du-an.txt",
-    "riskLevel":     "HIGH_RISK"    // LOW_RISK | MEDIUM_RISK | HIGH_RISK
+    "riskLevel":     "HIGH"    // LOW | MEDIUM | HIGH
   }
 }
 ```

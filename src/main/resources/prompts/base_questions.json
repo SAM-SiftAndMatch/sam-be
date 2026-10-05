@@ -17,7 +17,7 @@
     "type": "TEXT",
     "questionText": "Có website, ứng dụng nào đang hoạt động trên thị trường mà bạn thấy có ý tưởng gần giống nhất với mong muốn của bạn không?",
     "options": [],
-    "allowCustomInput": false,
+    "allowCustomInput": true,
     "hint": "Cung cấp link hoặc tên (VD: Giống Shopee, Uber). Nêu rõ bạn thích điểm gì nhất ở trang đó."
   },
   {
@@ -38,7 +38,7 @@
     "type": "TEXT",
     "questionText": "Hãy mô tả một chu trình quan trọng nhất diễn ra từ đầu đến cuối trên web của bạn?",
     "options": [],
-    "allowCustomInput": false,
+    "allowCustomInput": true,
     "hint": "VD: Khách tìm thợ -> Xem hồ sơ -> Đặt lịch -> Thanh toán cọc -> Gửi email xác nhận."
   },
   {

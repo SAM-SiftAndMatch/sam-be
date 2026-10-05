@@ -106,7 +106,7 @@ public class AiServiceImpl implements AiService {
         String aiResponseJson = geminiClient.generateContent(baSystemPrompt, history);
         history.add(createMessage("model", aiResponseJson));
         saveHistory(redisKey, history);
-        return parseAndUploadSrs(request.getSessionId(), aiResponseJson);
+        return parseAndUploadSrs(request.getSessionId(), aiResponseJson, true);
     }
 
     @Override
@@ -121,7 +121,7 @@ public class AiServiceImpl implements AiService {
         List<Map<String, Object>> singleTurnHistory = new ArrayList<>();
         singleTurnHistory.add(createMessage("user", userPrompt));
         String aiResponseJson = geminiClient.generateContent(riskSystemPrompt, singleTurnHistory);
-        return parseAndUploadSrs(request.getSessionId(), aiResponseJson);
+        return parseAndUploadSrs(request.getSessionId(), aiResponseJson, false);
     }
 
     @Override
@@ -210,7 +210,8 @@ public class AiServiceImpl implements AiService {
         return cleaned.trim();
     }
 
-    private AiChatResponse parseAndUploadSrs(String sessionId, String aiResponseJson) {
+    private AiChatResponse parseAndUploadSrs(
+            String sessionId, String aiResponseJson, boolean requireCompletedStatus) {
         try {
             ObjectMapper permissiveMapper =
                     objectMapper
@@ -221,6 +222,15 @@ public class AiServiceImpl implements AiService {
 
             String cleaned = cleanJson(aiResponseJson);
             AiChatResponse response = permissiveMapper.readValue(cleaned, AiChatResponse.class);
+
+            boolean isCompleted = "COMPLETED".equalsIgnoreCase(response.getStatus());
+            if (requireCompletedStatus && !isCompleted) {
+                // Guard against the model emitting an SRS before completing the mandatory interview.
+                response.setSrsContent(null);
+                response.setCurrentSrsUrl(null);
+                response.setRiskLevel(null);
+                return response;
+            }
 
             if (response.getSrsContent() != null && !response.getSrsContent().trim().isEmpty()) {
                 String fileName = "srs-" + sessionId + "-" + System.currentTimeMillis();
