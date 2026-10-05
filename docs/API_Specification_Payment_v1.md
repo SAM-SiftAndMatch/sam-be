@@ -52,10 +52,12 @@ CHỐNG TRÙNG: mỗi contract tại một thời điểm chỉ có tối đa 1 
   ở trạng thái PENDING hoặc HELD_IN_ESCROW. Tạo mới khi còn payment dở dang
   → lỗi ESCROW_PAYMENT_EXISTS (đề xuất 1019).
 
-LUỒNG MUA GÓI (Q1.3):
-  User POST API-SB-01 {packageId} (gói seed sẵn từ V4: 59k Ghim, 99k Tuyển gấp,
-  59k Trọng tài Code, 249k BUSINESS, 149k PRO DEV)
-    → tạo UserSubscription(status = ACTIVE, có startDate & endDate)
+LUỒNG MUA GÓI (Q1.3 + business chốt 05/10/2026):
+  User POST API-SB-01 {packageId, projectId?} (6 gói: 59k Ghim, 99k Tuyển gấp,
+  59k Trọng tài Code, 249k BUSINESS, 149k PRO DEV, 299k AI QA Nâng cao)
+    → gói lẻ: bắt buộc projectId của chính caller, endDate = NULL (theo vòng đời project)
+    → gói tháng: endDate = startDate + 30 ngày, không gắn project
+    → UserSubscription(status = ACTIVE)
     → AI Headhunter quét PRO DEV còn hạn để ưu tiên Freelancer (xem API-JB v1).
 ```
 
@@ -192,39 +194,43 @@ Role: CLIENT hoặc FREELANCER (BE tự trích userId — FE không gửi)
 ```
 
 **Validation (bắt buộc):**
-- `packageId`: không null, gói phải tồn tại và `isActive = true` (không → `PACKAGE_NOT_AVAILABLE`, đề xuất 1021).
+- `packageId`: không null, gói phải tồn tại và `isActive = true` (không → `PACKAGE_NOT_AVAILABLE` 1021).
+- Gói `PAY_PER_USE` (Ghim 59k, Tuyển gấp 99k, Trọng tài Code 59k): `projectId` bắt buộc
+  (thiếu → `VALIDATION_ERROR` 1001); project phải tồn tại (không → `RESOURCE_NOT_FOUND` 1007)
+  và thuộc về caller; chỉ role `CLIENT` được mua (Freelancer → `FORBIDDEN_ACTION` 1003).
+- Gói `SUBSCRIPTION`: không dùng `projectId` (gửi kèm sẽ bị bỏ qua).
 
-**Request Body (Q1.3):**
+**Request Body (Q1.3 + business chốt 05/10/2026):**
 ```json
 {
-  "packageId": "f0000000-0000-0000-0000-000000000006"
+  "packageId": "f0000000-0000-0000-0000-000000000006",
+  "projectId": "uuid-job-id // BẮT BUỘC với PAY_PER_USE, bỏ trống với SUBSCRIPTION"
 }
 ```
 
-**Response Body (Q1.3 — đủ 5 trường để FE hiển thị hạn dùng):**
+**Response Body (5 trường Q1.3 + `targetProjectId`):**
 ```json
 {
   "code": 1000,
   "result": {
-    "id":        "uuid-subscription-id",
-    "packageId": "f0000000-0000-0000-0000-000000000006",
-    "status":    "ACTIVE",
-    "startDate": "2026-10-04T10:00:00",
-    "endDate":   "2026-11-04T10:00:00"
+    "id":              "uuid-subscription-id",
+    "packageId":       "f0000000-0000-0000-0000-000000000006",
+    "status":          "ACTIVE",
+    "startDate":       "2026-10-04T10:00:00",
+    "endDate":         "2026-11-04T10:00:00",
+    "targetProjectId": null
   }
 }
 ```
 
-**Quy tắc tính `endDate` (BE thực hiện):**
-- `SUBSCRIPTION` (BUSINESS 249k, PRO DEV 149k — thuê bao tháng): `endDate = startDate + 1 tháng`.
-- `PAY_PER_USE` (Ghim 59k, Tuyển gấp 99k, Trọng tài Code 59k — dùng 1 lần):
-  ⚠️ **Chưa chốt cách tính `endDate`** (cột DB `nullable = false`, bắt buộc phải có giá trị).
-  Đề xuất cho commit 7: `endDate = startDate + 30 ngày` (hạn dùng 1 lần trong 30 ngày).
-  Nếu user muốn khác (VD: dùng xong hết ngay), báo trước khi làm commit 7.
+**Quy tắc `endDate` / `targetProjectId` (BE thực hiện, đã chốt):**
+- `SUBSCRIPTION` (BUSINESS 249k, PRO DEV 149k, AI QA Nâng cao 299k — thuê bao tháng):
+  `endDate = startDate + 30 ngày`, `targetProjectId = null`.
+- `PAY_PER_USE` (Ghim 59k, Tuyển gấp 99k, Trọng tài Code 59k — đúng 1 project):
+  `endDate = null` (sống theo vòng đời project, không hạn ngày),
+  `targetProjectId = projectId` đã mua.
 
-> Giá giữ nguyên các mốc `SYSTEM_SPECIFICATION §II.3` (Q1.3).
-> Lưu ý: seed `V4` hiện có 5 gói, **thiếu gói 299k AI QA nâng cao/tháng** trong SYSTEM_SPEC —
-> commit 7 chỉ seed bổ sung nếu user xác nhận (xem `PLAN_FE_BE_Integration.md` mục VIII, commit 7).
+> 6 gói trong DB (5 gói seed `V4` + 299k seed `V12`). Giá giữ nguyên `SYSTEM_SPECIFICATION §II.3` (Q1.3).
 
 ---
 
@@ -238,7 +244,8 @@ Role: CLIENT hoặc FREELANCER (BE tự trích userId)
 Trả về danh sách subscription của user (FE dùng để hiển thị badge PRO/hạn gói;
 BE dùng để AI Headhunter lọc PRO DEV còn `ACTIVE`).
 
-**Response Body:** mảng object cùng cấu trúc `API-SB-01` (`id/packageId/status/startDate/endDate`).
+**Response Body:** mảng object cùng cấu trúc `API-SB-01`
+(`id/packageId/status/startDate/endDate/targetProjectId`).
 
 ---
 
@@ -334,15 +341,18 @@ VNPAY_DEFAULT_CLIENT_IP=127.0.0.1
 - Mới: `modules/payment/controller/PaymentController.java` (PM-01/03/04 + IPN PM-02),
   `dto/request/CreateEscrowRequest.java` (chỉ `contractId`), `dto/response/` (Payment + redirect),
   `service/PaymentService.java` + `impl`, `infrastructure/thirdparty/vnpay/` (`VnpaySigner` HMAC-SHA512, `VnpayClient` dựng URL),
-  migration **`V10__Create_Payments_And_Vnpay_Fields.sql`** (không sửa V1–V9), 4 mã lỗi mới vào `ErrorCode.java`,
+  migration **`V11__Create_Payments_Escrow_Fields.sql`** (V10 cũ đã tồn tại trong DB nên dùng V11; không sửa V1–V9),
+  4 mã lỗi mới vào `ErrorCode.java` (1018→1021),
   `NotificationService.sendPaymentNotification(...)` (mở rộng `NotificationMessage` thêm 3 field nullable).
 - Sửa: `.env.example` + `application.yaml` (khai báo `VNPAY_*`).
 - Verify: `make fmt`, `./mvnw -B clean test` (cần Postgres+Redis live), Swagger test sandbox.
 
-**Commit 7 — `feat(subscription)`:**
-- Mới: `modules/subscription/controller/SubscriptionController.java` (SB-01/02), `dto/`, `service/` + impl,
-  migration `V11__Seed_299k_AI_QA_Package.sql` (**chỉ khi user xác nhận** gói 299k).
-- Verify: `make fmt`, `./mvnw -B clean test`.
+**Commit 7 — `feat(subscription)` (đã xong commit `e9ece35`):**
+- Mới: `modules/subscription/controller/SubscriptionController.java` (SB-01/02), `dto/`,
+  `service/` + impl, `repository/ServicePackageRepository.java`,
+  migration `V12__Subscription_PayPerUse_And_299k.sql`
+  (`end_date` nullable + `target_project_id → jobs(id)` + seed 299k).
+- Verify: `make fmt`, `./mvnw -B clean test`, test live purchase/me 13/13 pass.
 
 ---
 
