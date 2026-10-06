@@ -39,6 +39,9 @@ public class Job extends AbstractAuditEntity {
     @Column(name = "budget_max")
     private BigDecimal budgetMax;
 
+    @Column(name = "estimated_duration_months", precision = 4, scale = 1)
+    private BigDecimal estimatedDurationMonths;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
@@ -48,6 +51,10 @@ public class Job extends AbstractAuditEntity {
 
     @Column(name = "srs_document_url", length = 500)
     private String srsDocumentUrl;
+
+    /** Nội dung SRS Markdown đầy đủ — render đẹp trong app thay vì mở link cloud raw */
+    @Column(name = "srs_content", columnDefinition = "TEXT")
+    private String srsContent;
 
     @Column(name = "risk_level", length = 20)
     private String riskLevel;

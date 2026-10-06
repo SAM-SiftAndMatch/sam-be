@@ -1,10 +1,8 @@
 package com.sam.be.modules.job.dto.request;
 
-import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,9 +22,12 @@ public class JobCreateRequest {
 
     @NotNull private BigDecimal budgetMax;
 
-    @NotNull @Future private LocalDateTime deadline;
+    @NotNull private BigDecimal estimatedDurationMonths;
 
     @NotBlank private String srsDocumentUrl;
+
+    /** Nội dung SRS Markdown (lưu vào DB để render đẹp trong app) */
+    private String srsContent;
 
     private Boolean isFeatured;
 
