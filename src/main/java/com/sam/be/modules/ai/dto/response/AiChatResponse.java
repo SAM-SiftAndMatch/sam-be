@@ -1,5 +1,6 @@
 package com.sam.be.modules.ai.dto.response;
 
+import java.math.BigDecimal;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,4 +18,8 @@ public class AiChatResponse {
     private String srsContent;
     private String currentSrsUrl;
     private String riskLevel;
+    
+    // Exact values for job creation (populated when status = COMPLETED)
+    private BigDecimal exactBudgetVnd;
+    private BigDecimal durationMonths;
 }

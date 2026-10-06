@@ -24,8 +24,10 @@ public class JobResponse {
     private BigDecimal budgetMin;
     private BigDecimal budgetMax;
     private JobStatus status;
+    private BigDecimal estimatedDurationMonths;
     private LocalDateTime deadline;
     private String srsDocumentUrl;
+    private String srsContent;
     private String riskLevel;
     private Boolean isFeatured;
     private Boolean isUrgentHiring;

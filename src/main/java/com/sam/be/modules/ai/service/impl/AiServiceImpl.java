@@ -111,15 +111,29 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public AiChatResponse chatWithAiRisk(AiChatRequest request) {
-        String userPrompt =
+        StringBuilder userPrompt = new StringBuilder();
+
+        // Nếu có lịch sử hội thoại thì đưa vào để AI nhớ các option đã đề xuất
+        if (request.getChatHistory() != null && !request.getChatHistory().isEmpty()) {
+            userPrompt.append("LỊCH SỬ ĐÀM PHÁN TRƯỚC ĐÓ (Quan trọng: phải bám sát các option đã đề xuất):\n");
+            for (Map<String, String> msg : request.getChatHistory()) {
+                String role = msg.getOrDefault("role", "user");
+                String content = msg.getOrDefault("content", "");
+                userPrompt.append(role).append(": ").append(content).append("\n");
+            }
+            userPrompt.append("\n");
+        }
+
+        userPrompt.append(
                 String.format(
-                        "TÀI LIỆU SRS HIỆN TẠI TỪ KHÁCH HÀNG:\n%s\n\nYÊU CẦU CỦA KHÁCH HÀNG: %s",
+                        "TÀI LIỆU SRS HIỆN TẠI TỪ KHÁCH HÀNG:\n%s\n\nYÊU CẦU MỚI CỦA KHÁCH HÀNG: %s",
                         request.getCurrentSrsContent() != null
                                 ? request.getCurrentSrsContent()
                                 : "(Chưa có)",
-                        request.getUserMessage());
+                        request.getUserMessage()));
+
         List<Map<String, Object>> singleTurnHistory = new ArrayList<>();
-        singleTurnHistory.add(createMessage("user", userPrompt));
+        singleTurnHistory.add(createMessage("user", userPrompt.toString()));
         String aiResponseJson = geminiClient.generateContent(riskSystemPrompt, singleTurnHistory);
         return parseAndUploadSrs(request.getSessionId(), aiResponseJson, false);
     }
