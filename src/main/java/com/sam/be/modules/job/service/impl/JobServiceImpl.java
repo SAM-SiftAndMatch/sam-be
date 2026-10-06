@@ -102,8 +102,9 @@ public class JobServiceImpl implements JobService {
                         .description(request.getDescription())
                         .budgetMin(request.getBudgetMin())
                         .budgetMax(request.getBudgetMax())
-                        .deadline(request.getDeadline())
+                        .estimatedDurationMonths(request.getEstimatedDurationMonths())
                         .srsDocumentUrl(request.getSrsDocumentUrl())
+                        .srsContent(request.getSrsContent())
                         .isFeatured(
                                 request.getIsFeatured() != null ? request.getIsFeatured() : false)
                         .isUrgentHiring(
@@ -325,6 +326,8 @@ public class JobServiceImpl implements JobService {
                                                 SkillResponse.builder()
                                                         .id(jobSkill.getSkill().getId())
                                                         .name(jobSkill.getSkill().getName())
+                                                        .yearsOfExperience(
+                                                                jobSkill.getRequiredYearsOfExperience())
                                                         .build())
                                 .collect(Collectors.toList());
 
@@ -337,8 +340,10 @@ public class JobServiceImpl implements JobService {
                 .budgetMin(job.getBudgetMin())
                 .budgetMax(job.getBudgetMax())
                 .status(job.getStatus())
+                .estimatedDurationMonths(job.getEstimatedDurationMonths())
                 .deadline(job.getDeadline())
                 .srsDocumentUrl(job.getSrsDocumentUrl())
+                .srsContent(job.getSrsContent())
                 .riskLevel(job.getRiskLevel())
                 .isFeatured(job.getIsFeatured())
                 .isUrgentHiring(job.getIsUrgentHiring())
