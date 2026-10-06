@@ -237,6 +237,19 @@ public class AiServiceImpl implements AiService {
             String cleaned = cleanJson(aiResponseJson);
             AiChatResponse response = permissiveMapper.readValue(cleaned, AiChatResponse.class);
 
+            if (response.getSrsContent() != null) {
+                // Gemini đôi khi trả về hai ký tự literal "\\n" thay vì newline thật.
+                // Chuẩn hóa trước khi lưu/upload để Markdown giữ đúng đoạn, heading và list.
+                String normalizedSrs =
+                        response.getSrsContent()
+                                .replace("\\\\r\\\\n", "\n")
+                                .replace("\\\\n", "\n")
+                                .replace("\\\\r", "\n")
+                                .replace("\\r\\n", "\n")
+                                .replace("\\n", "\n");
+                response.setSrsContent(normalizedSrs);
+            }
+
             boolean isCompleted = "COMPLETED".equalsIgnoreCase(response.getStatus());
             if (requireCompletedStatus && !isCompleted) {
                 // Guard against the model emitting an SRS before completing the mandatory interview.
