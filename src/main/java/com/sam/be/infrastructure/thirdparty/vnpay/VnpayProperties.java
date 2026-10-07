@@ -26,7 +26,7 @@ public class VnpayProperties {
 
     public String getDefaultReturnUrl() {
         return (allowedReturnUrls != null && !allowedReturnUrls.isEmpty())
-                ? allowedReturnUrls.get(0)
+                ? allowedReturnUrls.get(0).trim()
                 : null;
     }
 
@@ -34,7 +34,11 @@ public class VnpayProperties {
         if (url == null || url.isBlank() || allowedReturnUrls == null) {
             return false;
         }
-        return allowedReturnUrls.contains(url.trim());
+        String target = url.trim();
+        return allowedReturnUrls.stream()
+                .filter(u -> u != null && !u.isBlank())
+                .map(String::trim)
+                .anyMatch(target::equalsIgnoreCase);
     }
 
     private String defaultClientIp;

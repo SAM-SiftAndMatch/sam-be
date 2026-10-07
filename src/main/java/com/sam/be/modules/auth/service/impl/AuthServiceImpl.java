@@ -21,6 +21,7 @@ import com.sam.be.modules.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -113,6 +114,15 @@ public class AuthServiceImpl implements AuthService {
         // ⚠️ RFC 6819 Token Reuse Detection: Phát hiện token đã bị thu hồi trước đó nhưng lại được
         // dùng lại
         if (Boolean.TRUE.equals(oldSession.getIsRevoked())) {
+            Optional<AuthResponse> graceResponse =
+                    sessionCacheService.getGraceResponse(oldSession.getId());
+            if (graceResponse.isPresent()) {
+                log.info(
+                        "Token rotation race condition detected for sessionId={} within grace period. Returning cached response.",
+                        oldSession.getId());
+                return graceResponse.get();
+            }
+
             User user = oldSession.getUser();
             log.error(
                     "SECURITY ALERT: Compromised token reuse detected for userId={}! Revoking ALL sessions.",
@@ -149,7 +159,12 @@ public class AuthServiceImpl implements AuthService {
         sessionCacheService.clearAuthz(oldSession.getId());
 
         // 2. Tạo session mới
-        return createSessionAndGenerateTokens(user, httpRequest);
+        AuthResponse response = createSessionAndGenerateTokens(user, httpRequest);
+
+        // 3. Lưu response vào Grace Period (15 giây) để xử lý các request retry hoặc song song do network/page reload
+        sessionCacheService.putGraceResponse(oldSession.getId(), response, Duration.ofSeconds(15));
+
+        return response;
     }
 
     @Override

@@ -9,6 +9,7 @@ public final class RedisKeys {
     private static final String PREFIX_SESSION_ACTIVE = "session:active:";
     private static final String PREFIX_SESSION_REVOKED = "session:revoked:";
     private static final String PREFIX_SESSION_AUTHZ = "session:authz:";
+    private static final String PREFIX_SESSION_GRACE = "session:grace:";
 
     private static final String PREFIX_RATE_LIMIT_USER = "ratelimit:user:";
     private static final String PREFIX_RATE_LIMIT_IP = "ratelimit:ip:";
@@ -24,6 +25,10 @@ public final class RedisKeys {
 
     public static String sessionAuthz(UUID sessionId) {
         return PREFIX_SESSION_AUTHZ + sessionId;
+    }
+
+    public static String sessionGrace(UUID sessionId) {
+        return PREFIX_SESSION_GRACE + sessionId;
     }
 
     public static String rateLimitUser(String action, UUID userId) {
