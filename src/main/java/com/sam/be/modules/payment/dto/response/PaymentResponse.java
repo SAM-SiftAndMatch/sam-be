@@ -21,6 +21,8 @@ public class PaymentResponse {
 
     private String installment;
 
+    private com.sam.be.common.constant.enums.PaymentType paymentType;
+
     private BigDecimal amount;
 
     private String currency;

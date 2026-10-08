@@ -6,6 +6,5 @@ import lombok.Data;
 @Data
 public class AiContractDraft {
     private BigDecimal suggestedPrice;
-    private Integer revisionLimit;
     private String termsAndConditions;
 }

@@ -19,4 +19,10 @@ public class NotificationMessage {
     private UUID subscriptionId; // Nullable: chỉ dùng cho sự kiện subscription
     private String message;
     private LocalDateTime timestamp;
+    // 1-touch flow: để FE bấm vào là nhảy đúng job + đúng recommendation
+    private UUID recommendationId;
+    private UUID roomId;
+    private String actorName;
+    // Luồng proposal phổ thông: FE bấm vào mở đúng hồ sơ
+    private UUID proposalId;
 }

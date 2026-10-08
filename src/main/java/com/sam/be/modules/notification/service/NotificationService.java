@@ -7,6 +7,9 @@ public interface NotificationService {
     void sendInviteNotification(
             UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore);
 
+    void sendInviteNotification(
+            UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore, UUID recommendationId);
+
     void sendPaymentNotification(
             UUID userId,
             UUID contractId,
@@ -17,4 +20,19 @@ public interface NotificationService {
 
     void sendSubscriptionNotification(
             UUID userId, UUID subscriptionId, String type, String message);
+
+    void sendDevClaimNotification(
+            UUID clientId, UUID jobId, String jobTitle, UUID recommendationId, String devName);
+
+    void sendChatOpenedNotification(
+            UUID userId, UUID jobId, String jobTitle, UUID recommendationId, UUID roomId);
+
+    // Luồng proposal phổ thông: client nhận hồ sơ mới, dev nhận lời mời, client nhận phản hồi
+    void sendProposalNotification(
+            UUID userId,
+            UUID jobId,
+            String jobTitle,
+            UUID proposalId,
+            String type,
+            String message);
 }

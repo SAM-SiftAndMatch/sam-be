@@ -27,4 +27,10 @@ public class ContractWsController {
             @DestinationVariable UUID contractId, @Payload ContractSignPayload payload) {
         contractService.signContract(contractId, payload);
     }
+
+    @MessageMapping("/contracts/{contractId}/confirm")
+    public void confirmKeepContract(
+            @DestinationVariable UUID contractId, @Payload ContractSignPayload payload) {
+        contractService.confirmKeepContract(contractId, payload);
+    }
 }

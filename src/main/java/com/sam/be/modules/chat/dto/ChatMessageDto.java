@@ -14,4 +14,5 @@ public class ChatMessageDto {
     private String senderName;
     private String content;
     private LocalDateTime createdAt;
+    private Boolean system;
 }

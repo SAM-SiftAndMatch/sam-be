@@ -4,5 +4,7 @@ public enum PaymentStatus {
     PENDING,
     HELD_IN_ESCROW,
     RELEASED,
-    REFUNDED
+    REFUNDED,
+    // Đơn dở bị thay bằng đơn mới (VNPay không cho dùng lại mã cũ)
+    EXPIRED
 }

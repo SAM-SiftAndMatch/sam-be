@@ -16,7 +16,12 @@ public interface JobService {
 
     List<JobResponse> getJobsByClientId(UUID clientId);
 
+    /** Lấy tất cả OPEN jobs, sắp xếp mới nhất trước (public endpoint) */
+    List<JobResponse> getAllOpenJobs();
+
     List<AiRecommendationResponse> getJobRecommendations(UUID clientId, UUID jobId);
+
+    AiRecommendationResponse getMyJobRecommendation(UUID freelancerId, UUID jobId);
 
     void inviteCandidate(UUID clientId, UUID jobId, UUID recommendationId);
 
@@ -24,4 +29,9 @@ public interface JobService {
             UUID freelancerId, UUID jobId, UUID recommendationId);
 
     void rejectJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId);
+
+    void devRequestChat(UUID freelancerId, UUID jobId, UUID recommendationId);
+
+    AcceptInvitationResponse clientAcceptDevRequest(
+            UUID clientId, UUID jobId, UUID recommendationId);
 }

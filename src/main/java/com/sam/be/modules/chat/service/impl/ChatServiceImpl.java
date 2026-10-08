@@ -3,6 +3,7 @@ package com.sam.be.modules.chat.service.impl;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
+import com.sam.be.modules.chat.dto.ChatRoomDto;
 import com.sam.be.modules.chat.dto.SendMessagePayload;
 import com.sam.be.modules.chat.entity.ChatMessage;
 import com.sam.be.modules.chat.entity.ChatRoom;
@@ -25,6 +26,7 @@ public class ChatServiceImpl implements ChatService {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
+    private final com.sam.be.modules.contract.repository.ContractRepository contractRepository;
 
     @Override
     @Transactional
@@ -60,16 +62,7 @@ public class ChatServiceImpl implements ChatService {
         }
 
         return chatMessageRepository.findByRoomIdOrderByCreatedAtAsc(roomId).stream()
-                .map(
-                        msg ->
-                                ChatMessageDto.builder()
-                                        .id(msg.getId())
-                                        .roomId(room.getId())
-                                        .senderId(msg.getSender().getId())
-                                        .senderName(msg.getSender().getFullName())
-                                        .content(msg.getContent())
-                                        .createdAt(msg.getCreatedAt())
-                                        .build())
+                .map(msg -> toDto(room.getId(), msg))
                 .toList();
     }
 
@@ -101,13 +94,111 @@ public class ChatServiceImpl implements ChatService {
                                 .content(payload.getContent())
                                 .build());
 
+        return toDto(room.getId(), savedMsg);
+    }
+
+    @Override
+    @Transactional
+    public ChatMessageDto saveSystemMessage(UUID roomId, String content) {
+        ChatRoom room =
+                chatRoomRepository
+                        .findById(roomId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        ChatMessage savedMsg =
+                chatMessageRepository.save(
+                        ChatMessage.builder().room(room).isSystem(true).content(content).build());
+
+        return toDto(room.getId(), savedMsg);
+    }
+
+    private ChatMessageDto toDto(UUID roomId, ChatMessage msg) {
+        boolean system = Boolean.TRUE.equals(msg.getIsSystem()) || msg.getSender() == null;
         return ChatMessageDto.builder()
-                .id(savedMsg.getId())
-                .roomId(room.getId())
-                .senderId(sender.getId())
-                .senderName(sender.getFullName())
-                .content(savedMsg.getContent())
-                .createdAt(savedMsg.getCreatedAt())
+                .id(msg.getId())
+                .roomId(roomId)
+                .senderId(msg.getSender() != null ? msg.getSender().getId() : null)
+                .senderName(
+                        msg.getSender() != null ? msg.getSender().getFullName() : "SAM AI")
+                .content(msg.getContent())
+                .createdAt(msg.getCreatedAt())
+                .system(system)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ChatRoomDto> getMyRooms(UUID userId) {
+        return chatRoomRepository.findAllByMemberId(userId).stream()
+                .map(room -> toRoomDto(room, userId))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ChatRoomDto getRoomDetail(UUID roomId, UUID userId) {
+        ChatRoom room =
+                chatRoomRepository
+                        .findById(roomId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        assertMember(room, userId);
+        return toRoomDto(room, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ChatRoomDto getRoomByJob(UUID jobId, UUID userId) {
+        ChatRoom room =
+                chatRoomRepository
+                        .findByJobIdAndMemberId(jobId, userId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        return toRoomDto(room, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ChatRoomDto getRoomByContract(UUID contractId, UUID userId) {
+        var contract =
+                contractRepository
+                        .findById(contractId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        ChatRoom room =
+                chatRoomRepository
+                        .findByJobIdAndMemberId(contract.getJob().getId(), userId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        return toRoomDto(room, userId);
+    }
+
+    private void assertMember(ChatRoom room, UUID userId) {
+        if (!room.getClient().getId().equals(userId)
+                && !room.getFreelancer().getId().equals(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+    }
+
+    private ChatRoomDto toRoomDto(ChatRoom room, UUID userId) {
+        String lastMessage = null;
+        java.time.LocalDateTime lastMessageAt = null;
+        try {
+            var last =
+                    chatMessageRepository.findTopByRoomIdOrderByCreatedAtDesc(room.getId());
+            if (last.isPresent()) {
+                lastMessage = last.get().getContent();
+                lastMessageAt = last.get().getCreatedAt();
+            }
+        } catch (Exception ignored) {
+        }
+        return ChatRoomDto.builder()
+                .id(room.getId())
+                .jobId(room.getJob().getId())
+                .jobTitle(room.getJob().getTitle())
+                .clientId(room.getClient().getId())
+                .clientName(room.getClient().getFullName())
+                .freelancerId(room.getFreelancer().getId())
+                .freelancerName(room.getFreelancer().getFullName())
+                .lastMessage(lastMessage)
+                .lastMessageAt(lastMessageAt)
+                .createdAt(room.getCreatedAt())
                 .build();
     }
 }

@@ -51,10 +51,6 @@ public class Contract {
     @Column(name = "terms_and_conditions", columnDefinition = "TEXT")
     private String termsAndConditions;
 
-    @Column(name = "revision_limit")
-    @Builder.Default
-    private Integer revisionLimit = 2;
-
     @Column(name = "client_agreed")
     @Builder.Default
     private Boolean clientAgreed = false;
@@ -62,6 +58,29 @@ public class Contract {
     @Column(name = "freelancer_agreed")
     @Builder.Default
     private Boolean freelancerAgreed = false;
+
+    // Giá AI đề xuất lúc soạn nháp (gốc để so "đã đổi so với ban đầu")
+    @Column(name = "ai_suggested_amount")
+    private BigDecimal aiSuggestedAmount;
+
+    // Kết quả AI thẩm định sau ký đôi: NULL (chưa thẩm định) / OK / NEEDS_CONFIRM
+    @Column(name = "review_status")
+    private String reviewStatus;
+
+    @Column(name = "review_extracted_amount")
+    private BigDecimal reviewExtractedAmount;
+
+    @Column(name = "review_note", columnDefinition = "TEXT")
+    private String reviewNote;
+
+    // Hai bên bấm "Giữ nguyên bản này" sau khi AI báo lệch
+    @Column(name = "client_keep_confirmed")
+    @Builder.Default
+    private Boolean clientKeepConfirmed = false;
+
+    @Column(name = "freelancer_keep_confirmed")
+    @Builder.Default
+    private Boolean freelancerKeepConfirmed = false;
 
     @CreationTimestamp
     @Column(name = "started_at", updatable = false)

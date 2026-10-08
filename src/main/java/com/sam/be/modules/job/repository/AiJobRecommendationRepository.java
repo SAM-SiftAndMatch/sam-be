@@ -9,4 +9,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface AiJobRecommendationRepository extends JpaRepository<AiJobRecommendation, UUID> {
     List<AiJobRecommendation> findAllByJobIdOrderByMatchScoreDesc(UUID jobId);
+    java.util.Optional<AiJobRecommendation> findByJobIdAndFreelancerId(UUID jobId, UUID freelancerId);
 }
