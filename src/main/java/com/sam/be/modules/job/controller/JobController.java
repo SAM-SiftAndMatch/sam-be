@@ -140,7 +140,8 @@ public class JobController {
     @PreAuthorize("hasRole('FREELANCER')")
     @Operation(
             summary = "Get my AI recommendation for a job",
-            description = "Freelancer fetches their AI recommendation to see if they were auto-matched for this urgent job")
+            description =
+                    "Freelancer fetches their AI recommendation to see if they were auto-matched for this urgent job")
     public ApiResponse<AiRecommendationResponse> getMyJobRecommendation(@PathVariable UUID jobId) {
         AiRecommendationResponse response =
                 jobService.getMyJobRecommendation(SecurityUtils.getCurrentUserId(), jobId);

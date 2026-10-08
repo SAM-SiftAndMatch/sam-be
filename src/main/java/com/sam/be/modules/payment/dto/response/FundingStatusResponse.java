@@ -7,9 +7,9 @@ import lombok.Builder;
 import lombok.Data;
 
 /**
- * Toàn cảnh "nạp tiền khởi động" của một hợp đồng: client nạp 100%, freelancer cọc 2%. Đủ cả
- * hai hệ thống mới cho dự án chạy (job AWAITING_PAYMENT -> IN_PROGRESS). Cuối dự án freelancer
- * nhận 90%, sàn giữ 10%.
+ * Toàn cảnh "nạp tiền khởi động" của một hợp đồng: client nạp 100%, freelancer cọc 2%. Đủ cả hai hệ
+ * thống mới cho dự án chạy (job AWAITING_PAYMENT -> IN_PROGRESS). Cuối dự án freelancer nhận 90%,
+ * sàn giữ 10%.
  */
 @Data
 @Builder

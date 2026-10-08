@@ -5,8 +5,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * FE tự báo đã chuyển tiền sau khi VNPay redirect về (chữa cháy khi IPN server-to-server không
- * tới được môi trường local). BE đối chiếu txnRef + amount với bản ghi rồi mới ghi nhận.
+ * FE tự báo đã chuyển tiền sau khi VNPay redirect về (chữa cháy khi IPN server-to-server không tới
+ * được môi trường local). BE đối chiếu txnRef + amount với bản ghi rồi mới ghi nhận.
  */
 @Data
 @NoArgsConstructor

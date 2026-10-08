@@ -40,6 +40,7 @@ public class ContractServiceImpl implements ContractService {
     private final AiService aiService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatService chatService;
+    private final com.sam.be.infrastructure.cache.service.RedisCacheService redisCacheService;
 
     @Override
     @Transactional
@@ -62,6 +63,8 @@ public class ContractServiceImpl implements ContractService {
 
         job.setStatus(JobStatus.NEGOTIATING);
         jobRepository.save(job);
+        redisCacheService.delete(
+                com.sam.be.infrastructure.cache.keys.RedisKeys.jobDetail(job.getId()));
 
         String srsData = job.getTitle() + "\n" + job.getDescription();
 
@@ -143,7 +146,8 @@ public class ContractServiceImpl implements ContractService {
                         .findByJobId(room.getJob().getId())
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        return contractRevisionRepository.findByContractIdOrderByCreatedAtDesc(contract.getId())
+        return contractRevisionRepository
+                .findByContractIdOrderByCreatedAtDesc(contract.getId())
                 .stream()
                 .map(rev -> toRevisionResponse(rev, contract))
                 .toList();
@@ -192,8 +196,7 @@ public class ContractServiceImpl implements ContractService {
                         .termsAndConditions(contract.getTermsAndConditions())
                         .build());
         // Giữ tối đa 100 bản gần nhất cho mỗi hợp đồng
-        var all =
-                contractRevisionRepository.findByContractIdOrderByCreatedAtDesc(contract.getId());
+        var all = contractRevisionRepository.findByContractIdOrderByCreatedAtDesc(contract.getId());
         if (all.size() > 100) {
             contractRevisionRepository.deleteAll(all.subList(100, all.size()));
         }
@@ -375,7 +378,8 @@ public class ContractServiceImpl implements ContractService {
         // Chỉ được "Giữ nguyên" khi AI đang yêu cầu xác nhận
         if (!"NEEDS_CONFIRM".equalsIgnoreCase(contract.getReviewStatus())) {
             throw new ApiException(
-                    ErrorCode.REQUEST_FAILED, "Hợp đồng không ở trạng thái chờ xác nhận giữ nguyên");
+                    ErrorCode.REQUEST_FAILED,
+                    "Hợp đồng không ở trạng thái chờ xác nhận giữ nguyên");
         }
 
         if (isClient) {
@@ -431,6 +435,8 @@ public class ContractServiceImpl implements ContractService {
         Job job = contract.getJob();
         job.setStatus(JobStatus.AWAITING_PAYMENT);
         jobRepository.save(job);
+        redisCacheService.delete(
+                com.sam.be.infrastructure.cache.keys.RedisKeys.jobDetail(job.getId()));
     }
 
     private ContractBroadcastData broadcastOf(Contract contract, String type) {

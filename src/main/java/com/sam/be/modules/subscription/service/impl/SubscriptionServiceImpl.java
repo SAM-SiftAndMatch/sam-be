@@ -6,6 +6,8 @@ import com.sam.be.common.constant.enums.UserRole;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.security.util.SecurityUtils;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpaySigner;
@@ -22,6 +24,7 @@ import com.sam.be.modules.subscription.service.SubscriptionService;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.UserRepository;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +54,8 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     private final VnpayProperties vnpayProperties;
 
     private final NotificationService notificationService;
+
+    private final RedisCacheService redisCacheService;
 
     @Override
     @Transactional
@@ -200,6 +205,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                     subscription.getId(),
                     "SUBSCRIPTION_ACTIVE",
                     "Gói " + subscription.getServicePackage().getName() + " đã được kích hoạt.");
+            redisCacheService.delete(RedisKeys.userSubscriptions(subscription.getUser().getId()));
             log.info("Subscription activated: {}", subscription.getId());
         }
         return Map.of("RspCode", "00", "Message", "Confirm Success");
@@ -232,6 +238,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                     subscription.getId(),
                     "SUBSCRIPTION_ACTIVE",
                     "Gói " + subscription.getServicePackage().getName() + " đã được kích hoạt.");
+            redisCacheService.delete(RedisKeys.userSubscriptions(userId));
             log.info("Subscription activated by FE confirm: {}", subscription.getId());
         }
 
@@ -241,9 +248,14 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     @Override
     @Transactional(readOnly = true)
     public List<UserSubscriptionResponse> getMine(UUID userId) {
-        return userSubscriptionRepository.findByUser_Id(userId).stream()
-                .map(s -> toResponse(s, null))
-                .toList();
+        return redisCacheService.getListOrSet(
+                RedisKeys.userSubscriptions(userId),
+                Duration.ofHours(1),
+                UserSubscriptionResponse.class,
+                () ->
+                        userSubscriptionRepository.findByUser_Id(userId).stream()
+                                .map(s -> toResponse(s, null))
+                                .toList());
     }
 
     private UserSubscriptionResponse toResponse(UserSubscription subscription, String vnpayUrl) {

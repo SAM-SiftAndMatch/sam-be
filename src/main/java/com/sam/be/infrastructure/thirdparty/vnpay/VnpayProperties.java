@@ -26,7 +26,7 @@ public class VnpayProperties {
 
     public String getDefaultReturnUrl() {
         return (allowedReturnUrls != null && !allowedReturnUrls.isEmpty())
-                ? allowedReturnUrls.get(0)
+                ? allowedReturnUrls.get(0).trim()
                 : null;
     }
 
@@ -34,19 +34,22 @@ public class VnpayProperties {
         if (url == null || url.isBlank() || allowedReturnUrls == null) {
             return false;
         }
-        String candidate = url.trim();
-        if (allowedReturnUrls.contains(candidate)) {
+        String target = url.trim();
+        boolean exact =
+                allowedReturnUrls.stream()
+                        .filter(u -> u != null && !u.isBlank())
+                        .map(String::trim)
+                        .anyMatch(target::equalsIgnoreCase);
+        if (exact) {
             return true;
         }
         // Nới theo origin (scheme + host + port): các màn mới (vd: /workspace/{id}/contract)
         // vẫn pass miễn cùng frontend đã whitelist, không mở sang domain lạ.
-        String candidateOrigin = originOf(candidate);
+        String candidateOrigin = originOf(target);
         if (candidateOrigin == null) {
             return false;
         }
-        return allowedReturnUrls.stream()
-                .map(this::originOf)
-                .anyMatch(candidateOrigin::equals);
+        return allowedReturnUrls.stream().map(this::originOf).anyMatch(candidateOrigin::equals);
     }
 
     private String originOf(String url) {

@@ -27,7 +27,8 @@ public class ProposalController {
     @PreAuthorize("hasRole('FREELANCER')")
     @Operation(
             summary = "Submit a proposal",
-            description = "Freelancer submits a proposal (cover letter + budget + PDF) for an OPEN job")
+            description =
+                    "Freelancer submits a proposal (cover letter + budget + PDF) for an OPEN job")
     public ApiResponse<ProposalResponse> submitProposal(
             @Valid @RequestBody ProposalCreateRequest request) {
         ProposalResponse response =

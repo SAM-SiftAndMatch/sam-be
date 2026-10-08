@@ -3,6 +3,7 @@ package com.sam.be.infrastructure.cache.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.model.SessionAuthzCache;
+import com.sam.be.modules.auth.dto.response.AuthResponse;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
@@ -105,6 +106,34 @@ public class SessionCacheService {
             redisTemplate.opsForValue().set(RedisKeys.sessionAuthz(sessionId), json, ttl);
         } catch (Exception e) {
             log.warn("Redis error putting authz for sessionId={}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    public void putGraceResponse(UUID sessionId, AuthResponse response, Duration ttl) {
+        try {
+            String json = objectMapper.writeValueAsString(response);
+            redisTemplate.opsForValue().set(RedisKeys.sessionGrace(sessionId), json, ttl);
+        } catch (Exception e) {
+            log.warn(
+                    "Redis error putting grace response for sessionId={}: {}",
+                    sessionId,
+                    e.getMessage());
+        }
+    }
+
+    public Optional<AuthResponse> getGraceResponse(UUID sessionId) {
+        try {
+            String json = redisTemplate.opsForValue().get(RedisKeys.sessionGrace(sessionId));
+            if (json == null || json.isBlank()) {
+                return Optional.empty();
+            }
+            return Optional.of(objectMapper.readValue(json, AuthResponse.class));
+        } catch (Exception e) {
+            log.warn(
+                    "Redis error getting grace response for sessionId={}: {}",
+                    sessionId,
+                    e.getMessage());
+            return Optional.empty();
         }
     }
 }

@@ -118,7 +118,8 @@ public class SecurityConfig {
                         auth ->
                                 auth.requestMatchers(HttpMethod.OPTIONS, "/**")
                                         .permitAll()
-                                        .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/**")
+                                        .requestMatchers(
+                                                HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/**")
                                         .permitAll()
                                         .anyRequest()
                                         .authenticated())

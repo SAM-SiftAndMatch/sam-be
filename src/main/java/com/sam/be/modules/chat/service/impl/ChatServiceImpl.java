@@ -118,8 +118,7 @@ public class ChatServiceImpl implements ChatService {
                 .id(msg.getId())
                 .roomId(roomId)
                 .senderId(msg.getSender() != null ? msg.getSender().getId() : null)
-                .senderName(
-                        msg.getSender() != null ? msg.getSender().getFullName() : "SAM AI")
+                .senderName(msg.getSender() != null ? msg.getSender().getFullName() : "SAM AI")
                 .content(msg.getContent())
                 .createdAt(msg.getCreatedAt())
                 .system(system)
@@ -180,8 +179,7 @@ public class ChatServiceImpl implements ChatService {
         String lastMessage = null;
         java.time.LocalDateTime lastMessageAt = null;
         try {
-            var last =
-                    chatMessageRepository.findTopByRoomIdOrderByCreatedAtDesc(room.getId());
+            var last = chatMessageRepository.findTopByRoomIdOrderByCreatedAtDesc(room.getId());
             if (last.isPresent()) {
                 lastMessage = last.get().getContent();
                 lastMessageAt = last.get().getCreatedAt();

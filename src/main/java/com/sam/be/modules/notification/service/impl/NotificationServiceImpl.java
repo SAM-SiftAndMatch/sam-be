@@ -104,7 +104,10 @@ public class NotificationServiceImpl implements NotificationService {
                         .jobTitle(jobTitle)
                         .recommendationId(recommendationId)
                         .actorName(devName)
-                        .message("Dev " + devName + " muốn nói chuyện về dự án này. Bấm đồng ý để mở Chat!")
+                        .message(
+                                "Dev "
+                                        + devName
+                                        + " muốn nói chuyện về dự án này. Bấm đồng ý để mở Chat!")
                         .timestamp(LocalDateTime.now())
                         .build();
 

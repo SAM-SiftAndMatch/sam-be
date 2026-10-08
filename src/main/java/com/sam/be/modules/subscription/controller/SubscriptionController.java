@@ -46,10 +46,12 @@ public class SubscriptionController {
     @PostMapping("/{id}/confirm-payment")
     @Operation(
             summary = "Confirm subscription payment after VNPay redirect",
-            description = "FE calls this after VNPay redirects back with success code to activate pending subscription")
+            description =
+                    "FE calls this after VNPay redirects back with success code to activate pending subscription")
     public ApiResponse<UserSubscriptionResponse> confirmPayment(@PathVariable String id) {
         UserSubscriptionResponse response =
-                subscriptionService.confirmPayment(SecurityUtils.getCurrentUserId(), UUID.fromString(id));
+                subscriptionService.confirmPayment(
+                        SecurityUtils.getCurrentUserId(), UUID.fromString(id));
         return ApiResponse.<UserSubscriptionResponse>builder().result(response).build();
     }
 

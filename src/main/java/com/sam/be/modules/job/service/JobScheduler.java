@@ -19,8 +19,8 @@ public class JobScheduler {
     private final JobRepository jobRepository;
 
     /**
-     * Chạy mỗi phút (60,000ms) để kiểm tra các Job đã quá hạn chót (deadline < now)
-     * mà vẫn đang ở trạng thái OPEN. Sau đó chuyển tất cả sang CANCELLED.
+     * Chạy mỗi phút (60,000ms) để kiểm tra các Job đã quá hạn chót (deadline < now) mà vẫn đang ở
+     * trạng thái OPEN. Sau đó chuyển tất cả sang CANCELLED.
      */
     @Scheduled(fixedRate = 60000)
     @Transactional

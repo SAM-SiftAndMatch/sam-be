@@ -48,7 +48,8 @@ public class ProposalServiceImpl implements ProposalService {
 
         // Chỉ nộp khi job còn mở — IN_PROGRESS/CANCELLED... là đã đóng tuyển
         if (job.getStatus() != JobStatus.OPEN) {
-            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án đã đóng, không nhận hồ sơ nữa.");
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED, "Dự án đã đóng, không nhận hồ sơ nữa.");
         }
         // Job gấp trong 5 phút độc quyền: người ngoài top 5 không được nộp
         assertCanAccess(job, freelancerId);
@@ -99,9 +100,7 @@ public class ProposalServiceImpl implements ProposalService {
         if (job.getClient() == null || !job.getClient().getId().equals(clientId)) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
-        return proposalRepository.findAllByJobId(jobId).stream()
-                .map(this::mapToResponse)
-                .toList();
+        return proposalRepository.findAllByJobId(jobId).stream().map(this::mapToResponse).toList();
     }
 
     @Override
@@ -127,8 +126,7 @@ public class ProposalServiceImpl implements ProposalService {
     public void inviteProposal(UUID clientId, UUID proposalId) {
         Proposal proposal = getOwnedProposal(clientId, proposalId);
         if (proposal.getStatus() != ProposalStatus.PENDING) {
-            throw new ApiException(
-                    ErrorCode.REQUEST_FAILED, "Chỉ mời được hồ sơ đang chờ duyệt.");
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Chỉ mời được hồ sơ đang chờ duyệt.");
         }
         proposal.setStatus(ProposalStatus.INVITED);
         proposalRepository.save(proposal);
@@ -154,8 +152,7 @@ public class ProposalServiceImpl implements ProposalService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
         if (proposal.getStatus() != ProposalStatus.INVITED) {
-            throw new ApiException(
-                    ErrorCode.REQUEST_FAILED, "Hồ sơ không ở trạng thái được mời.");
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Hồ sơ không ở trạng thái được mời.");
         }
         proposal.setStatus(ProposalStatus.ACCEPTED);
         proposalRepository.save(proposal);

@@ -5,6 +5,8 @@ import com.sam.be.common.constant.enums.PaymentStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.security.util.SecurityUtils;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpaySigner;
@@ -20,6 +22,7 @@ import com.sam.be.modules.payment.repository.PaymentRepository;
 import com.sam.be.modules.payment.service.PaymentService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -54,6 +57,8 @@ public class PaymentServiceImpl implements PaymentService {
     private final NotificationService notificationService;
 
     private final com.sam.be.modules.job.repository.JobRepository jobRepository;
+
+    private final RedisCacheService redisCacheService;
 
     @Override
     @Transactional
@@ -93,8 +98,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (contract.getStatus() != ContractStatus.ACTIVE) {
             throw new ApiException(ErrorCode.CONTRACT_NOT_ACTIVE);
         }
-        if (contract.getFreelancer() == null
-                || !contract.getFreelancer().getId().equals(userId)) {
+        if (contract.getFreelancer() == null || !contract.getFreelancer().getId().equals(userId)) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
@@ -107,8 +111,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         // Cọc cam kết 2%, làm tròn tới đồng
         BigDecimal amount =
-                contract
-                        .getAgreedAmount()
+                contract.getAgreedAmount()
                         .multiply(DEPOSIT_RATE)
                         .setScale(0, RoundingMode.HALF_UP)
                         .setScale(2);
@@ -154,13 +157,18 @@ public class PaymentServiceImpl implements PaymentService {
         BigDecimal fee = agreed.multiply(PLATFORM_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
         BigDecimal payout = agreed.subtract(fee);
 
-        PaymentStatus fundStatus = latestStatus(contractId, com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND);
+        PaymentStatus fundStatus =
+                latestStatus(
+                        contractId, com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND);
         PaymentStatus depositStatus =
-                latestStatus(contractId, com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT);
+                latestStatus(
+                        contractId, com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT);
 
-        boolean fundPaid = fundStatus == PaymentStatus.HELD_IN_ESCROW || fundStatus == PaymentStatus.RELEASED;
+        boolean fundPaid =
+                fundStatus == PaymentStatus.HELD_IN_ESCROW || fundStatus == PaymentStatus.RELEASED;
         boolean depositPaid =
-                depositStatus == PaymentStatus.HELD_IN_ESCROW || depositStatus == PaymentStatus.RELEASED;
+                depositStatus == PaymentStatus.HELD_IN_ESCROW
+                        || depositStatus == PaymentStatus.RELEASED;
 
         return FundingStatusResponse.builder()
                 .contractId(contract.getId())
@@ -181,15 +189,12 @@ public class PaymentServiceImpl implements PaymentService {
 
     private PaymentStatus latestStatus(
             UUID contractId, com.sam.be.common.constant.enums.PaymentType type) {
-        List<Payment> all =
-                paymentRepository.findAllByContractIdAndPaymentType(contractId, type);
+        List<Payment> all = paymentRepository.findAllByContractIdAndPaymentType(contractId, type);
         // Ưu tiên trạng thái đã trả, rồi tới đơn đang chờ; bỏ qua đơn hết hạn/hoàn
         return all.stream()
                 .map(Payment::getStatus)
                 .filter(s -> s != PaymentStatus.EXPIRED && s != PaymentStatus.REFUNDED)
-                .sorted(
-                        (a, b) ->
-                                Integer.compare(statusRank(a), statusRank(b)))
+                .sorted((a, b) -> Integer.compare(statusRank(a), statusRank(b)))
                 .findFirst()
                 .orElse(null);
     }
@@ -211,8 +216,8 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     /**
-     * Bấm Nạp lần nữa khi đơn cũ còn dở: VNPay không cho dùng lại mã cũ nên đánh dấu đơn PENDING
-     * cũ hết hạn rồi tạo đơn mới toanh (mã mới). Chỉ chặn khi đã trả xong.
+     * Bấm Nạp lần nữa khi đơn cũ còn dở: VNPay không cho dùng lại mã cũ nên đánh dấu đơn PENDING cũ
+     * hết hạn rồi tạo đơn mới toanh (mã mới). Chỉ chặn khi đã trả xong.
      */
     private void expireStalePendingPayments(
             Contract contract, com.sam.be.common.constant.enums.PaymentType type) {
@@ -234,9 +239,7 @@ public class PaymentServiceImpl implements PaymentService {
                     ErrorCode.ESCROW_PAYMENT_EXISTS, "Khoản này đã được thanh toán rồi.");
         }
         List<Payment> stale =
-                existing.stream()
-                        .filter(p -> p.getStatus() == PaymentStatus.PENDING)
-                        .toList();
+                existing.stream().filter(p -> p.getStatus() == PaymentStatus.PENDING).toList();
         for (Payment p : stale) {
             p.setStatus(PaymentStatus.EXPIRED);
         }
@@ -295,6 +298,7 @@ public class PaymentServiceImpl implements PaymentService {
                 vnpayClient.buildPaymentUrl(txnRef, amountVnd, orderInfo, null, returnUrl);
 
         log.info("Created {} payment {} for contract {}", type, payment.getId(), contract.getId());
+        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
         return toResponse(payment, vnpayUrl);
     }
 
@@ -316,8 +320,7 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
         // Đúng người trả đúng khoản: fund chỉ client, deposit chỉ freelancer
-        if (payment.getPaymentType()
-                        == com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND
+        if (payment.getPaymentType() == com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND
                 && !isClient) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
@@ -361,6 +364,7 @@ public class PaymentServiceImpl implements PaymentService {
                 "PAYMENT_ESCROW_HELD",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
         log.info("Funding confirmed by FE for payment {}", payment.getId());
+        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
 
         maybeStartProject(contract);
         return toResponse(payment, null);
@@ -412,6 +416,7 @@ public class PaymentServiceImpl implements PaymentService {
                     payment,
                     "PAYMENT_ESCROW_HELD",
                     "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
+            redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
             log.info("Escrow held for payment {}", payment.getId());
 
             // Đủ cả 2 khoản (client 100% + freelancer cọc 2%) thì cho dự án chạy
@@ -422,8 +427,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private void maybeStartProject(Contract contract) {
         var job = contract.getJob();
-        if (job.getStatus()
-                != com.sam.be.common.constant.enums.JobStatus.AWAITING_PAYMENT) {
+        if (job.getStatus() != com.sam.be.common.constant.enums.JobStatus.AWAITING_PAYMENT) {
             return;
         }
         boolean fundPaid =
@@ -451,6 +455,8 @@ public class PaymentServiceImpl implements PaymentService {
         }
         job.setStatus(com.sam.be.common.constant.enums.JobStatus.IN_PROGRESS);
         jobRepository.save(job);
+        // Job đổi trạng thái: xóa cache chi tiết để list/detail hiện đúng
+        redisCacheService.delete(RedisKeys.jobDetail(job.getId()));
         pushPaymentEvent(
                 contract, null, "PROJECT_STARTED", "Đã nạp đủ tiền, dự án chính thức bắt đầu!");
         log.info("Project started for contract {}", contract.getId());
@@ -483,6 +489,7 @@ public class PaymentServiceImpl implements PaymentService {
                 payment,
                 "PAYMENT_RELEASED",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã được giải ngân.");
+        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
         log.info("Escrow released for payment {}", payment.getId());
         return toResponse(payment, null);
     }
@@ -500,10 +507,15 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
-        return paymentRepository.findAllByContractId(contractId).stream()
-                .sorted(Comparator.comparing(Payment::getInstallmentNo))
-                .map(p -> toResponse(p, null))
-                .toList();
+        return redisCacheService.getListOrSet(
+                RedisKeys.contractPayments(contractId),
+                Duration.ofMinutes(15),
+                PaymentResponse.class,
+                () ->
+                        paymentRepository.findAllByContractId(contractId).stream()
+                                .sorted(Comparator.comparing(Payment::getInstallmentNo))
+                                .map(p -> toResponse(p, null))
+                                .toList());
     }
 
     private void pushPaymentEvent(Contract contract, Payment payment, String type, String message) {
@@ -528,9 +540,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .paymentId(payment.getId())
                 .contractId(payment.getContract().getId())
                 .installment(
-                        payment.getPaymentType() != null
-                                ? payment.getPaymentType().name()
-                                : null)
+                        payment.getPaymentType() != null ? payment.getPaymentType().name() : null)
                 .paymentType(payment.getPaymentType())
                 .amount(payment.getAmount())
                 .currency(payment.getCurrency())

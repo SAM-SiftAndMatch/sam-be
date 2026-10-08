@@ -32,7 +32,10 @@ public class CloudinaryStorageServiceImpl implements StorageService {
                             "type",
                             "upload",
                             "public_id",
-                            safeFolder + "/" + System.currentTimeMillis() + "_"
+                            safeFolder
+                                    + "/"
+                                    + System.currentTimeMillis()
+                                    + "_"
                                     + sanitizeFileName(fileName));
             Map uploadResult = cloudinary.uploader().upload(content, params);
             return uploadResult.get("secure_url").toString();
@@ -86,12 +89,9 @@ public class CloudinaryStorageServiceImpl implements StorageService {
                 throw new ApiException(ErrorCode.REQUEST_FAILED, "File quá lớn.");
             }
             String contentType =
-                    res.headers()
-                            .firstValue("Content-Type")
-                            .orElse("application/octet-stream");
+                    res.headers().firstValue("Content-Type").orElse("application/octet-stream");
             String rawName = uri.getPath().substring(uri.getPath().lastIndexOf('/') + 1);
-            String fileName =
-                    java.net.URLDecoder.decode(rawName, StandardCharsets.UTF_8);
+            String fileName = java.net.URLDecoder.decode(rawName, StandardCharsets.UTF_8);
             if (fileName.isBlank()) {
                 fileName = "proposal.pdf";
             }
@@ -126,8 +126,7 @@ public class CloudinaryStorageServiceImpl implements StorageService {
 
     private String normalizeNewlines(String content) {
         if (content == null) return "";
-        return content
-                .replace("\\\\r\\\\n", "\n")
+        return content.replace("\\\\r\\\\n", "\n")
                 .replace("\\\\n", "\n")
                 .replace("\\\\r", "\n")
                 .replace("\\r\\n", "\n")
@@ -162,8 +161,13 @@ public class CloudinaryStorageServiceImpl implements StorageService {
                     inList = false;
                 }
                 String heading = line.substring(headingLevel).trim();
-                html.append("<h").append(headingLevel).append(">").append(formatInline(heading))
-                        .append("</h").append(headingLevel).append(">");
+                html.append("<h")
+                        .append(headingLevel)
+                        .append(">")
+                        .append(formatInline(heading))
+                        .append("</h")
+                        .append(headingLevel)
+                        .append(">");
                 continue;
             }
 
@@ -217,8 +221,11 @@ public class CloudinaryStorageServiceImpl implements StorageService {
     }
 
     private String escapeHtml(String text) {
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace("\"", "&quot;").replace("'", "&#39;");
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private String buildHtml(String renderedContent) {

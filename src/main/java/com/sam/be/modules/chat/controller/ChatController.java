@@ -54,8 +54,7 @@ public class ChatController {
     @GetMapping("/rooms/{roomId}")
     @Operation(summary = "Get chat room detail", description = "Room detail with job and members")
     public ApiResponse<ChatRoomDto> getRoomDetail(@PathVariable UUID roomId) {
-        ChatRoomDto response =
-                chatService.getRoomDetail(roomId, SecurityUtils.getCurrentUserId());
+        ChatRoomDto response = chatService.getRoomDetail(roomId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<ChatRoomDto>builder().result(response).build();
     }
 
@@ -65,8 +64,7 @@ public class ChatController {
             summary = "Get chat room by job",
             description = "Resolve the chat room of current user for a given job")
     public ApiResponse<ChatRoomDto> getRoomByJob(@PathVariable UUID jobId) {
-        ChatRoomDto response =
-                chatService.getRoomByJob(jobId, SecurityUtils.getCurrentUserId());
+        ChatRoomDto response = chatService.getRoomByJob(jobId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<ChatRoomDto>builder().result(response).build();
     }
 

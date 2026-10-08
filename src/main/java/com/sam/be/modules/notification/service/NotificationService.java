@@ -8,7 +8,11 @@ public interface NotificationService {
             UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore);
 
     void sendInviteNotification(
-            UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore, UUID recommendationId);
+            UUID freelancerId,
+            UUID jobId,
+            String jobTitle,
+            BigDecimal matchScore,
+            UUID recommendationId);
 
     void sendPaymentNotification(
             UUID userId,
@@ -29,10 +33,5 @@ public interface NotificationService {
 
     // Luồng proposal phổ thông: client nhận hồ sơ mới, dev nhận lời mời, client nhận phản hồi
     void sendProposalNotification(
-            UUID userId,
-            UUID jobId,
-            String jobTitle,
-            UUID proposalId,
-            String type,
-            String message);
+            UUID userId, UUID jobId, String jobTitle, UUID proposalId, String type, String message);
 }

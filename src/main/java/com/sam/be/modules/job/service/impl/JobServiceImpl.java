@@ -6,6 +6,8 @@ import com.sam.be.common.constant.enums.RecommendationStatus;
 import com.sam.be.common.constant.enums.SubscriptionStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.ai.dto.response.AiCandidateScore;
 import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
 import com.sam.be.modules.ai.service.AiService;
@@ -34,6 +36,7 @@ import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.FreelancerProfileRepository;
 import com.sam.be.modules.user.repository.FreelancerSkillRepository;
 import com.sam.be.modules.user.repository.UserRepository;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -64,6 +67,7 @@ public class JobServiceImpl implements JobService {
     private final RestClient restClient;
     private final NotificationService notificationService;
     private final ChatService chatService;
+    private final RedisCacheService redisCacheService;
 
     @Override
     @Transactional
@@ -105,7 +109,10 @@ public class JobServiceImpl implements JobService {
                         .estimatedDurationMonths(request.getEstimatedDurationMonths())
                         .srsDocumentUrl(request.getSrsDocumentUrl())
                         .srsContent(request.getSrsContent())
-                        .deadline(request.getDeadline() != null ? request.getDeadline() : java.time.LocalDateTime.now().plusDays(30))
+                        .deadline(
+                                request.getDeadline() != null
+                                        ? request.getDeadline()
+                                        : java.time.LocalDateTime.now().plusDays(30))
                         .isFeatured(
                                 request.getIsFeatured() != null ? request.getIsFeatured() : false)
                         .isUrgentHiring(
@@ -157,7 +164,9 @@ public class JobServiceImpl implements JobService {
             processUrgentHiring(savedJob, srsContent, extractedSkills);
         }
 
-        return mapToResponse(savedJob);
+        JobResponse response = mapToResponse(savedJob);
+        redisCacheService.delete(RedisKeys.clientJobs(clientId));
+        return response;
     }
 
     private void processUrgentHiring(
@@ -167,10 +176,7 @@ public class JobServiceImpl implements JobService {
                     userSubscriptionRepository.findByServicePackage_NameAndStatusAndEndDateAfter(
                             "Gói PRO DEV", SubscriptionStatus.ACTIVE, LocalDateTime.now());
             List<UUID> proDevIds = proDevSubs.stream().map(sub -> sub.getUser().getId()).toList();
-            log.info(
-                    "Urgent hiring for job {}: found {} PRO devs",
-                    job.getId(),
-                    proDevIds.size());
+            log.info("Urgent hiring for job {}: found {} PRO devs", job.getId(), proDevIds.size());
 
             // Ưu tiên PRO trước
             List<FreelancerProfile> profiles =
@@ -184,15 +190,14 @@ public class JobServiceImpl implements JobService {
             // (đúng yêu cầu: không có PRO nào thì lấy luôn freelancer thường cho đủ 5)
             if (profiles.size() < 5) {
                 java.util.Set<UUID> pickedIds =
-                        profiles.stream()
-                                .map(p -> p.getUser().getId())
-                                .collect(Collectors.toSet());
+                        profiles.stream().map(p -> p.getUser().getId()).collect(Collectors.toSet());
                 List<FreelancerProfile> allProfiles = freelancerProfileRepository.findAll();
                 for (FreelancerProfile p : allProfiles) {
                     if (profiles.size() >= 5) break;
                     UUID uid = p.getUser().getId();
                     if (pickedIds.contains(uid)) continue;
-                    // Không lấy chính client đăng job (phòng trường hợp client cũng có freelancer profile)
+                    // Không lấy chính client đăng job (phòng trường hợp client cũng có freelancer
+                    // profile)
                     if (job.getClient() != null && job.getClient().getId().equals(uid)) continue;
                     profiles.add(p);
                     pickedIds.add(uid);
@@ -210,13 +215,14 @@ public class JobServiceImpl implements JobService {
             }
 
             if (profiles.isEmpty()) {
-                log.warn("Urgent hiring for job {}: no freelancer profiles at all, skip AI matching", job.getId());
+                log.warn(
+                        "Urgent hiring for job {}: no freelancer profiles at all, skip AI matching",
+                        job.getId());
                 return;
             }
 
             List<FreelancerProfile> allDevSkillsProfiles = profiles;
-            List<UUID> candidateIds =
-                    profiles.stream().map(p -> p.getUser().getId()).toList();
+            List<UUID> candidateIds = profiles.stream().map(p -> p.getUser().getId()).toList();
             List<FreelancerSkill> allDevSkills =
                     freelancerSkillRepository.findByFreelancerIdIn(candidateIds);
             Map<UUID, List<FreelancerSkill>> devSkillMap =
@@ -241,7 +247,9 @@ public class JobServiceImpl implements JobService {
                             .toList();
 
             if (top5Candidates.isEmpty()) {
-                log.warn("Urgent hiring for job {}: top candidates empty after scoring", job.getId());
+                log.warn(
+                        "Urgent hiring for job {}: top candidates empty after scoring",
+                        job.getId());
                 return;
             }
 
@@ -251,8 +259,7 @@ public class JobServiceImpl implements JobService {
             for (FreelancerProfile p : top5Candidates) {
                 localScoreMap.put(
                         p.getUser().getId(),
-                        calculateLocalScore(
-                                requiredSkills, devSkillMap.get(p.getUser().getId())));
+                        calculateLocalScore(requiredSkills, devSkillMap.get(p.getUser().getId())));
             }
 
             // FIX LỖI: Dùng mảng 1 phần tử để lách luật "effectively final" của Java Lambda
@@ -268,7 +275,8 @@ public class JobServiceImpl implements JobService {
                                         // tăng lên B, C...
                                         idMapping.put(
                                                 shortId,
-                                                p.getUser().getId()); // Lưu vào bộ nhớ để tí map lại
+                                                p.getUser()
+                                                        .getId()); // Lưu vào bộ nhớ để tí map lại
 
                                         List<String> skillNames =
                                                 devSkillMap
@@ -302,10 +310,17 @@ public class JobServiceImpl implements JobService {
                 aiScores = aiService.evaluateCandidates(srsContent, candidatesJson);
                 if (aiScores == null) aiScores = List.of();
             } catch (Exception e) {
-                log.warn("Urgent hiring for job {}: AI evaluate failed, fallback to local score", job.getId(), e);
+                log.warn(
+                        "Urgent hiring for job {}: AI evaluate failed, fallback to local score",
+                        job.getId(),
+                        e);
                 aiScores = List.of();
             }
-            log.info("Urgent hiring for job {}: AI returned {}/{} scores", job.getId(), aiScores.size(), top5Candidates.size());
+            log.info(
+                    "Urgent hiring for job {}: AI returned {}/{} scores",
+                    job.getId(),
+                    aiScores.size(),
+                    top5Candidates.size());
 
             java.util.Set<UUID> aiMatchedIds = new java.util.HashSet<>();
             List<AiJobRecommendation> recommendations =
@@ -331,7 +346,8 @@ public class JobServiceImpl implements JobService {
                             .filter(java.util.Objects::nonNull)
                             .collect(Collectors.toCollection(java.util.ArrayList::new));
 
-            // FALLBACK: những ứng viên AI bỏ sót / AI fail hoàn toàn -> dùng local score để vẫn đủ 5
+            // FALLBACK: những ứng viên AI bỏ sót / AI fail hoàn toàn -> dùng local score để vẫn đủ
+            // 5
             for (FreelancerProfile p : top5Candidates) {
                 UUID uid = p.getUser().getId();
                 if (aiMatchedIds.contains(uid)) continue;
@@ -365,20 +381,28 @@ public class JobServiceImpl implements JobService {
                 return;
             }
 
-            List<AiJobRecommendation> savedRecs = aiJobRecommendationRepository.saveAll(recommendations);
-            log.info("Urgent hiring for job {}: saved {} recommendations", job.getId(), savedRecs.size());
-            savedRecs.forEach(rec -> {
-                try {
-                    notificationService.sendInviteNotification(
-                            rec.getFreelancer().getId(),
-                            job.getId(),
-                            job.getTitle(),
-                            rec.getMatchScore(),
-                            rec.getId());
-                } catch (Exception e) {
-                    log.warn("Failed to send invite notification to {}", rec.getFreelancer().getId(), e);
-                }
-            });
+            List<AiJobRecommendation> savedRecs =
+                    aiJobRecommendationRepository.saveAll(recommendations);
+            log.info(
+                    "Urgent hiring for job {}: saved {} recommendations",
+                    job.getId(),
+                    savedRecs.size());
+            savedRecs.forEach(
+                    rec -> {
+                        try {
+                            notificationService.sendInviteNotification(
+                                    rec.getFreelancer().getId(),
+                                    job.getId(),
+                                    job.getTitle(),
+                                    rec.getMatchScore(),
+                                    rec.getId());
+                        } catch (Exception e) {
+                            log.warn(
+                                    "Failed to send invite notification to {}",
+                                    rec.getFreelancer().getId(),
+                                    e);
+                        }
+                    });
         } catch (Exception e) {
             // Không bao giờ để lỗi mai mối làm fail cả việc đăng job
             log.error("Urgent hiring failed for job {}", job.getId(), e);
@@ -419,18 +443,35 @@ public class JobServiceImpl implements JobService {
         }
         job.setStatus(JobStatus.CANCELLED);
         jobRepository.save(job);
-        return mapToResponse(job);
+
+        JobResponse response = mapToResponse(job);
+        redisCacheService.delete(RedisKeys.jobDetail(jobId));
+        redisCacheService.delete(RedisKeys.clientJobs(clientId));
+        return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public JobResponse getJobById(UUID jobId) {
-        Job job =
+        // Gating độc quyền 5 phút PHẢI chạy trước cache (cache dùng chung mọi user,
+        // không được để người ngoài top 5 đọc ké bản cache của người được mời)
+        Job gate =
                 jobRepository
                         .findById(jobId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        assertVisible(job);
-        return mapToResponse(job);
+        assertVisible(gate);
+        return redisCacheService.getOrSet(
+                RedisKeys.jobDetail(jobId),
+                Duration.ofMinutes(30),
+                JobResponse.class,
+                () -> {
+                    Job job =
+                            jobRepository
+                                    .findByIdWithDetails(jobId)
+                                    .orElseThrow(
+                                            () -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+                    return mapToResponse(job);
+                });
     }
 
     // Job gấp trong 5 phút đầu: ẩn cả xem trực tiếp — chỉ chủ job, admin và 5 người được
@@ -468,14 +509,22 @@ public class JobServiceImpl implements JobService {
     @Override
     @Transactional(readOnly = true)
     public List<JobResponse> getJobsByClientId(UUID clientId) {
-        List<Job> jobs = jobRepository.findAllByClientId(clientId);
-        return jobs.stream().map(this::mapToResponse).collect(Collectors.toList());
+        return redisCacheService.getListOrSet(
+                RedisKeys.clientJobs(clientId),
+                Duration.ofMinutes(30),
+                JobResponse.class,
+                () -> {
+                    List<Job> jobs = jobRepository.findAllByClientId(clientId);
+                    return jobs.stream().map(this::mapToResponse).collect(Collectors.toList());
+                });
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<JobResponse> getAllOpenJobs() {
-        List<Job> jobs = jobRepository.findAllOpenJobsFiltered(JobStatus.OPEN, java.time.LocalDateTime.now().minusMinutes(5));
+        List<Job> jobs =
+                jobRepository.findAllOpenJobsFiltered(
+                        JobStatus.OPEN, java.time.LocalDateTime.now().minusMinutes(5));
         return jobs.stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
@@ -490,7 +539,8 @@ public class JobServiceImpl implements JobService {
                                                         .id(jobSkill.getSkill().getId())
                                                         .name(jobSkill.getSkill().getName())
                                                         .yearsOfExperience(
-                                                                jobSkill.getRequiredYearsOfExperience())
+                                                                jobSkill
+                                                                        .getRequiredYearsOfExperience())
                                                         .build())
                                 .collect(Collectors.toList());
 
@@ -528,46 +578,57 @@ public class JobServiceImpl implements JobService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
-        List<AiJobRecommendation> recommendations =
-                aiJobRecommendationRepository.findAllByJobIdOrderByMatchScoreDesc(jobId);
+        return redisCacheService.getListOrSet(
+                RedisKeys.jobRecommendations(jobId),
+                Duration.ofMinutes(30),
+                AiRecommendationResponse.class,
+                () -> {
+                    List<AiJobRecommendation> recommendations =
+                            aiJobRecommendationRepository.findAllByJobIdOrderByMatchScoreDesc(
+                                    jobId);
 
-        return recommendations.stream()
-                .map(
-                        rec -> {
-                            User dev = rec.getFreelancer();
-                            FreelancerProfile profile =
-                                    freelancerProfileRepository
-                                            .findByUserId(dev.getId())
-                                            .orElse(null);
-                            List<FreelancerSkill> fSkills =
-                                    freelancerSkillRepository.findByFreelancerIdIn(
-                                            List.of(dev.getId()));
+                    return recommendations.stream()
+                            .map(
+                                    rec -> {
+                                        User dev = rec.getFreelancer();
+                                        FreelancerProfile profile =
+                                                freelancerProfileRepository
+                                                        .findByUserId(dev.getId())
+                                                        .orElse(null);
+                                        List<FreelancerSkill> fSkills =
+                                                freelancerSkillRepository.findByFreelancerIdIn(
+                                                        List.of(dev.getId()));
 
-                            List<SkillExperienceDto> skillDtos =
-                                    fSkills.stream()
-                                            .map(
-                                                    fs ->
-                                                            SkillExperienceDto.builder()
-                                                                    .skillName(
-                                                                            fs.getSkill().getName())
-                                                                    .yearsOfExperience(
-                                                                            fs
-                                                                                    .getYearsOfExperience())
-                                                                    .build())
-                                            .toList();
+                                        List<SkillExperienceDto> skillDtos =
+                                                fSkills.stream()
+                                                        .map(
+                                                                fs ->
+                                                                        SkillExperienceDto.builder()
+                                                                                .skillName(
+                                                                                        fs.getSkill()
+                                                                                                .getName())
+                                                                                .yearsOfExperience(
+                                                                                        fs
+                                                                                                .getYearsOfExperience())
+                                                                                .build())
+                                                        .toList();
 
-                            return AiRecommendationResponse.builder()
-                                    .id(rec.getId())
-                                    .freelancerId(dev.getId())
-                                    .fullName(dev.getFullName())
-                                    .headline(profile != null ? profile.getHeadline() : "")
-                                    .matchScore(rec.getMatchScore())
-                                    .aiComment(rec.getAiComment())
-                                    .status(rec.getStatus())
-                                    .skills(skillDtos)
-                                    .build();
-                        })
-                .toList();
+                                        return AiRecommendationResponse.builder()
+                                                .id(rec.getId())
+                                                .freelancerId(dev.getId())
+                                                .fullName(dev.getFullName())
+                                                .headline(
+                                                        profile != null
+                                                                ? profile.getHeadline()
+                                                                : "")
+                                                .matchScore(rec.getMatchScore())
+                                                .aiComment(rec.getAiComment())
+                                                .status(rec.getStatus())
+                                                .skills(skillDtos)
+                                                .build();
+                                    })
+                            .toList();
+                });
     }
 
     @Override
@@ -603,6 +664,7 @@ public class JobServiceImpl implements JobService {
                 job.getTitle(),
                 recommendation.getMatchScore(),
                 recommendation.getId());
+        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
     }
 
     @Override
@@ -610,7 +672,11 @@ public class JobServiceImpl implements JobService {
     public AcceptInvitationResponse acceptJobInvitation(
             UUID freelancerId, UUID jobId, UUID recommendationId) {
         AiJobRecommendation recommendation =
-                validateAndGetInvitation(freelancerId, jobId, recommendationId, RecommendationStatus.CLIENT_REQUESTED);
+                validateAndGetInvitation(
+                        freelancerId,
+                        jobId,
+                        recommendationId,
+                        RecommendationStatus.CLIENT_REQUESTED);
 
         // 1. Cập nhật trạng thái ứng viên (KHÔNG đổi JobStatus, vẫn giữ OPEN)
         recommendation.setStatus(RecommendationStatus.ACCEPTED);
@@ -632,6 +698,7 @@ public class JobServiceImpl implements JobService {
         } catch (Exception e) {
             log.warn("Failed to send CHAT_OPENED to client", e);
         }
+        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
 
         // 4. Trả về roomId cho Frontend
         return AcceptInvitationResponse.builder().roomId(room.getId()).build();
@@ -641,16 +708,24 @@ public class JobServiceImpl implements JobService {
     @Transactional
     public void rejectJobInvitation(UUID freelancerId, UUID jobId, UUID recommendationId) {
         AiJobRecommendation recommendation =
-                validateAndGetInvitation(freelancerId, jobId, recommendationId, RecommendationStatus.CLIENT_REQUESTED);
+                validateAndGetInvitation(
+                        freelancerId,
+                        jobId,
+                        recommendationId,
+                        RecommendationStatus.CLIENT_REQUESTED);
 
         // Đổi trạng thái sang REJECTED
         recommendation.setStatus(RecommendationStatus.REJECTED);
         aiJobRecommendationRepository.save(recommendation);
+        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
     }
 
     // Hàm dùng chung để validate bảo mật tránh Dev này nhận bừa job của Dev khác
     private AiJobRecommendation validateAndGetInvitation(
-            UUID freelancerId, UUID jobId, UUID recommendationId, RecommendationStatus expectedStatus) {
+            UUID freelancerId,
+            UUID jobId,
+            UUID recommendationId,
+            RecommendationStatus expectedStatus) {
         AiJobRecommendation recommendation =
                 aiJobRecommendationRepository
                         .findById(recommendationId)
@@ -678,7 +753,8 @@ public class JobServiceImpl implements JobService {
     @Transactional
     public void devRequestChat(UUID freelancerId, UUID jobId, UUID recommendationId) {
         AiJobRecommendation recommendation =
-                validateAndGetInvitation(freelancerId, jobId, recommendationId, RecommendationStatus.AUTO_MATCHED);
+                validateAndGetInvitation(
+                        freelancerId, jobId, recommendationId, RecommendationStatus.AUTO_MATCHED);
 
         recommendation.setStatus(RecommendationStatus.DEV_REQUESTED);
         aiJobRecommendationRepository.save(recommendation);
@@ -698,23 +774,28 @@ public class JobServiceImpl implements JobService {
         } catch (Exception e) {
             log.warn("Failed to send DEV_CLAIM to client", e);
         }
+        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
     }
 
     @Override
     @Transactional
     public AcceptInvitationResponse clientAcceptDevRequest(
             UUID clientId, UUID jobId, UUID recommendationId) {
-        Job job = jobRepository.findById(jobId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        Job job =
+                jobRepository
+                        .findById(jobId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         if (!job.getClient().getId().equals(clientId)) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
         AiJobRecommendation recommendation =
-                aiJobRecommendationRepository.findById(recommendationId)
+                aiJobRecommendationRepository
+                        .findById(recommendationId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-                        
-        if (!recommendation.getJob().getId().equals(jobId) || recommendation.getStatus() != RecommendationStatus.DEV_REQUESTED) {
+
+        if (!recommendation.getJob().getId().equals(jobId)
+                || recommendation.getStatus() != RecommendationStatus.DEV_REQUESTED) {
             throw new ApiException(ErrorCode.REQUEST_FAILED);
         }
 
@@ -736,6 +817,7 @@ public class JobServiceImpl implements JobService {
         } catch (Exception e) {
             log.warn("Failed to send CHAT_OPENED to freelancer", e);
         }
+        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
 
         return AcceptInvitationResponse.builder().roomId(room.getId()).build();
     }
@@ -743,19 +825,26 @@ public class JobServiceImpl implements JobService {
     @Override
     @Transactional(readOnly = true)
     public AiRecommendationResponse getMyJobRecommendation(UUID freelancerId, UUID jobId) {
-        AiJobRecommendation rec = aiJobRecommendationRepository.findByJobIdAndFreelancerId(jobId, freelancerId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        
-        User dev = rec.getFreelancer();
-        FreelancerProfile profile = freelancerProfileRepository.findByUserId(dev.getId()).orElse(null);
-        List<FreelancerSkill> fSkills = freelancerSkillRepository.findByFreelancerIdIn(List.of(dev.getId()));
+        AiJobRecommendation rec =
+                aiJobRecommendationRepository
+                        .findByJobIdAndFreelancerId(jobId, freelancerId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        List<SkillExperienceDto> skillDtos = fSkills.stream()
-                .map(fs -> SkillExperienceDto.builder()
-                        .skillName(fs.getSkill().getName())
-                        .yearsOfExperience(fs.getYearsOfExperience())
-                        .build())
-                .toList();
+        User dev = rec.getFreelancer();
+        FreelancerProfile profile =
+                freelancerProfileRepository.findByUserId(dev.getId()).orElse(null);
+        List<FreelancerSkill> fSkills =
+                freelancerSkillRepository.findByFreelancerIdIn(List.of(dev.getId()));
+
+        List<SkillExperienceDto> skillDtos =
+                fSkills.stream()
+                        .map(
+                                fs ->
+                                        SkillExperienceDto.builder()
+                                                .skillName(fs.getSkill().getName())
+                                                .yearsOfExperience(fs.getYearsOfExperience())
+                                                .build())
+                        .toList();
 
         return AiRecommendationResponse.builder()
                 .id(rec.getId())

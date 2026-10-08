@@ -38,7 +38,8 @@ public class StorageController {
         return ApiResponse.<String>builder().result(secureUrl).build();
     }
 
-    @PostMapping(value = "/upload-file", consumes = "multipart/form-data")    @PreAuthorize("isAuthenticated()")
+    @PostMapping(value = "/upload-file", consumes = "multipart/form-data")
+    @PreAuthorize("isAuthenticated()")
     @Operation(
             summary = "Upload a file (PDF/DOC/DOCX, max 10MB)",
             description = "Uploads a proposal attachment to Cloudinary and returns the secure URL")
@@ -76,7 +77,8 @@ public class StorageController {
                         org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename*=UTF-8''"
                                 + java.net.URLEncoder.encode(
-                                        data.getFileName(), java.nio.charset.StandardCharsets.UTF_8)
+                                                data.getFileName(),
+                                                java.nio.charset.StandardCharsets.UTF_8)
                                         .replace("+", "%20"))
                 .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, data.getContentType())
                 .body(data.getContent());

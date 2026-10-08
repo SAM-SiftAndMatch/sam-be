@@ -13,9 +13,12 @@ import org.springframework.stereotype.Repository;
 public interface ChatRoomRepository extends JpaRepository<ChatRoom, UUID> {
     Optional<ChatRoom> findByJobIdAndFreelancerId(UUID jobId, UUID freelancerId);
 
-    @Query("SELECT r FROM ChatRoom r WHERE r.client.id = :userId OR r.freelancer.id = :userId ORDER BY r.updatedAt DESC")
+    @Query(
+            "SELECT r FROM ChatRoom r WHERE r.client.id = :userId OR r.freelancer.id = :userId ORDER BY r.updatedAt DESC")
     List<ChatRoom> findAllByMemberId(@Param("userId") UUID userId);
 
-    @Query("SELECT r FROM ChatRoom r WHERE r.job.id = :jobId AND (r.client.id = :userId OR r.freelancer.id = :userId)")
-    Optional<ChatRoom> findByJobIdAndMemberId(@Param("jobId") UUID jobId, @Param("userId") UUID userId);
+    @Query(
+            "SELECT r FROM ChatRoom r WHERE r.job.id = :jobId AND (r.client.id = :userId OR r.freelancer.id = :userId)")
+    Optional<ChatRoom> findByJobIdAndMemberId(
+            @Param("jobId") UUID jobId, @Param("userId") UUID userId);
 }

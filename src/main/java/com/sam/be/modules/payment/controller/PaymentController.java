@@ -22,7 +22,9 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
-@Tag(name = "Payment", description = "Funding before start: client 100% + freelancer 2% deposit via VNPay")
+@Tag(
+        name = "Payment",
+        description = "Funding before start: client 100% + freelancer 2% deposit via VNPay")
 public class PaymentController {
 
     private final PaymentService paymentService;
@@ -70,7 +72,8 @@ public class PaymentController {
             description =
                     "Same workaround as subscription confirm-payment: FE reports success, BE cross-checks txnRef/amount then marks HELD. Idempotent with IPN.")
     public ApiResponse<PaymentResponse> confirmFunding(
-            @PathVariable UUID paymentId, @RequestBody(required = false) ConfirmFundingRequest request) {
+            @PathVariable UUID paymentId,
+            @RequestBody(required = false) ConfirmFundingRequest request) {
         PaymentResponse response =
                 paymentService.confirmFunding(SecurityUtils.getCurrentUserId(), paymentId, request);
         return ApiResponse.<PaymentResponse>builder().result(response).build();
