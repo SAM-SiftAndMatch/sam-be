@@ -5,6 +5,8 @@ import com.sam.be.common.constant.enums.PaymentStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.security.util.SecurityUtils;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpaySigner;
@@ -18,6 +20,7 @@ import com.sam.be.modules.payment.repository.PaymentRepository;
 import com.sam.be.modules.payment.service.PaymentService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -46,6 +49,8 @@ public class PaymentServiceImpl implements PaymentService {
     private final VnpayProperties vnpayProperties;
 
     private final NotificationService notificationService;
+
+    private final RedisCacheService redisCacheService;
 
     @Override
     @Transactional
@@ -116,6 +121,7 @@ public class PaymentServiceImpl implements PaymentService {
                 payment.getId(),
                 installmentNo,
                 contract.getId());
+        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
         return toResponse(payment, vnpayUrl);
     }
 
@@ -165,6 +171,7 @@ public class PaymentServiceImpl implements PaymentService {
                     payment,
                     "PAYMENT_ESCROW_HELD",
                     "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
+            redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
             log.info("Escrow held for payment {}", payment.getId());
         }
         return Map.of("RspCode", "00", "Message", "Confirm Success");
@@ -197,6 +204,7 @@ public class PaymentServiceImpl implements PaymentService {
                 payment,
                 "PAYMENT_RELEASED",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã được giải ngân.");
+        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
         log.info("Escrow released for payment {}", payment.getId());
         return toResponse(payment, null);
     }
@@ -214,10 +222,15 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
-        return paymentRepository.findAllByContractId(contractId).stream()
-                .sorted(Comparator.comparing(Payment::getInstallmentNo))
-                .map(p -> toResponse(p, null))
-                .toList();
+        return redisCacheService.getListOrSet(
+                RedisKeys.contractPayments(contractId),
+                Duration.ofMinutes(15),
+                PaymentResponse.class,
+                () ->
+                        paymentRepository.findAllByContractId(contractId).stream()
+                                .sorted(Comparator.comparing(Payment::getInstallmentNo))
+                                .map(p -> toResponse(p, null))
+                                .toList());
     }
 
     private void pushPaymentEvent(Contract contract, Payment payment, String type, String message) {

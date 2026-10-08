@@ -2,6 +2,8 @@ package com.sam.be.modules.user.service.impl;
 
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.skill.entity.Skill;
 import com.sam.be.modules.skill.repository.SkillRepository;
 import com.sam.be.modules.user.dto.request.ClientProfileRequest;
@@ -19,6 +21,7 @@ import com.sam.be.modules.user.repository.FreelancerProfileRepository;
 import com.sam.be.modules.user.repository.FreelancerSkillRepository;
 import com.sam.be.modules.user.repository.UserRepository;
 import com.sam.be.modules.user.service.ProfileService;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -36,23 +39,32 @@ public class ProfileServiceImpl implements ProfileService {
     private final ClientProfileRepository clientProfileRepository;
     private final FreelancerSkillRepository freelancerSkillRepository;
     private final SkillRepository skillRepository;
+    private final RedisCacheService redisCacheService;
 
     @Override
     @Transactional(readOnly = true)
     public FreelancerProfileResponse getFreelancerProfile(UUID userId) {
-        User user =
-                userRepository
-                        .findByIdWithFreelancerProfile(userId)
-                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        return redisCacheService.getOrSet(
+                RedisKeys.freelancerProfile(userId),
+                Duration.ofHours(1),
+                FreelancerProfileResponse.class,
+                () -> {
+                    User user =
+                            userRepository
+                                    .findByIdWithFreelancerProfile(userId)
+                                    .orElseThrow(
+                                            () -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        FreelancerProfile profile =
-                user.getFreelancerProfile() != null
-                        ? user.getFreelancerProfile()
-                        : new FreelancerProfile();
+                    FreelancerProfile profile =
+                            user.getFreelancerProfile() != null
+                                    ? user.getFreelancerProfile()
+                                    : new FreelancerProfile();
 
-        List<FreelancerSkill> skills = freelancerSkillRepository.findAllByFreelancerId(userId);
+                    List<FreelancerSkill> skills =
+                            freelancerSkillRepository.findAllByFreelancerId(userId);
 
-        return mapToFreelancerProfileResponse(user, profile, skills);
+                    return mapToFreelancerProfileResponse(user, profile, skills);
+                });
     }
 
     @Override
@@ -121,21 +133,33 @@ public class ProfileServiceImpl implements ProfileService {
             freelancerSkillRepository.saveAll(newSkills);
         }
 
-        return mapToFreelancerProfileResponse(user, profile, newSkills);
+        FreelancerProfileResponse response =
+                mapToFreelancerProfileResponse(user, profile, newSkills);
+        redisCacheService.delete(RedisKeys.freelancerProfile(userId));
+        return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public ClientProfileResponse getClientProfile(UUID userId) {
-        User user =
-                userRepository
-                        .findByIdWithClientProfile(userId)
-                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        return redisCacheService.getOrSet(
+                RedisKeys.clientProfile(userId),
+                Duration.ofHours(1),
+                ClientProfileResponse.class,
+                () -> {
+                    User user =
+                            userRepository
+                                    .findByIdWithClientProfile(userId)
+                                    .orElseThrow(
+                                            () -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        ClientProfile profile =
-                user.getClientProfile() != null ? user.getClientProfile() : new ClientProfile();
+                    ClientProfile profile =
+                            user.getClientProfile() != null
+                                    ? user.getClientProfile()
+                                    : new ClientProfile();
 
-        return mapToClientProfileResponse(user, profile);
+                    return mapToClientProfileResponse(user, profile);
+                });
     }
 
     @Override
@@ -158,7 +182,9 @@ public class ProfileServiceImpl implements ProfileService {
 
         clientProfileRepository.save(profile);
 
-        return mapToClientProfileResponse(user, profile);
+        ClientProfileResponse response = mapToClientProfileResponse(user, profile);
+        redisCacheService.delete(RedisKeys.clientProfile(userId));
+        return response;
     }
 
     private FreelancerProfileResponse mapToFreelancerProfileResponse(
