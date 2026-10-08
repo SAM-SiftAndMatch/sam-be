@@ -115,7 +115,8 @@ public class AiServiceImpl implements AiService {
 
         // Nếu có lịch sử hội thoại thì đưa vào để AI nhớ các option đã đề xuất
         if (request.getChatHistory() != null && !request.getChatHistory().isEmpty()) {
-            userPrompt.append("LỊCH SỬ ĐÀM PHÁN TRƯỚC ĐÓ (Quan trọng: phải bám sát các option đã đề xuất):\n");
+            userPrompt.append(
+                    "LỊCH SỬ ĐÀM PHÁN TRƯỚC ĐÓ (Quan trọng: phải bám sát các option đã đề xuất):\n");
             for (Map<String, String> msg : request.getChatHistory()) {
                 String role = msg.getOrDefault("role", "user");
                 String content = msg.getOrDefault("content", "");
@@ -252,7 +253,8 @@ public class AiServiceImpl implements AiService {
 
             boolean isCompleted = "COMPLETED".equalsIgnoreCase(response.getStatus());
             if (requireCompletedStatus && !isCompleted) {
-                // Guard against the model emitting an SRS before completing the mandatory interview.
+                // Guard against the model emitting an SRS before completing the mandatory
+                // interview.
                 response.setSrsContent(null);
                 response.setCurrentSrsUrl(null);
                 response.setRiskLevel(null);

@@ -19,6 +19,8 @@ public class AiChatRequest {
 
     private String currentSrsContent;
 
-    /** Toàn bộ lịch sử hội thoại risk-chat (role: "user"|"assistant", content) để AI nhớ ngữ cảnh */
+    /**
+     * Toàn bộ lịch sử hội thoại risk-chat (role: "user"|"assistant", content) để AI nhớ ngữ cảnh
+     */
     private List<Map<String, String>> chatHistory;
 }

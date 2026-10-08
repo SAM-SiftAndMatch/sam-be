@@ -40,7 +40,9 @@ public class VnpayClient {
         params.put("vnp_Version", "2.1.0");
         params.put("vnp_Command", "pay");
         params.put("vnp_TmnCode", properties.getTmnCode());
-        params.put("vnp_Amount", String.valueOf(amountVnd));  // amountVnd already multiplied by 100 in service layer
+        params.put(
+                "vnp_Amount",
+                String.valueOf(amountVnd)); // amountVnd already multiplied by 100 in service layer
         params.put("vnp_CurrCode", "VND");
         params.put("vnp_TxnRef", txnRef);
         params.put("vnp_OrderInfo", orderInfo);
@@ -66,7 +68,9 @@ public class VnpayClient {
 
         // Add NotifyUrl after signature to avoid breaking hash validation
         if (properties.getIpnUrl() != null && !properties.getIpnUrl().isBlank()) {
-            paymentUrl += "&vnp_NotifyUrl=" + URLEncoder.encode(properties.getIpnUrl(), StandardCharsets.UTF_8);
+            paymentUrl +=
+                    "&vnp_NotifyUrl="
+                            + URLEncoder.encode(properties.getIpnUrl(), StandardCharsets.UTF_8);
         }
 
         return paymentUrl;

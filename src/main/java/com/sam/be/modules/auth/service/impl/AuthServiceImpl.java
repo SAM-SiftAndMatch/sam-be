@@ -161,7 +161,8 @@ public class AuthServiceImpl implements AuthService {
         // 2. Tạo session mới
         AuthResponse response = createSessionAndGenerateTokens(user, httpRequest);
 
-        // 3. Lưu response vào Grace Period (15 giây) để xử lý các request retry hoặc song song do network/page reload
+        // 3. Lưu response vào Grace Period (15 giây) để xử lý các request retry hoặc song song do
+        // network/page reload
         sessionCacheService.putGraceResponse(oldSession.getId(), response, Duration.ofSeconds(15));
 
         return response;

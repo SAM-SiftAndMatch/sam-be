@@ -304,7 +304,7 @@ public class JobServiceImpl implements JobService {
     public JobResponse getJobById(UUID jobId) {
         Job job =
                 jobRepository
-                        .findById(jobId)
+                        .findByIdWithDetails(jobId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         return mapToResponse(job);
     }
@@ -327,7 +327,8 @@ public class JobServiceImpl implements JobService {
                                                         .id(jobSkill.getSkill().getId())
                                                         .name(jobSkill.getSkill().getName())
                                                         .yearsOfExperience(
-                                                                jobSkill.getRequiredYearsOfExperience())
+                                                                jobSkill
+                                                                        .getRequiredYearsOfExperience())
                                                         .build())
                                 .collect(Collectors.toList());
 
