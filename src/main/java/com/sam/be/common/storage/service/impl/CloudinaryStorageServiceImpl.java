@@ -40,8 +40,7 @@ public class CloudinaryStorageServiceImpl implements StorageService {
 
     private String normalizeNewlines(String content) {
         if (content == null) return "";
-        return content
-                .replace("\\\\r\\\\n", "\n")
+        return content.replace("\\\\r\\\\n", "\n")
                 .replace("\\\\n", "\n")
                 .replace("\\\\r", "\n")
                 .replace("\\r\\n", "\n")
@@ -76,8 +75,13 @@ public class CloudinaryStorageServiceImpl implements StorageService {
                     inList = false;
                 }
                 String heading = line.substring(headingLevel).trim();
-                html.append("<h").append(headingLevel).append(">").append(formatInline(heading))
-                        .append("</h").append(headingLevel).append(">");
+                html.append("<h")
+                        .append(headingLevel)
+                        .append(">")
+                        .append(formatInline(heading))
+                        .append("</h")
+                        .append(headingLevel)
+                        .append(">");
                 continue;
             }
 
@@ -131,8 +135,11 @@ public class CloudinaryStorageServiceImpl implements StorageService {
     }
 
     private String escapeHtml(String text) {
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace("\"", "&quot;").replace("'", "&#39;");
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private String buildHtml(String renderedContent) {

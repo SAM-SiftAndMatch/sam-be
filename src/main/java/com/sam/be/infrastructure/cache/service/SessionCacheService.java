@@ -114,7 +114,10 @@ public class SessionCacheService {
             String json = objectMapper.writeValueAsString(response);
             redisTemplate.opsForValue().set(RedisKeys.sessionGrace(sessionId), json, ttl);
         } catch (Exception e) {
-            log.warn("Redis error putting grace response for sessionId={}: {}", sessionId, e.getMessage());
+            log.warn(
+                    "Redis error putting grace response for sessionId={}: {}",
+                    sessionId,
+                    e.getMessage());
         }
     }
 
@@ -126,7 +129,10 @@ public class SessionCacheService {
             }
             return Optional.of(objectMapper.readValue(json, AuthResponse.class));
         } catch (Exception e) {
-            log.warn("Redis error getting grace response for sessionId={}: {}", sessionId, e.getMessage());
+            log.warn(
+                    "Redis error getting grace response for sessionId={}: {}",
+                    sessionId,
+                    e.getMessage());
             return Optional.empty();
         }
     }

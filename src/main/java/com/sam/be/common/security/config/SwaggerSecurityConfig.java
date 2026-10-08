@@ -45,8 +45,9 @@ public class SwaggerSecurityConfig {
     }
 
     /**
-     * SecurityFilterChain ưu tiên cao nhất (@Order(-1)), chỉ match các URL Swagger/OpenAPI và login/logout.
-     * Sử dụng giao diện Form Login chuẩn của Spring Security thay vì popup HTTP Basic Auth.
+     * SecurityFilterChain ưu tiên cao nhất (@Order(-1)), chỉ match các URL Swagger/OpenAPI và
+     * login/logout. Sử dụng giao diện Form Login chuẩn của Spring Security thay vì popup HTTP Basic
+     * Auth.
      */
     @Bean
     @Order(-1)
@@ -77,13 +78,8 @@ public class SwaggerSecurityConfig {
                                         .authenticated())
                 .userDetailsService(swaggerUserDetailsManager)
                 .formLogin(
-                        form ->
-                                form.defaultSuccessUrl("/swagger-ui/index.html", false)
-                                        .permitAll())
-                .logout(
-                        logout ->
-                                logout.logoutSuccessUrl("/login?logout")
-                                        .permitAll());
+                        form -> form.defaultSuccessUrl("/swagger-ui/index.html", false).permitAll())
+                .logout(logout -> logout.logoutSuccessUrl("/login?logout").permitAll());
 
         return http.build();
     }
