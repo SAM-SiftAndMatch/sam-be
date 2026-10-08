@@ -34,6 +34,13 @@ public class Proposal {
     @Column(name = "cover_letter", columnDefinition = "TEXT")
     private String coverLetter;
 
+    // File PDF proposal freelancer đính kèm (URL Cloudinary)
+    @Column(name = "attachment_url", columnDefinition = "TEXT")
+    private String attachmentUrl;
+
+    @Column(name = "attachment_name")
+    private String attachmentName;
+
     @Column(name = "proposed_budget", nullable = false)
     private BigDecimal proposedBudget;
 

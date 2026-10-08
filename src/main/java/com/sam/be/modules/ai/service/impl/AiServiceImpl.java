@@ -51,11 +51,19 @@ public class AiServiceImpl implements AiService {
     @Value("classpath:prompts/contract_generator_prompt.txt")
     private Resource contractPromptResource;
 
+    @Value("classpath:prompts/contract_amount_verify_prompt.txt")
+    private Resource amountVerifyPromptResource;
+
+    @Value("classpath:prompts/contract_amount_review_prompt.txt")
+    private Resource amountReviewPromptResource;
+
     private String baSystemPrompt;
     private String riskSystemPrompt;
     private String skillMatchingPrompt;
     private String candidateEvaluationPrompt;
     private String contractSystemPrompt;
+    private String amountVerifyPrompt;
+    private String amountReviewPrompt;
     private List<AiQuestion> baseQuestions;
 
     private final ObjectMapper objectMapper;
@@ -82,6 +90,12 @@ public class AiServiceImpl implements AiService {
             contractSystemPrompt =
                     StreamUtils.copyToString(
                             contractPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            amountVerifyPrompt =
+                    StreamUtils.copyToString(
+                            amountVerifyPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            amountReviewPrompt =
+                    StreamUtils.copyToString(
+                            amountReviewPromptResource.getInputStream(), StandardCharsets.UTF_8);
             String questionsJson =
                     StreamUtils.copyToString(
                             baseQuestionsResource.getInputStream(), StandardCharsets.UTF_8);
@@ -189,11 +203,19 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public AiContractDraft generateContractDraft(
-            String srsContent, BigDecimal minBudget, BigDecimal maxBudget) {
+            String srsContent,
+            BigDecimal minBudget,
+            BigDecimal maxBudget,
+            String clientName,
+            String freelancerName) {
         String userMessage =
                 String.format(
-                        "TÀI LIỆU SRS:\n%s\n\nNGÂN SÁCH DỰ KIẾN: Từ %s đến %s",
-                        srsContent, minBudget, maxBudget);
+                        "TÀI LIỆU SRS:\n%s\n\nNGÂN SÁCH DỰ KIẾN: Từ %s đến %s\n\nBÊN A (BÊN ĐẶT HÀNG): %s\nBÊN B (BÊN PHÁT TRIỂN): %s",
+                        srsContent,
+                        minBudget,
+                        maxBudget,
+                        clientName != null ? clientName : "Bên đặt hàng",
+                        freelancerName != null ? freelancerName : "Bên phát triển");
 
         List<Map<String, Object>> history = new ArrayList<>();
         history.add(createMessage("user", userMessage));
@@ -206,6 +228,80 @@ public class AiServiceImpl implements AiService {
         } catch (Exception e) {
             log.error("AI Contract Generation failed. Raw: {}", aiResponseJson, e);
             throw new ApiException(ErrorCode.UNEXPECTED_ERROR);
+        }
+    }
+
+    @Override
+    public AiAmountVerification verifyContractAmount(
+            String contractTerms, BigDecimal systemAmount) {
+        String userMessage =
+                String.format(
+                        "VĂN BẢN HỢP ĐỒNG:\n%s\n\nCON SỐ HỆ THỐNG: %s",
+                        contractTerms != null ? contractTerms : "(trống)", systemAmount);
+        List<Map<String, Object>> history = new ArrayList<>();
+        history.add(createMessage("user", userMessage));
+
+        String aiResponseJson = geminiClient.generateContent(amountVerifyPrompt, history);
+        String cleanedJson = cleanJson(aiResponseJson);
+
+        AiAmountVerification result = new AiAmountVerification();
+        try {
+            result = objectMapper.readValue(cleanedJson, AiAmountVerification.class);
+        } catch (Exception e) {
+            log.error("AI Amount Verification failed. Raw: {}", aiResponseJson, e);
+            result.setMatches(false);
+            result.setNote("AI không kiểm chứng được con số, vui lòng thử lại.");
+            return result;
+        }
+        if (result.getExtractedAmount() == null || !Boolean.TRUE.equals(result.getMatches())) {
+            result.setMatches(false);
+            if (result.getNote() == null || result.getNote().isBlank()) {
+                result.setNote("Số tiền trong văn bản không khớp với giá thỏa thuận.");
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public AiContractReview reviewContractTerms(
+            String contractTerms, BigDecimal agreedAmount, BigDecimal initialAmount) {
+        String userMessage =
+                String.format(
+                        "VĂN BẢN HỢP ĐỒNG:\n%s\n\nGIÁ THỎA THUẬN TRÊN HỆ THỐNG (agreedAmount): %s\nGIÁ AI ĐỀ XUẤT BAN ĐẦU (initialAmount): %s",
+                        contractTerms != null ? contractTerms : "(trống)",
+                        agreedAmount,
+                        initialAmount != null ? initialAmount.toString() : "(không có)");
+        List<Map<String, Object>> history = new ArrayList<>();
+        history.add(createMessage("user", userMessage));
+
+        String aiResponseJson = geminiClient.generateContent(amountReviewPrompt, history);
+        String cleanedJson = cleanJson(aiResponseJson);
+
+        try {
+            AiContractReview review = objectMapper.readValue(cleanedJson, AiContractReview.class);
+            // Chuẩn hóa verdict lạ về NEEDS_CONFIRM để 2 bên chốt tay cho chắc
+            if (!"OK".equalsIgnoreCase(review.getVerdict())) {
+                review.setVerdict("NEEDS_CONFIRM");
+                if (review.getChatMessage() == null || review.getChatMessage().isBlank()) {
+                    review.setChatMessage(
+                            "AI phát hiện điểm cần xem lại trong hợp đồng. Hai bên kiểm tra kỹ: nếu giữ nguyên bản này thì bấm \"Giữ nguyên\", còn không thì sửa lại rồi ký lại để thẩm định tiếp.");
+                }
+            } else {
+                review.setVerdict("OK");
+                if (review.getChatMessage() == null || review.getChatMessage().isBlank()) {
+                    review.setChatMessage(
+                            "AI đã thẩm định xong: hợp đồng hợp lệ, số tiền khớp. Hai bên nạp tiền để dự án bắt đầu nhé!");
+                }
+            }
+            return review;
+        } catch (Exception e) {
+            log.error("AI Contract Review failed. Raw: {}", aiResponseJson, e);
+            // AI lỗi kỹ thuật: không chặn chết — nhờ 2 bên kiểm tra tay rồi bấm Giữ nguyên
+            AiContractReview fallback = new AiContractReview();
+            fallback.setVerdict("NEEDS_CONFIRM");
+            fallback.setChatMessage(
+                    "AI tạm thời không thẩm định được (lỗi kỹ thuật). Hai bên tự kiểm tra kỹ số tiền và điều khoản: nếu giữ nguyên bản này thì bấm \"Giữ nguyên\", còn không thì sửa lại rồi ký lại.");
+            return fallback;
         }
     }
 

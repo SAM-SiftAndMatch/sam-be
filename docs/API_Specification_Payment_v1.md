@@ -1,6 +1,10 @@
 # TÀI LIỆU ĐẶC TẢ API PAYMENT & SUBSCRIPTION
 **Hệ thống Freelance Platform**
-Dành cho Backend + Frontend Developer | Phiên bản 1.0 (Payment v1)
+Dành cho Backend + Frontend Developer | Phiên bản 1.1 (Funding mới — thay thế ký quỹ 2 đợt cũ từ 10/2026)
+
+> Cập nhật 10/2026: bỏ mô hình ký quỹ 2 đợt × 50%. Mô hình mới "nạp đủ mới chạy":
+> client nạp 100% + freelancer cọc 2% trước khi dự án bắt đầu, cuối dự án freelancer nhận 90%,
+> sàn giữ 10%. Chi tiết nghiệp vụ xem `SYSTEM_SPECIFICATION.md` PHỤ LỤC A.
 
 > Tài liệu này là phần nối tiếp của `API_Specification_v1.md` (không sửa v1).
 > Mọi quy ước chung của v1 đều giữ nguyên: wrapper `ApiResponse` (`code: 1000` = thành công, dữ liệu trong `result`),
@@ -13,16 +17,20 @@ Dành cho Backend + Frontend Developer | Phiên bản 1.0 (Payment v1)
 ## Mục lục
 
 1. [Tiền đề & Luồng nghiệp vụ](#1-tiền-đề--luồng-nghiệp-vụ)
-2. [API-PM-01 · Tạo ký quỹ Escrow + URL VNPay](#2-api-pm-01--tạo-ký-quỹ-escrow--url-vnpay)
-3. [API-PM-02 · IPN VNPay (webhook)](#3-api-pm-02--ipn-vnpay-webhook)
-4. [API-PM-03 · Giải ngân Escrow](#4-api-pm-03--giải-ngân-escrow)
-5. [API-PM-04 · Xem giao dịch theo hợp đồng](#5-api-pm-04--xem-giao-dịch-theo-hợp-đồng)
-6. [API-SB-01 · Mua gói dịch vụ](#6-api-sb-01--mua-gói-dịch-vụ)
-7. [API-SB-02 · Xem gói đang sở hữu](#7-api-sb-02--xem-gói-đang-sở-hữu)
-8. [WebSocket – Sự kiện thanh toán](#8-websocket--sự-kiện-thanh-toán)
-9. [Từ điển trạng thái & Mã lỗi](#9-từ-điển-trạng-thái--mã-lỗi)
-10. [Biến môi trường (VNPAY Sandbox)](#10-biến-môi-trường-vnpay-sandbox)
-11. [Gợi ý triển khai cho commit 6/7](#11-gợi-ý-triển-khai-cho-commit-67)
+2. [API-PM-01 · Client nạp 100% + URL VNPay](#2-api-pm-01--client-nạp-100--url-vnpay)
+3. [API-PM-01b · Freelancer cọc 2% + URL VNPay](#3-api-pm-01b--freelancer-cọc-2--url-vnpay)
+4. [API-PM-01c · AI đối chiếu số tiền](#4-api-pm-01c--ai-đối-chiếu-số-tiền)
+5. [API-PM-01d · Bảng nạp tiền khởi động](#5-api-pm-01d--bảng-nạp-tiền-khởi-động)
+6. [API-PM-01e · FE tự báo đã chuyển (chữa cháy thay IPN)](#6-api-pm-01e--fe-tự-báo-đã-chuyển-chữa-cháy-thay-ipn)
+7. [API-PM-02 · IPN VNPay + tự mở dự án](#7-api-pm-02--ipn-vnpay--tự-mở-dự-án)
+8. [API-PM-03 · Giải ngân Escrow](#8-api-pm-03--giải-ngân-escrow)
+9. [API-PM-04 · Xem giao dịch theo hợp đồng](#9-api-pm-04--xem-giao-dịch-theo-hợp-đồng)
+10. [API-SB-01 · Mua gói dịch vụ](#10-api-sb-01--mua-gói-dịch-vụ)
+11. [API-SB-02 · Xem gói đang sở hữu](#11-api-sb-02--xem-gói-đang-sở-hữu)
+12. [WebSocket – Sự kiện thanh toán](#12-websocket--sự-kiện-thanh-toán)
+13. [Từ điển trạng thái & Mã lỗi](#13-từ-điển-trạng-thái--mã-lỗi)
+14. [Biến môi trường (VNPAY Sandbox)](#14-biến-môi-trường-vnpay-sandbox)
+15. [Gợi ý triển khai cho commit 6/7](#15-gợi-ý-triển-khai-cho-commit-67)
 
 ---
 
@@ -33,24 +41,25 @@ Dành cho Backend + Frontend Developer | Phiên bản 1.0 (Payment v1)
   · Contract phải ở trạng thái ACTIVE (cả 2 bên đã ký qua WS sign, xem API-CT-01 v1).
   · DRAFT / CANCELLED / COMPLETED → lỗi CONTRACT_NOT_ACTIVE (đề xuất 1018).
 
-LUỒNG KÝ QUỸ 2 ĐỢT — mỗi đợt = 50% agreedAmount (Q1.1: FE KHÔNG gửi amount):
-  Đợt 1 (DEPOSIT):
-    Client POST API-PM-01 {contractId}
-      → BE query Contract.agreedAmount, tính amount = agreedAmount × 50%
-      → tạo Payment(status = PENDING) + vnpayUrl → FE redirect user sang VNPay
-    Client thanh toán xong → VNPay gọi IPN → API-PM-02
-      → verify checksum → HELD_IN_ESCROW (escrowHeldAt) → push WS cho CẢ 2 bên
-      → FE cập nhật UI realtime, KHÔNG polling (Q1.2)
-    Freelancer thực hiện dự án…
-    Client nghiệm thu → POST API-PM-03 → RELEASED (releasedAt) → push WS
-  Đợt 2 (FINAL, 50% còn lại sau nghiệm thu đợt cuối):
-    Cơ chế Y HỆT đợt 1 (tạo escrow → IPN → release).
-    BE tự xác định installment: chưa có payment RELEASED nào cho contract → DEPOSIT,
-    ngược lại → FINAL. Response luôn trả về installment để FE hiển thị "đợt 1/đợt 2".
+LUỒNG NẠP TIỀN KHỞI ĐỘNG (thay thế ký quỹ 2 đợt cũ — FE KHÔNG gửi amount):
+  Ký đôi xong → Job sang AWAITING_PAYMENT (chờ nạp tiền, chưa chạy).
+  0. FE mở màn nạp tiền: GET API-PM-01d (bảng tiền 2 bên + trạng thái) và POST API-PM-01c
+     (AI đọc văn bản, đối chiếu với agreedAmount). Lệch → badge đỏ, CHẶN nút chuyển tiền.
+  1. Client POST API-PM-01 {contractId}
+       → BE đối chiếu AI lần nữa (lệch → từ chối), tính amount = agreedAmount × 100%
+       → tạo Payment(type = CONTRACT_FUND, status = PENDING) + vnpayUrl → FE redirect VNPay.
+     Freelancer POST API-PM-01b {contractId}
+       → tương tự, amount = agreedAmount × 2% (làm tròn tới đồng).
+  2. Mỗi bên trả VNPay xong → VNPay gọi IPN → API-PM-02
+       → verify checksum → HELD_IN_ESCROW (escrowHeldAt) → push WS cho CẢ 2 bên
+       → FE cập nhật UI realtime, KHÔNG polling.
+  3. Khoản thứ hai về đủ → BE TỰ chuyển Job AWAITING_PAYMENT → IN_PROGRESS,
+     push WS PROJECT_STARTED cho cả 2. Không ai phải bấm thêm nút "bắt đầu".
+  4. Cuối dự án (luồng nghiệm thu — giai đoạn sau): thanh toán 1 lần duy nhất,
+     freelancer nhận 90%, sàn 10%; cọc 2% hoàn trả khi xong, đền client khi bỏ job.
 
-CHỐNG TRÙNG: mỗi contract tại một thời điểm chỉ có tối đa 1 payment
-  ở trạng thái PENDING hoặc HELD_IN_ESCROW. Tạo mới khi còn payment dở dang
-  → lỗi ESCROW_PAYMENT_EXISTS (đề xuất 1019).
+CHỐNG TRÙNG: mỗi contract chỉ có đúng 1 khoản CONTRACT_FUND và 1 khoản SECURITY_DEPOSIT
+  (trừ hàng đã REFUNDED). Tạo trùng → lỗi ESCROW_PAYMENT_EXISTS (1019).
 
 LUỒNG MUA GÓI (Q1.3 + business chốt 05/10/2026):
   User POST API-SB-01 {packageId, projectId?} (6 gói: 59k Ghim, 99k Tuyển gấp,
@@ -63,23 +72,25 @@ LUỒNG MUA GÓI (Q1.3 + business chốt 05/10/2026):
 
 ---
 
-## 2. API-PM-01 · Tạo ký quỹ Escrow + URL VNPay
+## 2. API-PM-01 · Client nạp 100% + URL VNPay
 
 ```
-POST /api/v1/payments/escrow
-Role: CLIENT (phải là client của contract — kiểm tra qua contract, không chỉ role)
+POST /api/v1/payments/fund
+Role: CLIENT (phải là client của contract)
 ```
 
 **Validation (bắt buộc):**
-- `contractId`: không được null, phải là UUID hợp lệ, Contract phải tồn tại (không → `RESOURCE_NOT_FOUND` 1007).
-- Contract phải `ACTIVE` (không → `CONTRACT_NOT_ACTIVE`, đề xuất 1018).
+- `contractId`: không được null, Contract phải tồn tại (không → `RESOURCE_NOT_FOUND` 1007).
+- Contract phải `ACTIVE` (không → `CONTRACT_NOT_ACTIVE` 1018).
 - Caller phải là client của contract (không → `FORBIDDEN_ACTION` 1003).
-- Không có payment dở dang (`PENDING`/`HELD_IN_ESCROW`) cho contract (có → `ESCROW_PAYMENT_EXISTS`, đề xuất 1019).
+- AI đối chiếu số trong văn bản với `agreedAmount`: lệch → `REQUEST_FAILED` 1005 (sửa hợp đồng cho khớp rồi làm lại).
+- Chưa có khoản `CONTRACT_FUND` nào (trừ REFUNDED) cho contract (có → `ESCROW_PAYMENT_EXISTS` 1019).
 
-**Request Body (Q1.1: chỉ `contractId`, tuyệt đối không `amount`):**
+**Request Body (chỉ `contractId` + `returnUrl` tùy chọn, tuyệt đối không `amount`):**
 ```json
 {
-  "contractId": "uuid-contract-id"
+  "contractId": "uuid-contract-id",
+  "returnUrl": "https://app.../workspace/{roomId}/contract"
 }
 ```
 
@@ -90,23 +101,118 @@ Role: CLIENT (phải là client của contract — kiểm tra qua contract, khô
   "result": {
     "paymentId":   "uuid-payment-id",
     "contractId":  "uuid-contract-id",
-    "installment": "DEPOSIT",
-    "amount":      1000.00,
+    "paymentType": "CONTRACT_FUND",
+    "amount":      10000000.00,
     "currency":    "VND",
     "status":      "PENDING",
-    "vnpayUrl":    "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_Amount=100000000&..."
+    "vnpayUrl":    "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_Amount=1000000000&..."
   }
 }
 ```
 
-> `amount` do BE tính = `Contract.agreedAmount × 50%` (làm tròn 2 decimals).
-> `vnp_TxnRef` = `paymentId` bỏ dấu gạch (BE tự sinh, FE không quan tâm).
+> `amount` do BE tính = `Contract.agreedAmount × 100%`.
 > 🎯 **Logic FE:** nhận `vnpayUrl` → `window.location.href = vnpayUrl` (rời app sang VNPay).
 > Không poll trạng thái — chờ WS `PAYMENT_ESCROW_HELD` (mục 8).
 
 ---
 
-## 3. API-PM-02 · IPN VNPay (webhook)
+## 3. API-PM-01b · Freelancer cọc 2% + URL VNPay
+
+```
+POST /api/v1/payments/deposit
+Role: FREELANCER (phải là freelancer của contract)
+```
+
+Mọi validation giống API-PM-01, khác duy nhất: `amount = agreedAmount × 2%` (làm tròn tới đồng),
+`paymentType = SECURITY_DEPOSIT`. Xong việc đúng hạn được hoàn trả, bỏ job thì đền cho Client
+(xử lý ở luồng nghiệm thu — giai đoạn sau).
+
+---
+
+## 4. API-PM-01c · AI đối chiếu số tiền
+
+```
+POST /api/v1/payments/contracts/{contractId}/verify-amount
+Role: CLIENT hoặc FREELANCER của hợp đồng
+```
+
+AI đọc toàn văn điều khoản, trích tổng giá trị và so với `agreedAmount` (lệch quá 1.000 VNĐ là lệch).
+
+**Response Body:**
+```json
+{
+  "code": 1000,
+  "result": {
+    "extractedAmount": 10000000,
+    "matches": true,
+    "note": "Số trong văn bản khớp giá thỏa thuận."
+  }
+}
+```
+
+> 🎯 **Logic FE:** gọi 1 lần khi mở màn nạp tiền. `matches = false` → badge đỏ + disable nút chuyển tiền.
+> BE cũng đối chiếu lại ngay trong API-PM-01/01b nên FE không thể lách.
+
+---
+
+## 5. API-PM-01d · Bảng nạp tiền khởi động
+
+```
+GET /api/v1/payments/funding/{contractId}
+Role: CLIENT hoặc FREELANCER của hợp đồng
+```
+
+Trả về số tiền mỗi bên phải chuyển, dự kiến cuối dự án và trạng thái đã chuyển/chưa:
+
+**Response Body:**
+```json
+{
+  "code": 1000,
+  "result": {
+    "contractId": "uuid",
+    "jobId": "uuid",
+    "jobStatus": "AWAITING_PAYMENT",
+    "agreedAmount": 10000000.00,
+    "clientAmount": 10000000.00,
+    "depositAmount": 200000.00,
+    "freelancerPayout": 9000000.00,
+    "platformFee": 1000000.00,
+    "fundStatus": "HELD_IN_ESCROW",
+    "depositStatus": null,
+    "fundPaid": true,
+    "depositPaid": false,
+    "allPaid": false
+  }
+}
+```
+
+---
+
+## 6. API-PM-01e · FE tự báo đã chuyển (chữa cháy thay IPN)
+
+```
+POST /api/v1/payments/{paymentId}/confirm
+Role: đúng người trả của khoản đó (fund chỉ client, deposit chỉ freelancer)
+```
+
+Giống `confirm-payment` của mua gói: VNPay redirect về FE (`vnp_ResponseCode=00`), FE lưu `paymentId`
+vào localStorage trước khi redirect và gọi API này kèm `txnRef` + `amountVnd` trên URL return.
+
+**Request Body:**
+```json
+{
+  "txnRef": "vnp_TxnRef trên URL return",
+  "amountVnd": 1000000000
+}
+```
+
+**Quy tắc BE:** đúng thành viên + đúng bên trả + payment đang `PENDING` + `txnRef` khớp
+`paymentGatewayId` + `amountVnd` khớp `amount × 100` → chuyển `HELD_IN_ESCROW`, push WS
+`PAYMENT_ESCROW_HELD`, chạy auto-start như IPN. Đã `HELD` rồi thì trả về luôn (idempotent với IPN).
+
+---
+
+## 7. API-PM-02 · IPN VNPay + tự mở dự án
 
 ```
 POST /api/v1/payments/vnpay-ipn
@@ -122,13 +228,15 @@ VNPay gọi với query params chuẩn (`vnp_TxnRef`, `vnp_Amount`, `vnp_Respons
 4. Nếu payment đã `HELD_IN_ESCROW` → `RspCode 02` (Order already confirmed — idempotent, không xử lý lại).
 5. Nếu `vnp_ResponseCode == "00"` → `HELD_IN_ESCROW` (`escrowHeldAt = now`) → push WS `PAYMENT_ESCROW_HELD` cho cả client + freelancer.
    Ngược lại (thanh toán thất bại/hủy) → giữ nguyên `PENDING` (enum `PaymentStatus` không có `FAILED`).
-6. Thành công → trả `{"RspCode":"00","Message":"Confirm Success"}`.
+6. **Tự mở dự án:** sau mỗi IPN thành công, BE kiểm tra nếu cả `CONTRACT_FUND` và `SECURITY_DEPOSIT`
+   đều đã giữ → chuyển Job `AWAITING_PAYMENT` → `IN_PROGRESS` và push WS `PROJECT_STARTED` cho cả 2.
+7. Thành công → trả `{"RspCode":"00","Message":"Confirm Success"}`.
 
 > ⚠️ Môi trường hiện tại là **VNPAY Sandbox** (Q1.2). Không hardcode key/URL (mục 10).
 
 ---
 
-## 4. API-PM-03 · Giải ngân Escrow
+## 8. API-PM-03 · Giải ngân Escrow
 
 ```
 POST /api/v1/payments/{paymentId}/release
@@ -156,14 +264,14 @@ Không có Request Body. Chỉ release được payment đang `HELD_IN_ESCROW` (
 
 ---
 
-## 5. API-PM-04 · Xem giao dịch theo hợp đồng
+## 9. API-PM-04 · Xem giao dịch theo hợp đồng
 
 ```
 GET /api/v1/payments/contract/{contractId}
 Role: CLIENT hoặc FREELANCER của hợp đồng, hoặc Admin (PaymentAccessGuard.canAccess)
 ```
 
-Trả về danh sách (đợt DEPOSIT + FINAL), sắp xếp theo thời gian tạo tăng dần.
+Trả về danh sách (1 khoản `CONTRACT_FUND` 100% + 1 khoản `SECURITY_DEPOSIT` 2%), sắp xếp theo thời gian tạo tăng dần.
 
 **Response Body:**
 ```json
@@ -173,7 +281,7 @@ Trả về danh sách (đợt DEPOSIT + FINAL), sắp xếp theo thời gian t�
     {
       "paymentId":   "uuid-payment-1",
       "contractId":  "uuid-contract-id",
-      "installment": "DEPOSIT",
+      "paymentType": "CONTRACT_FUND",
       "amount":      1000.00,
       "currency":    "VND",
       "status":      "RELEASED",
@@ -186,7 +294,7 @@ Trả về danh sách (đợt DEPOSIT + FINAL), sắp xếp theo thời gian t�
 
 ---
 
-## 6. API-SB-01 · Mua gói dịch vụ
+## 10. API-SB-01 · Mua gói dịch vụ
 
 ```
 POST /api/v1/subscriptions/purchase
@@ -234,7 +342,7 @@ Role: CLIENT hoặc FREELANCER (BE tự trích userId — FE không gửi)
 
 ---
 
-## 7. API-SB-02 · Xem gói đang sở hữu
+## 11. API-SB-02 · Xem gói đang sở hữu
 
 ```
 GET /api/v1/subscriptions/me
@@ -249,7 +357,7 @@ BE dùng để AI Headhunter lọc PRO DEV còn `ACTIVE`).
 
 ---
 
-## 8. WebSocket – Sự kiện thanh toán
+## 12. WebSocket – Sự kiện thanh toán
 
 Tái dùng kênh notification sẵn có — **không mở kênh mới, không polling** (Q1.2):
 
@@ -275,15 +383,24 @@ Mở rộng `NotificationMessage` (tương thích ngược — luồng `1_TOUCH_
 
 | `type` | Khi nào bắn | Hành động FE gợi ý |
 |---|---|---|
-| `PAYMENT_ESCROW_HELD` | IPN thành công (API-PM-02 bước 5) | Cập nhật badge payment → `HELD_IN_ESCROW`, hiện nút "Giải ngân" (nếu là Client) |
+| `PAYMENT_ESCROW_HELD` | IPN thành công (API-PM-02 bước 5) | Cập nhật badge khoản tiền → đã chuyển |
+| `PROJECT_STARTED` | Đủ tiền 2 bên (API-PM-02 bước 6) | Hiện banner "Dự án bắt đầu", tải lại bảng nạp tiền |
 | `PAYMENT_RELEASED` | Giải ngân thành công (API-PM-03) | Cập nhật badge → `RELEASED`, toast chúc mừng |
+
+### PaymentType (mới — `common/constant/enums/PaymentType.java`)
+
+`CONTRACT_FUND` (client nạp 100%) · `SECURITY_DEPOSIT` (freelancer cọc 2%) — lưu ở cột `payments.payment_type` (migration V18).
+
+### JobStatus mới
+
+`AWAITING_PAYMENT` (ký đôi xong, chờ nạp tiền) — xem `SYSTEM_SPECIFICATION.md` PHỤ LỤC A.
 
 > 🎯 **Logic FE:** subscribe kênh này ngay khi vào `ClientPaymentPage` (route `/client/payment/:contractId` — Q1.4).
 > Lọc theo `contractId` trong payload vì kênh nhận mọi notification của user.
 
 ---
 
-## 9. Từ điển trạng thái & Mã lỗi
+## 13. Từ điển trạng thái & Mã lỗi
 
 ### PaymentStatus (đã có trong BE — `common/constant/enums/PaymentStatus.java`)
 
@@ -314,7 +431,7 @@ Mở rộng `NotificationMessage` (tương thích ngược — luồng `1_TOUCH_
 
 ---
 
-## 10. Biến môi trường (VNPAY Sandbox)
+## 14. Biến môi trường (VNPAY Sandbox)
 
 Thêm vào `sam-be/.env` + `.env.example` (không hardcode — AIRule §5):
 
@@ -334,7 +451,7 @@ VNPAY_DEFAULT_CLIENT_IP=127.0.0.1
 
 ---
 
-## 11. Gợi ý triển khai cho commit 6/7 (không bắt buộc, BE được quyền điều chỉnh miễn giữ đúng contract trên)
+## 15. Gợi ý triển khai cho commit 6/7 (không bắt buộc, BE được quyền điều chỉnh miễn giữ đúng contract trên)
 
 **Commit 6 — `feat(payment)`:**
 - Mới: `modules/payment/controller/PaymentController.java` (PM-01/03/04 + IPN PM-02),

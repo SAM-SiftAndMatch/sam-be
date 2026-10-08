@@ -8,6 +8,5 @@ import lombok.Data;
 public class ContractSyncPayload {
     private UUID senderId;
     private BigDecimal agreedAmount;
-    private Integer revisionLimit;
     private String termsAndConditions;
 }

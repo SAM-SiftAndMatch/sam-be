@@ -18,6 +18,92 @@ public class CloudinaryStorageServiceImpl implements StorageService {
 
     private final Cloudinary cloudinary;
 
+    @org.springframework.beans.factory.annotation.Value("${CLOUDINARY_CLOUD_NAME}")
+    private String cloudName;
+
+    @Override
+    public String uploadFile(byte[] content, String fileName, String folder) {
+        try {
+            String safeFolder = (folder == null || folder.isBlank()) ? "uploads" : folder.trim();
+            Map<String, Object> params =
+                    ObjectUtils.asMap(
+                            "resource_type",
+                            "raw",
+                            "type",
+                            "upload",
+                            "public_id",
+                            safeFolder
+                                    + "/"
+                                    + System.currentTimeMillis()
+                                    + "_"
+                                    + sanitizeFileName(fileName));
+            Map uploadResult = cloudinary.uploader().upload(content, params);
+            return uploadResult.get("secure_url").toString();
+        } catch (Exception e) {
+            throw new ApiException(ErrorCode.UNEXPECTED_ERROR);
+        }
+    }
+
+    // Cloudinary public_id chỉ nên chứa ASCII an toàn (tránh lỗi encode + ACL khi tải trực tiếp)
+    private String sanitizeFileName(String fileName) {
+        String base = fileName != null ? fileName.trim() : "file";
+        String normalized =
+                java.text.Normalizer.normalize(base, java.text.Normalizer.Form.NFD)
+                        .replaceAll("\\p{M}", "");
+        String safe = normalized.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (safe.isBlank()) {
+            safe = "file";
+        }
+        return safe.length() > 120 ? safe.substring(safe.length() - 120) : safe;
+    }
+
+    @Override
+    public com.sam.be.common.storage.dto.response.FileData downloadFile(String url) {
+        java.net.URI uri;
+        try {
+            uri = java.net.URI.create(url != null ? url.trim() : "");
+        } catch (Exception e) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "URL file không hợp lệ.");
+        }
+        // Chống SSRF: chỉ tải từ đúng cloud Cloudinary của hệ thống
+        if (!"https".equalsIgnoreCase(uri.getScheme())
+                || !"res.cloudinary.com".equalsIgnoreCase(uri.getHost())
+                || uri.getPath() == null
+                || cloudName == null
+                || !uri.getPath().contains("/" + cloudName + "/")) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "URL file không hợp lệ.");
+        }
+        try {
+            java.net.http.HttpClient http = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest req =
+                    java.net.http.HttpRequest.newBuilder(uri)
+                            .GET()
+                            .timeout(java.time.Duration.ofSeconds(30))
+                            .build();
+            java.net.http.HttpResponse<byte[]> res =
+                    http.send(req, java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+            if (res.statusCode() < 200 || res.statusCode() >= 300 || res.body() == null) {
+                throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "Không tải được file.");
+            }
+            if (res.body().length > 20 * 1024 * 1024) {
+                throw new ApiException(ErrorCode.REQUEST_FAILED, "File quá lớn.");
+            }
+            String contentType =
+                    res.headers().firstValue("Content-Type").orElse("application/octet-stream");
+            String rawName = uri.getPath().substring(uri.getPath().lastIndexOf('/') + 1);
+            String fileName = java.net.URLDecoder.decode(rawName, StandardCharsets.UTF_8);
+            if (fileName.isBlank()) {
+                fileName = "proposal.pdf";
+            }
+            return new com.sam.be.common.storage.dto.response.FileData(
+                    res.body(), contentType, fileName);
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(ErrorCode.UNEXPECTED_ERROR);
+        }
+    }
+
     @Override
     public String uploadMarkdown(String content, String fileName) {
         try {

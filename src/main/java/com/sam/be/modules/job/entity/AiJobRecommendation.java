@@ -47,5 +47,5 @@ public class AiJobRecommendation {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     @Builder.Default
-    private RecommendationStatus status = RecommendationStatus.PENDING;
+    private RecommendationStatus status = RecommendationStatus.AUTO_MATCHED;
 }

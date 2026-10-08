@@ -1,5 +1,6 @@
 package com.sam.be.modules.job.repository;
 
+import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.modules.job.entity.Job;
 import java.util.List;
 import java.util.Optional;
@@ -28,4 +29,12 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
                     + "LEFT JOIN FETCH js.skill "
                     + "WHERE j.id = :id")
     Optional<Job> findByIdWithDetails(@Param("id") UUID id);
+
+    @Query(
+            "SELECT j FROM Job j WHERE j.status = :status AND (j.isUrgentHiring = false OR (j.isUrgentHiring = true AND j.createdAt <= :fiveMinsAgo)) ORDER BY j.createdAt DESC")
+    List<Job> findAllOpenJobsFiltered(
+            @Param("status") JobStatus status,
+            @Param("fiveMinsAgo") java.time.LocalDateTime fiveMinsAgo);
+
+    List<Job> findByStatusAndDeadlineBefore(JobStatus status, java.time.LocalDateTime deadline);
 }

@@ -21,6 +21,16 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public void sendInviteNotification(
             UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore) {
+        sendInviteNotification(freelancerId, jobId, jobTitle, matchScore, null);
+    }
+
+    @Override
+    public void sendInviteNotification(
+            UUID freelancerId,
+            UUID jobId,
+            String jobTitle,
+            BigDecimal matchScore,
+            UUID recommendationId) {
         // Đóng gói data
         NotificationMessage payload =
                 NotificationMessage.builder()
@@ -28,6 +38,7 @@ public class NotificationServiceImpl implements NotificationService {
                         .jobId(jobId)
                         .jobTitle(jobTitle)
                         .matchScore(matchScore)
+                        .recommendationId(recommendationId)
                         .message("Khách hàng vừa chọn bạn cho dự án này. Bấm nhận việc ngay!")
                         .timestamp(LocalDateTime.now())
                         .build();
@@ -81,5 +92,69 @@ public class NotificationServiceImpl implements NotificationService {
         messagingTemplate.convertAndSend(destination, payload);
 
         log.info("🔔 [WEBSOCKET] Đã đẩy Noti gói dịch vụ ({}) tới kênh: {}", type, destination);
+    }
+
+    @Override
+    public void sendDevClaimNotification(
+            UUID clientId, UUID jobId, String jobTitle, UUID recommendationId, String devName) {
+        NotificationMessage payload =
+                NotificationMessage.builder()
+                        .type("DEV_CLAIM")
+                        .jobId(jobId)
+                        .jobTitle(jobTitle)
+                        .recommendationId(recommendationId)
+                        .actorName(devName)
+                        .message(
+                                "Dev "
+                                        + devName
+                                        + " muốn nói chuyện về dự án này. Bấm đồng ý để mở Chat!")
+                        .timestamp(LocalDateTime.now())
+                        .build();
+
+        String destination = "/topic/users/" + clientId + "/notifications";
+        messagingTemplate.convertAndSend(destination, payload);
+        log.info("🔔 [WEBSOCKET] Đã đẩy Noti DEV_CLAIM tới kênh: {}", destination);
+    }
+
+    @Override
+    public void sendChatOpenedNotification(
+            UUID userId, UUID jobId, String jobTitle, UUID recommendationId, UUID roomId) {
+        NotificationMessage payload =
+                NotificationMessage.builder()
+                        .type("CHAT_OPENED")
+                        .jobId(jobId)
+                        .jobTitle(jobTitle)
+                        .recommendationId(recommendationId)
+                        .roomId(roomId)
+                        .message("Đã mở phòng Chat cho dự án này. Vào thương lượng ngay!")
+                        .timestamp(LocalDateTime.now())
+                        .build();
+
+        String destination = "/topic/users/" + userId + "/notifications";
+        messagingTemplate.convertAndSend(destination, payload);
+        log.info("🔔 [WEBSOCKET] Đã đẩy Noti CHAT_OPENED tới kênh: {}", destination);
+    }
+
+    @Override
+    public void sendProposalNotification(
+            UUID userId,
+            UUID jobId,
+            String jobTitle,
+            UUID proposalId,
+            String type,
+            String message) {
+        NotificationMessage payload =
+                NotificationMessage.builder()
+                        .type(type)
+                        .jobId(jobId)
+                        .jobTitle(jobTitle)
+                        .proposalId(proposalId)
+                        .message(message)
+                        .timestamp(LocalDateTime.now())
+                        .build();
+
+        String destination = "/topic/users/" + userId + "/notifications";
+        messagingTemplate.convertAndSend(destination, payload);
+        log.info("🔔 [WEBSOCKET] Đã đẩy Noti proposal ({}) tới kênh: {}", type, destination);
     }
 }

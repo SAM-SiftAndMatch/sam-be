@@ -2,7 +2,9 @@ package com.sam.be.modules.contract.controller;
 
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.util.SecurityUtils;
+import com.sam.be.modules.contract.dto.response.ContractDetailResponse;
 import com.sam.be.modules.contract.dto.response.ContractDraftResponse;
+import com.sam.be.modules.contract.dto.response.ContractRevisionResponse;
 import com.sam.be.modules.contract.service.ContractService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,5 +29,28 @@ public class ContractController {
         ContractDraftResponse response =
                 contractService.createAiDraft(roomId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<ContractDraftResponse>builder().result(response).build();
+    }
+
+    @GetMapping("/{roomId}/contract")
+    @Operation(
+            summary = "Get contract of a room",
+            description = "Current contract for this chat room (404 if not created yet)")
+    public ApiResponse<ContractDetailResponse> getContractByRoom(@PathVariable UUID roomId) {
+        ContractDetailResponse response =
+                contractService.getContractByRoom(roomId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.<ContractDetailResponse>builder().result(response).build();
+    }
+
+    @GetMapping("/{roomId}/contract/revisions")
+    @Operation(
+            summary = "Get contract edit history",
+            description = "Snapshots of each edit with editor side, newest first")
+    public ApiResponse<java.util.List<ContractRevisionResponse>> getRevisions(
+            @PathVariable UUID roomId) {
+        java.util.List<ContractRevisionResponse> response =
+                contractService.getRevisionsByRoom(roomId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.<java.util.List<ContractRevisionResponse>>builder()
+                .result(response)
+                .build();
     }
 }

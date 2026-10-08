@@ -2,6 +2,7 @@ package com.sam.be.modules.proposal.repository;
 
 import com.sam.be.modules.proposal.entity.Proposal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -13,4 +14,6 @@ public interface ProposalRepository extends JpaRepository<Proposal, UUID> {
     List<Proposal> findAllByFreelancerId(UUID freelancerId);
 
     long countByJobId(UUID jobId);
+
+    Optional<Proposal> findByJobIdAndFreelancerId(UUID jobId, UUID freelancerId);
 }

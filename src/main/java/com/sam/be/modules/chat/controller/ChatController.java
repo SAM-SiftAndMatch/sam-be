@@ -3,6 +3,7 @@ package com.sam.be.modules.chat.controller;
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
+import com.sam.be.modules.chat.dto.ChatRoomDto;
 import com.sam.be.modules.chat.dto.SendMessagePayload;
 import com.sam.be.modules.chat.service.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,6 +38,45 @@ public class ChatController {
         List<ChatMessageDto> response =
                 chatService.getMessageHistory(roomId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<ChatMessageDto>>builder().result(response).build();
+    }
+
+    // Danh sách phòng chat của tôi (cả client lẫn freelancer) -> trang Tin nhắn
+    @GetMapping("/rooms")
+    @Operation(
+            summary = "Get my chat rooms",
+            description = "List all chat rooms where current user is client or freelancer")
+    public ApiResponse<List<ChatRoomDto>> getMyRooms() {
+        List<ChatRoomDto> response = chatService.getMyRooms(SecurityUtils.getCurrentUserId());
+        return ApiResponse.<List<ChatRoomDto>>builder().result(response).build();
+    }
+
+    // Chi tiết 1 phòng (để mở đúng tên job + đối phương)
+    @GetMapping("/rooms/{roomId}")
+    @Operation(summary = "Get chat room detail", description = "Room detail with job and members")
+    public ApiResponse<ChatRoomDto> getRoomDetail(@PathVariable UUID roomId) {
+        ChatRoomDto response = chatService.getRoomDetail(roomId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.<ChatRoomDto>builder().result(response).build();
+    }
+
+    // Tìm phòng theo job (FE đang ở trang job vừa Accept mà chỉ có jobId)
+    @GetMapping("/by-job/{jobId}")
+    @Operation(
+            summary = "Get chat room by job",
+            description = "Resolve the chat room of current user for a given job")
+    public ApiResponse<ChatRoomDto> getRoomByJob(@PathVariable UUID jobId) {
+        ChatRoomDto response = chatService.getRoomByJob(jobId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.<ChatRoomDto>builder().result(response).build();
+    }
+
+    // Tìm phòng theo hợp đồng (trang thanh toán chỉ có contractId)
+    @GetMapping("/by-contract/{contractId}")
+    @Operation(
+            summary = "Get chat room by contract",
+            description = "Resolve the chat room of current user for a given contract")
+    public ApiResponse<ChatRoomDto> getRoomByContract(@PathVariable UUID contractId) {
+        ChatRoomDto response =
+                chatService.getRoomByContract(contractId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.<ChatRoomDto>builder().result(response).build();
     }
 
     // 2. WEBSOCKET ENDPOINT: FE bắn tin nhắn vào đây

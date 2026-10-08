@@ -51,6 +51,15 @@ public class JobController {
         return ApiResponse.<JobResponse>builder().result(response).build();
     }
 
+    @GetMapping
+    @Operation(
+            summary = "Get all open jobs",
+            description = "Public endpoint — returns all OPEN jobs sorted by newest first")
+    public ApiResponse<List<JobResponse>> getAllOpenJobs() {
+        List<JobResponse> response = jobService.getAllOpenJobs();
+        return ApiResponse.<List<JobResponse>>builder().result(response).build();
+    }
+
     @GetMapping("/client/me")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(
@@ -103,5 +112,39 @@ public class JobController {
     public ApiResponse<Void> rejectInvitation(@PathVariable UUID jobId, @PathVariable UUID recId) {
         jobService.rejectJobInvitation(SecurityUtils.getCurrentUserId(), jobId, recId);
         return ApiResponse.<Void>builder().build();
+    }
+
+    @PostMapping("/{jobId}/recommendations/{recId}/claim")
+    @PreAuthorize("hasRole('FREELANCER')")
+    @Operation(
+            summary = "Freelancer requests chat (Claim)",
+            description = "Freelancer initiates mutual handshake by claiming the job")
+    public ApiResponse<Void> claimJob(@PathVariable UUID jobId, @PathVariable UUID recId) {
+        jobService.devRequestChat(SecurityUtils.getCurrentUserId(), jobId, recId);
+        return ApiResponse.<Void>builder().build();
+    }
+
+    @PostMapping("/{jobId}/recommendations/{recId}/accept-claim")
+    @PreAuthorize("hasRole('CLIENT')")
+    @Operation(
+            summary = "Client accepts freelancer claim",
+            description = "Client approves the freelancer's claim to open the chat room")
+    public ApiResponse<AcceptInvitationResponse> acceptFreelancerClaim(
+            @PathVariable UUID jobId, @PathVariable UUID recId) {
+        AcceptInvitationResponse response =
+                jobService.clientAcceptDevRequest(SecurityUtils.getCurrentUserId(), jobId, recId);
+        return ApiResponse.<AcceptInvitationResponse>builder().result(response).build();
+    }
+
+    @GetMapping("/{jobId}/my-recommendation")
+    @PreAuthorize("hasRole('FREELANCER')")
+    @Operation(
+            summary = "Get my AI recommendation for a job",
+            description =
+                    "Freelancer fetches their AI recommendation to see if they were auto-matched for this urgent job")
+    public ApiResponse<AiRecommendationResponse> getMyJobRecommendation(@PathVariable UUID jobId) {
+        AiRecommendationResponse response =
+                jobService.getMyJobRecommendation(SecurityUtils.getCurrentUserId(), jobId);
+        return ApiResponse.<AiRecommendationResponse>builder().result(response).build();
     }
 }
