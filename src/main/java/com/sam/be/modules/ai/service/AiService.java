@@ -17,5 +17,14 @@ public interface AiService {
     List<AiCandidateScore> evaluateCandidates(String srsContent, String candidatesJson);
 
     AiContractDraft generateContractDraft(
-            String srsContent, BigDecimal minBudget, BigDecimal maxBudget);
+            String srsContent,
+            BigDecimal minBudget,
+            BigDecimal maxBudget,
+            String clientName,
+            String freelancerName);
+
+    AiAmountVerification verifyContractAmount(String contractTerms, BigDecimal systemAmount);
+
+    AiContractReview reviewContractTerms(
+            String contractTerms, BigDecimal agreedAmount, BigDecimal initialAmount);
 }

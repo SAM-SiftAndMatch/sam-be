@@ -1,6 +1,7 @@
 package com.sam.be.modules.payment.entity;
 
 import com.sam.be.common.constant.enums.PaymentStatus;
+import com.sam.be.common.constant.enums.PaymentType;
 import com.sam.be.modules.contract.entity.Contract;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
@@ -27,6 +28,10 @@ public class Payment {
 
     @Column(nullable = false)
     private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_type")
+    private PaymentType paymentType;
 
     @Column(name = "installment_no", nullable = false)
     @Builder.Default

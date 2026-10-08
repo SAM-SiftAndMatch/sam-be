@@ -16,9 +16,16 @@ Mục tiêu của giai đoạn này là biến ý tưởng mù mờ của khách
 ### GIAI ĐOẠN 2: ĐÀM PHÁN, GHÉP NỐI & NHẬN VIỆC (MATCHMAKING & NEGOTIATION)
 Loại bỏ khâu viết Proposal dài dòng, đưa tốc độ chốt deal lên hàng tính bằng giây.
 
-*   **3. AI Job Matcher & Instant Claim (Nhận việc 1 chạm - Tính năng trả phí cho Dev):** AI sẽ tự động quét các kỹ năng của Freelancer (Ví dụ: cứng Java, Spring Boot). Khi có một dự án mới đăng lên khớp 100% kỹ năng, AI lập tức bắn thông báo về điện thoại của Freelancer đó. Freelancer chỉ cần bấm nút "Claim" là nhận việc ngay trong 1 giây mà không cần phải viết hồ sơ đấu thầu (bidding).
-*   **4. Co-op Smart Contract (Chốt Deal Thời gian thực):** Ứng dụng công nghệ WebSockets, cho phép Client và Freelancer cùng xem và chỉnh sửa một bản hợp đồng/báo giá theo thời gian thực (Real-time). Bất kỳ thay đổi nào về con số (ví dụ: số lần sửa đổi, giá tiền) từ một phía sẽ ngay lập tức nảy lên màn hình của người kia mà không có độ trễ. Khi hai bên đồng thuận, sẽ tiến hành ký Xác nhận điện tử (Digital Approval).
-*   **5. Milestone Escrow (Ký quỹ & Thanh toán theo tiến độ):** Để dự án được bắt đầu, khách hàng bắt buộc phải nạp tiền cọc (30% - 50% giá trị hợp đồng) thông qua cổng thanh toán API MoMo/ZaloPay. Backend Spring Boot sẽ giữ khoản tiền này ở trạng thái đóng băng (Escrow) cực kỳ an toàn, đảm bảo Dev không bị quỵt tiền.
+*   **3. AI Job Matcher & Instant Claim (Nhận việc 1 chạm & Độc quyền 5 phút):** 
+    *   **Mai mối tức thì:** Khi Client đăng Job "Tuyển gấp", AI tự động quét và bốc ra 5 Dev PRO giỏi nhất đang online. Hệ thống lập tức bắn Push Notification/WebSocket cho 5 Dev này. Đồng thời, Client cũng nhìn thấy toàn bộ hồ sơ (kèm đánh giá của AI) của 5 Dev này trên Dashboard.
+    *   **Tàng hình & Bắt tay 2 chiều (Mutual Handshake):** Bằng kỹ thuật On-the-fly Filtering, Job này sẽ hoàn toàn "tàng hình" khỏi Marketplace chung trong đúng 5 phút đầu tiên (ẩn cả danh sách lẫn xem trực tiếp — chỉ chủ job, admin và 5 Dev được AI chọn mới mở được chi tiết). Trong 5 phút vàng này, 5 Dev PRO có đặc quyền bấm "Claim" (Yêu cầu Chat), hoặc Client có thể chủ động bấm "Mời Chat". Bất kể bên nào chủ động, chỉ cần bên kia xác nhận (Accept), một phòng Chat Real-time sẽ lập tức được mở ra.
+    *   **Hết 5 phút:** Đúng phút thứ 5, Job sẽ tự động public lên Marketplace. Các Dev bình thường khác bắt đầu nhìn thấy và phải nộp `Proposal` (hồ sơ dự thầu) theo cách truyền thống. Client lúc này có 2 luồng nhân sự để lựa chọn (VIP 1 chạm & Phổ thông nộp Proposal).
+*   **4. Co-op Smart Contract (Chốt Deal Thời gian thực):** Ứng dụng công nghệ WebSockets, cho phép Client và Freelancer cùng xem và chỉnh sửa một bản hợp đồng/báo giá theo thời gian thực (Real-time). Bất kỳ thay đổi nào về con số (ví dụ: giá tiền, điều khoản) từ một phía sẽ ngay lập tức nảy lên màn hình của người kia mà không có độ trễ. Khi hai bên đồng thuận, sẽ tiến hành ký Xác nhận điện tử (Digital Approval). Chỉ Client được khởi tạo hợp đồng bằng AI; Freelancer chờ Client tạo. Ký đôi xong AI thẩm định lại toàn văn: đạt thì chốt, lệch thì 2 bên bấm "Giữ nguyên" mới chốt theo số trong hợp đồng, không thì sửa–ký–thẩm định lại.
+*   **5. Nạp tiền khởi động & Ký quỹ một lần (Startup Funding):** Ký đôi xong, Job KHÔNG chạy ngay mà chuyển sang trạng thái `AWAITING_PAYMENT` (chờ nạp tiền). Hệ thống lấy `agreedAmount` trong hợp đồng làm tổng chuẩn, AI đọc lại toàn văn hợp đồng để đối chiếu con số — lệch là chặn nạp tiền, bắt sửa hợp đồng cho khớp. Sau đó:
+    *   Client nạp **100%** giá trị hợp đồng qua VNPay (1 lần duy nhất).
+    *   Freelancer đặt **cọc cam kết 2%** giá trị hợp đồng qua VNPay (1 lần duy nhất; xong việc đúng hạn được hoàn trả, bỏ job thì đền cho Client).
+    *   Đủ tiền cả 2 bên, hệ thống tự chuyển Job sang `IN_PROGRESS`, dự án chính thức bắt đầu.
+    *   Cuối dự án thanh toán **1 lần duy nhất**: Freelancer nhận **90%**, sàn giữ **10%** phí nền tảng. (Chi tiết đầy đủ xem mục `PHỤ LỤC A` cuối tài liệu.)
 
 ### GIAI ĐOẠN 3: THỰC THI & QUẢN LÝ TIẾN ĐỘ (EXECUTION & WORKFLOW)
 Giúp Freelancer tập trung code, khách hàng dễ dàng theo dõi mà không cần hối thúc.
@@ -39,7 +46,7 @@ Bảo vệ mã nguồn của khách hàng và tự động hóa quy trình trả
 Đây là chiến lược dòng tiền thông minh, thu hút người dùng bằng tính năng Free nhưng kiếm doanh thu khổng lồ từ các dịch vụ giá trị gia tăng (Premium).
 
 ### 1. NGUỒN THU CỐT LÕI (Passive Income)
-*   **Phí nền tảng (Platform Fee):** Thu từ 6-8% trên tổng giá trị dự án sau khi nghiệm thu và giải ngân thành công. Mức phí này được dùng để duy trì Server và hệ thống Ký quỹ (Escrow), cực kỳ cạnh tranh và hấp dẫn hơn rất nhiều so với mức "cắt máu" 10-20% của Upwork hay Fiverr.
+*   **Phí nền tảng (Platform Fee):** Thu **10%** trên tổng giá trị hợp đồng, quyết toán 1 lần duy nhất khi dự án hoàn thành và giải ngân (freelancer nhận 90%). Mức phí này dùng để duy trì Server và hệ thống Ký quỹ (Escrow).
 
 ### 2. CÁC TÍNH NĂNG MIỄN PHÍ (Bắt buộc để giữ chân người dùng)
 Nếu thu tiền các tính năng này, người dùng sẽ lách luật rủ nhau ra Zalo làm việc:
@@ -72,3 +79,73 @@ Họ có tiền và sẵn sàng chi trả để đổi lấy "Tốc độ" và "
     *   Giá thuê bao: **149.000 VNĐ / tháng** (Mức giá rất "mềm", bằng một ly cafe hoặc gói Netflix, sinh viên hay Dev đều dễ dàng chi trả).
     *   Vũ khí giành Job: Kích hoạt tính năng **AI Job Matcher & Instant Claim**. Nhận thông báo việc làm độc quyền trước người khác 5 phút, bấm 1 nút nhận việc luôn không cần đấu thầu.
     *   Vũ khí bảo vệ: Kích hoạt **Smart Scope Shield**. Tự động chặn yêu cầu phát sinh và quăng báo giá cho khách, Dev cứ ung dung code.
+
+---
+
+## PHỤ LỤC A: LUỒNG NẠP TIỀN KHỞI ĐỘNG & THANH TOÁN MỘT LẦN (STARTUP FUNDING)
+
+Luồng này thay thế mô hình ký quỹ chia đợt cũ. Mọi hợp đồng đều tuân thủ cùng một công thức tiền.
+
+### A.1. Trạng thái Job liên quan
+`NEGOTIATING` (đang chốt hợp đồng) → ký đôi xong → **AI thẩm định** → đạt thì `AWAITING_PAYMENT` (chờ nạp tiền, chưa chạy) → nạp đủ 2 bên → `IN_PROGRESS` (bắt đầu làm) → nghiệm thu xong → `COMPLETED`.
+
+### A.2. Công thức tiền (tính trên `agreedAmount` của hợp đồng đã ký)
+Ví dụ hợp đồng 10.000.000 VNĐ:
+*   **Client chuyển: 100% = 10.000.000 VNĐ** (1 lần, qua VNPay, ngay sau khi ký).
+*   **Freelancer đặt cọc cam kết: 2% = 200.000 VNĐ** (1 lần, qua VNPay, cùng thời điểm).
+*   **Cuối dự án (1 lần duy nhất): Freelancer nhận 90% = 9.000.000 VNĐ, sàn giữ 10% = 1.000.000 VNĐ** (phí nền tảng).
+*   **Số phận tiền cọc 2%:** freelancer hoàn thành đúng hợp đồng → hoàn trả 100% (cộng chung với 90%); bỏ job/vi phạm → đền cho Client.
+
+### A.3. AI đối chiếu số tiền (bắt buộc trước khi nạp)
+*   AI đọc toàn văn điều khoản, trích tổng giá trị hợp đồng và so với `agreedAmount` (lưu ý: `agreedAmount` lấy từ chính hợp đồng mà AI đã soạn và 2 bên đã cùng sửa).
+*   Khớp → hiện badge xanh, mở nút chuyển tiền. Lệch (quá 1.000 VNĐ) → hiện cảnh báo đỏ, **chặn tạo thanh toán ở cả BE lẫn FE**, 2 bên phải sửa lại hợp đồng cho khớp số rồi đối chiếu lại.
+
+### A.4. Thứ tự gọi API (Backend)
+1.  Ký đôi xong **chưa chốt vội**: BE gửi toàn văn hợp đồng cho AI thẩm định (so số trong văn bản
+    với `agreedAmount`, so với giá AI đề xuất ban đầu, soi điều khoản vô lý).
+    *   AI báo OK → hợp đồng `ACTIVE`, Job sang `AWAITING_PAYMENT`, AI nhắn vào phòng chat báo hợp lệ.
+    *   AI báo lệch → **xóa chữ ký 2 bên**, AI nhắn thẳng vào phòng chat cho cả 2 cùng đọc
+        ("hợp đồng đã đổi ... so với ban đầu là ..., sai lệch ở ..., vẫn giữ nguyên chứ?").
+        Tin AI mang danh nghĩa hệ thống (bubble tím riêng, icon 🤖 — không gắn tên người ký cuối).
+        Người ký thứ 2 tự về phòng chat đợi kết quả. Mỗi bên bấm **"Giữ nguyên bản này"** (`/app/contracts/{id}/confirm`): cả 2 cùng giữ →
+        chốt số tiền **theo đúng văn bản**, hợp đồng `ACTIVE`, Job sang `AWAITING_PAYMENT`.
+        Không giữ → sửa lại → ký lại → AI thẩm định tiếp (vòng lặp cho tới khi đạt).
+        AI lỗi mạng cũng không rollback chữ ký — rớt sang luồng xác nhận tay.
+2.  Mở màn nạp tiền: `GET /payments/funding/{contractId}` — bảng tiền 2 bên (100% / 2% / dự kiến 90-10) và trạng thái đã chuyển/chưa.
+3.  Đối chiếu AI: `POST /payments/contracts/{contractId}/verify-amount` — FE tự gọi 1 lần khi mở màn.
+4.  Client bấm nạp: `POST /payments/fund` `{contractId, returnUrl}` → trả `vnpayUrl`, redirect sang VNPay.
+5.  Freelancer bấm cọc: `POST /payments/deposit` `{contractId, returnUrl}` → tương tự.
+6.  VNPay báo IPN về `POST /payments/vnpay-ipn` → tiền sang `HELD_IN_ESCROW`, bắn WS `PAYMENT_ESCROW_HELD` cho cả 2.
+    IPN không tới được môi trường local thì FE tự báo thay: VNPay redirect về kèm `vnp_ResponseCode=00`,
+    FE gọi `POST /payments/{paymentId}/confirm` kèm `txnRef` + `amountVnd` (BE đối chiếu rồi ghi nhận như IPN).
+7.  Khoản thứ hai về đủ → BE tự chuyển Job sang `IN_PROGRESS`, bắn WS `PROJECT_STARTED` cho cả 2. Không bên nào phải bấm thêm nút "bắt đầu".
+8.  Cuối dự án (luồng nghiệm thu — triển khai ở giai đoạn sau): giải ngân 1 lần, freelancer nhận 90%, sàn 10%, xử lý hoàn/đền cọc 2%.
+
+### A.5. Quy tắc chặn (BE thực thi, FE chỉ hiển thị)
+*   Chỉ Client được tạo hợp đồng AI; Freelancer gọi là `FORBIDDEN`.
+*   Chỉ tạo được thanh toán khi hợp đồng `ACTIVE`.
+*   Mỗi hợp đồng chỉ có đúng 1 khoản nạp 100% và 1 khoản cọc 2% (tạo trùng là lỗi).
+*   AI đối chiếu lệch → mọi lệnh tạo thanh toán đều bị từ chối cho tới khi khớp.
+
+---
+
+## PH? L?C B: LU?NG PROPOSAL PH? TH�NG (PUBLIC JOBS)
+
+D�nh cho job public (kh�ng tuy?n g?p, ho?c job g?p d� qua 5 ph�t d?c quy?n). Kh�ng chat ngay nhu lu?ng 1 ch?m.
+
+### B.1. N?p h? so
+*   Freelancer n?p 1 h? so/job: thu ch�o, gi� d? xu?t (> 0), s? ng�y d? ki?n, file PDF/DOC/DOCX (t?i da 10MB, upload qua POST /storage/upload-file l?y URL).
+*   Ch? n?p khi job c�n OPEN; job g?p trong 5 ph�t d?c quy?n m� kh�ng du?c m?i th� b? ch?n.
+*   Client nh?n WS PROPOSAL_RECEIVED ngay khi c� h? so m?i.
+
+### B.2. Client duy?t (chua chat)
+*   GET /proposals/job/{jobId} � client xem to�n b?: t�n, headline, gi�, thu ch�o, link file PDF.
+*   Client b?m M?i h?p t�c: PENDING -> INVITED, freelancer nh?n WS PROPOSAL_INVITE. Client t? ch?i: PENDING -> REJECTED.
+
+### B.3. Freelancer d?ng � m?i m? chat
+*   Freelancer xem l?i m?i ngay tr�n trang chi ti?t job (GET /proposals/me/job/{jobId}) ho?c chu�ng.
+*   B?m �?ng �: INVITED -> ACCEPTED, h? th?ng t?o (ho?c d�ng l?i) ph�ng chat v� tr? roomId, client nh?n WS PROPOSAL_ACCEPTED. T? d�y chat + h?p d?ng + n?p ti?n di chung lu?ng v?i job g?p.
+*   T? ch?i: INVITED -> REJECTED, b�o cho client.
+
+### B.4. ��ng tuy?n
+*   Job sang IN_PROGRESS (d? ti?n kh?i d?ng) th� t? r?t kh?i danh s�ch chung (query ch? l?y OPEN), ch?n n?p h? so m?i, trang chi ti?t hi?n �� d�ng tuy?n thay n�t ?ng tuy?n.

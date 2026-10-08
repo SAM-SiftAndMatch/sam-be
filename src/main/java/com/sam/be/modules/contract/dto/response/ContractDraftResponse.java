@@ -11,6 +11,5 @@ public class ContractDraftResponse {
     private UUID contractId;
     private UUID jobId;
     private BigDecimal agreedAmount;
-    private Integer revisionLimit;
     private String termsAndConditions;
 }

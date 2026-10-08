@@ -25,8 +25,13 @@ public class ChatMessage {
     private ChatRoom room;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "sender_id", nullable = false)
+    @JoinColumn(name = "sender_id")
     private User sender;
+
+    // Tin hệ thống/AI (sender = null): thẩm định hợp đồng, mở dự án...
+    @Column(name = "is_system")
+    @Builder.Default
+    private Boolean isSystem = false;
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;

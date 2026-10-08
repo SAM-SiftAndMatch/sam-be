@@ -35,10 +35,34 @@ public class VnpayProperties {
             return false;
         }
         String target = url.trim();
-        return allowedReturnUrls.stream()
-                .filter(u -> u != null && !u.isBlank())
-                .map(String::trim)
-                .anyMatch(target::equalsIgnoreCase);
+        boolean exact =
+                allowedReturnUrls.stream()
+                        .filter(u -> u != null && !u.isBlank())
+                        .map(String::trim)
+                        .anyMatch(target::equalsIgnoreCase);
+        if (exact) {
+            return true;
+        }
+        // Nới theo origin (scheme + host + port): các màn mới (vd: /workspace/{id}/contract)
+        // vẫn pass miễn cùng frontend đã whitelist, không mở sang domain lạ.
+        String candidateOrigin = originOf(target);
+        if (candidateOrigin == null) {
+            return false;
+        }
+        return allowedReturnUrls.stream().map(this::originOf).anyMatch(candidateOrigin::equals);
+    }
+
+    private String originOf(String url) {
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            if (uri.getScheme() == null || uri.getHost() == null) {
+                return null;
+            }
+            String port = uri.getPort() == -1 ? "" : ":" + uri.getPort();
+            return uri.getScheme().toLowerCase() + "://" + uri.getHost().toLowerCase() + port;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String defaultClientIp;
