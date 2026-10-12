@@ -231,6 +231,12 @@ public class ContractServiceImpl implements ContractService {
                         .findById(contractId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
+        if (contract.getStatus() != com.sam.be.common.constant.enums.ContractStatus.DRAFT) {
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED,
+                    "Chỉ có thể sửa hợp đồng khi hợp đồng đang ở trạng thái nháp");
+        }
+
         if (!contract.getClient().getId().equals(payload.getSenderId())
                 && !contract.getFreelancer().getId().equals(payload.getSenderId())) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
@@ -352,7 +358,7 @@ public class ContractServiceImpl implements ContractService {
         ChatMessageDto savedMsg;
         if (aiAnnounce) {
             // Tin của AI: danh nghĩa hệ thống, không gắn tên người ký cuối
-            savedMsg = chatService.saveSystemMessage(room.getId(), "🤖 " + chatMsg);
+            savedMsg = chatService.saveSystemMessage(room.getId(), chatMsg);
         } else {
             SendMessagePayload chatPayload = new SendMessagePayload();
             chatPayload.setSenderId(payload.getSenderId());
@@ -418,7 +424,7 @@ public class ContractServiceImpl implements ContractService {
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         ChatMessageDto savedMsg;
         if (aiAnnounce) {
-            savedMsg = chatService.saveSystemMessage(room.getId(), "🤖 " + chatMsg);
+            savedMsg = chatService.saveSystemMessage(room.getId(), chatMsg);
         } else {
             SendMessagePayload chatPayload = new SendMessagePayload();
             chatPayload.setSenderId(payload.getSenderId());
@@ -430,6 +436,8 @@ public class ContractServiceImpl implements ContractService {
 
     // Chốt hợp đồng: ACTIVE + job sang chờ nạp tiền (đủ tiền mới IN_PROGRESS)
     private void finalizeContract(Contract contract) {
+        contract.setClientAgreed(true);
+        contract.setFreelancerAgreed(true);
         contract.setStatus(com.sam.be.common.constant.enums.ContractStatus.ACTIVE);
         contract.setReviewStatus("OK");
         Job job = contract.getJob();

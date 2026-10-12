@@ -186,10 +186,17 @@ public class ChatServiceImpl implements ChatService {
             }
         } catch (Exception ignored) {
         }
+        var contractStatus =
+                contractRepository
+                        .findByJobId(room.getJob().getId())
+                        .map(com.sam.be.modules.contract.entity.Contract::getStatus)
+                        .orElse(null);
         return ChatRoomDto.builder()
                 .id(room.getId())
                 .jobId(room.getJob().getId())
                 .jobTitle(room.getJob().getTitle())
+                .jobStatus(room.getJob().getStatus())
+                .contractStatus(contractStatus)
                 .clientId(room.getClient().getId())
                 .clientName(room.getClient().getFullName())
                 .freelancerId(room.getFreelancer().getId())
