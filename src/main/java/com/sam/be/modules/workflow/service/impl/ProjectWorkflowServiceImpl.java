@@ -13,6 +13,7 @@ import com.sam.be.modules.job.repository.JobRepository;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.UserRepository;
 import com.sam.be.modules.workflow.dto.request.DeliveryCreateRequest;
+import com.sam.be.modules.workflow.dto.request.DeliveryRevisionRequest;
 import com.sam.be.modules.workflow.dto.request.TaskReportRequest;
 import com.sam.be.modules.workflow.dto.response.DeliveryAcceptanceResponse;
 import com.sam.be.modules.workflow.dto.response.ProjectDeliveryResponse;
@@ -176,6 +177,33 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
                 .findByIdAndJobId(deliveryId, jobId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         return manualQaPlanService.getByDeliveryId(deliveryId);
+    }
+
+    @Override
+    @Transactional
+    public ProjectDeliveryResponse requestDeliveryRevision(
+            UUID clientId, UUID jobId, UUID deliveryId, DeliveryRevisionRequest request) {
+        Job job = getAccessibleJobForUpdate(clientId, jobId);
+        Contract contract = requireContract(jobId);
+        if (!contract.getClient().getId().equals(clientId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        if (job.getStatus() != JobStatus.IN_PROGRESS) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án không còn chờ nghiệm thu");
+        }
+        ProjectDelivery delivery =
+                deliveryRepository
+                        .findByIdAndJobIdForUpdate(deliveryId, jobId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (delivery.getStatus() != DeliveryStatus.SUBMITTED) {
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED, "Phiên bản bàn giao không thể yêu cầu chỉnh sửa");
+        }
+
+        delivery.setStatus(DeliveryStatus.REVISION_REQUESTED);
+        delivery.setRevisionReason(request.getReason().trim());
+        delivery.setReviewedAt(LocalDateTime.now());
+        return toDeliveryResponse(deliveryRepository.save(delivery));
     }
 
     @Override

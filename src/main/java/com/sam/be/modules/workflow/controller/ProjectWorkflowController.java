@@ -3,6 +3,7 @@ package com.sam.be.modules.workflow.controller;
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.workflow.dto.request.DeliveryCreateRequest;
+import com.sam.be.modules.workflow.dto.request.DeliveryRevisionRequest;
 import com.sam.be.modules.workflow.dto.request.TaskReportRequest;
 import com.sam.be.modules.workflow.dto.response.DeliveryAcceptanceResponse;
 import com.sam.be.modules.workflow.dto.response.ProjectDeliveryResponse;
@@ -76,6 +77,20 @@ public class ProjectWorkflowController {
                 .result(
                         workflowService.getQaPlan(
                                 SecurityUtils.getCurrentUserId(), jobId, deliveryId))
+                .build();
+    }
+
+    @PostMapping("/{jobId}/deliveries/{deliveryId}/request-revision")
+    @PreAuthorize("hasRole('CLIENT')")
+    @Operation(summary = "Client requests changes for a delivery")
+    public ApiResponse<ProjectDeliveryResponse> requestDeliveryRevision(
+            @PathVariable UUID jobId,
+            @PathVariable UUID deliveryId,
+            @Valid @RequestBody DeliveryRevisionRequest request) {
+        return ApiResponse.<ProjectDeliveryResponse>builder()
+                .result(
+                        workflowService.requestDeliveryRevision(
+                                SecurityUtils.getCurrentUserId(), jobId, deliveryId, request))
                 .build();
     }
 
