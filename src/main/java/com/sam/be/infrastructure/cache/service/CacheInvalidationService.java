@@ -30,7 +30,7 @@ public class CacheInvalidationService {
                         cache.delete(RedisKeys.freelancerProjects(freelancerId));
                     if (freelancerId != null)
                         cache.deleteByPattern(
-                                RedisKeys.pagesPattern(RedisKeys.freelancerProjects(freelancerId)));
+                                RedisKeys.freelancerProjectsPagesPattern(freelancerId));
                 });
     }
 
@@ -92,12 +92,13 @@ public class CacheInvalidationService {
                 });
     }
 
-    public void paymentsChanged(UUID contractId) {
+    public void paymentsChanged(UUID contractId, UUID freelancerId) {
         afterCommit(
                 () -> {
                     cache.delete(RedisKeys.contractPayments(contractId));
                     cache.deleteByPattern(
                             RedisKeys.pagesPattern(RedisKeys.contractPayments(contractId)));
+                    cache.delete(RedisKeys.freelancerEscrowSummary(freelancerId));
                 });
     }
 

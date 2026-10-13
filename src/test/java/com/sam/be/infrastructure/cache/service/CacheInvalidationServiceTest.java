@@ -1,5 +1,6 @@
 package com.sam.be.infrastructure.cache.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,15 +55,25 @@ class CacheInvalidationServiceTest {
         assertTrue(cache.deleted.contains(RedisKeys.clientJobs(clientId)));
         assertTrue(cache.deleted.contains(RedisKeys.pagesPattern(RedisKeys.clientJobs(clientId))));
         assertTrue(cache.deleted.contains(RedisKeys.freelancerProjects(freelancerId)));
-        assertTrue(
-                cache.deleted.contains(
-                        RedisKeys.pagesPattern(RedisKeys.freelancerProjects(freelancerId))));
+        assertTrue(cache.deleted.contains(RedisKeys.freelancerProjectsPagesPattern(freelancerId)));
+    }
+
+    @Test
+    void filteredFreelancerProjectPagesUseDistinctKeys() {
+        UUID freelancerId = UUID.randomUUID();
+        assertEquals(
+                "job:freelancer:" + freelancerId + ":group:all:page:0:10",
+                RedisKeys.freelancerProjectsPage(freelancerId, null, 0, 10));
+        assertEquals(
+                "job:freelancer:" + freelancerId + ":group:completed:page:0:10",
+                RedisKeys.freelancerProjectsPage(freelancerId, "completed", 0, 10));
     }
 
     @Test
     void rollbackLeavesExistingCacheIntact() {
         UUID contractId = UUID.randomUUID();
-        invalidation.paymentsChanged(contractId);
+        UUID freelancerId = UUID.randomUUID();
+        invalidation.paymentsChanged(contractId, freelancerId);
 
         for (TransactionSynchronization synchronization :
                 TransactionSynchronizationManager.getSynchronizations()) {
@@ -70,6 +81,21 @@ class CacheInvalidationServiceTest {
         }
 
         assertFalse(cache.deleted.contains(RedisKeys.contractPayments(contractId)));
+        assertFalse(cache.deleted.contains(RedisKeys.freelancerEscrowSummary(freelancerId)));
+    }
+
+    @Test
+    void paymentChangeInvalidatesEscrowSummaryOnlyAfterCommit() {
+        UUID contractId = UUID.randomUUID();
+        UUID freelancerId = UUID.randomUUID();
+
+        invalidation.paymentsChanged(contractId, freelancerId);
+        assertFalse(cache.deleted.contains(RedisKeys.freelancerEscrowSummary(freelancerId)));
+
+        commit();
+
+        assertTrue(cache.deleted.contains(RedisKeys.contractPayments(contractId)));
+        assertTrue(cache.deleted.contains(RedisKeys.freelancerEscrowSummary(freelancerId)));
     }
 
     @Test

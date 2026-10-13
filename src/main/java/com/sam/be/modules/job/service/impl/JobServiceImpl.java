@@ -686,9 +686,9 @@ public class JobServiceImpl implements JobService {
                                         groups,
                                         query,
                                         pageable));
-        if (status == null && query == null && (group == null || group.isBlank()) && page < 2) {
+        if (status == null && query == null && page < 2) {
             return redisCacheService.getPageOrSet(
-                    RedisKeys.page(RedisKeys.freelancerProjects(freelancerId), page, size),
+                    RedisKeys.freelancerProjectsPage(freelancerId, group, page, size),
                     Duration.ofSeconds(30),
                     JobResponse.class,
                     source);

@@ -4,9 +4,11 @@ import java.math.BigDecimal;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Data;
+import lombok.extern.jackson.Jacksonized;
 
 @Data
 @Builder
+@Jacksonized
 public class FreelancerEscrowSummaryResponse {
     private UUID freelancerId;
     private String currency;

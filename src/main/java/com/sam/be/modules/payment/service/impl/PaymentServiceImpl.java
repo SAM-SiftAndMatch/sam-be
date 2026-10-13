@@ -306,7 +306,8 @@ public class PaymentServiceImpl implements PaymentService {
                 vnpayClient.buildPaymentUrl(txnRef, amountVnd, orderInfo, null, returnUrl);
 
         log.info("Created {} payment {} for contract {}", type, payment.getId(), contract.getId());
-        cacheInvalidationService.paymentsChanged(contract.getId());
+        cacheInvalidationService.paymentsChanged(
+                contract.getId(), contract.getFreelancer().getId());
         return toResponse(payment, vnpayUrl);
     }
 
@@ -372,7 +373,8 @@ public class PaymentServiceImpl implements PaymentService {
                 "PAYMENT_ESCROW_HELD",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
         log.info("Funding confirmed by FE for payment {}", payment.getId());
-        cacheInvalidationService.paymentsChanged(contract.getId());
+        cacheInvalidationService.paymentsChanged(
+                contract.getId(), contract.getFreelancer().getId());
 
         maybeStartProject(contract);
         return toResponse(payment, null);
@@ -424,7 +426,8 @@ public class PaymentServiceImpl implements PaymentService {
                     payment,
                     "PAYMENT_ESCROW_HELD",
                     "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
-            cacheInvalidationService.paymentsChanged(contract.getId());
+            cacheInvalidationService.paymentsChanged(
+                    contract.getId(), contract.getFreelancer().getId());
             log.info("Escrow held for payment {}", payment.getId());
 
             // Đủ cả 2 khoản (client 100% + freelancer cọc 2%) thì cho dự án chạy
@@ -496,7 +499,8 @@ public class PaymentServiceImpl implements PaymentService {
                 payment,
                 "PAYMENT_RELEASED",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã được giải ngân.");
-        cacheInvalidationService.paymentsChanged(contract.getId());
+        cacheInvalidationService.paymentsChanged(
+                contract.getId(), contract.getFreelancer().getId());
         log.info("Escrow released for payment {}", payment.getId());
         return toResponse(payment, null);
     }
@@ -566,6 +570,14 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
+        return redisCacheService.getOrSet(
+                RedisKeys.freelancerEscrowSummary(freelancerId),
+                Duration.ofSeconds(30),
+                FreelancerEscrowSummaryResponse.class,
+                () -> loadFreelancerEscrowSummary(freelancerId));
+    }
+
+    private FreelancerEscrowSummaryResponse loadFreelancerEscrowSummary(UUID freelancerId) {
         var totals =
                 paymentRepository.summarizeFreelancerEscrow(
                         freelancerId,

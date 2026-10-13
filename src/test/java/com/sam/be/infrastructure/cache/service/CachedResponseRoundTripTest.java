@@ -15,11 +15,13 @@ import com.sam.be.modules.contract.dto.response.ContractDetailResponse;
 import com.sam.be.modules.contract.dto.response.ContractRevisionResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.SkillExperienceDto;
+import com.sam.be.modules.payment.dto.response.FreelancerEscrowSummaryResponse;
 import com.sam.be.modules.proposal.dto.response.ProposalResponse;
 import com.sam.be.modules.workflow.dto.response.ProjectDeliveryResponse;
 import com.sam.be.modules.workflow.dto.response.ProjectTimelineResponse;
 import com.sam.be.modules.workflow.dto.response.TaskReportResponse;
 import com.sam.be.modules.workflow.dto.response.TimelineTaskResponse;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -82,6 +84,12 @@ class CachedResponseRoundTripTest {
                         ProjectTimelineResponse.builder()
                                 .jobId(UUID.randomUUID())
                                 .tasks(List.of(task))
+                                .build(),
+                        FreelancerEscrowSummaryResponse.builder()
+                                .freelancerId(UUID.randomUUID())
+                                .currency("VND")
+                                .heldForPayout(new BigDecimal("900.00"))
+                                .fundedProjectCount(1)
                                 .build(),
                         AiRecommendationResponse.builder()
                                 .id(UUID.randomUUID())

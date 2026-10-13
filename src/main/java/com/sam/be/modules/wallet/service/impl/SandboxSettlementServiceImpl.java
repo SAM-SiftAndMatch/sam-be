@@ -117,7 +117,7 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
         contract.getJob().setStatus(JobStatus.COMPLETED);
         contractRepository.save(contract);
         jobRepository.save(contract.getJob());
-        cacheInvalidationService.paymentsChanged(contractId);
+        cacheInvalidationService.paymentsChanged(contractId, contract.getFreelancer().getId());
         cacheInvalidationService.completedContractChanged(contract.getJob().getId());
         cacheInvalidationService.jobChanged(
                 contract.getJob().getId(),

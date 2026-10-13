@@ -122,6 +122,16 @@ public final class RedisKeys {
         return PREFIX_JOB_FREELANCER + freelancerId;
     }
 
+    public static String freelancerProjectsPage(
+            UUID freelancerId, String group, int page, int size) {
+        String tab = group == null || group.isBlank() ? "all" : group;
+        return page(freelancerProjects(freelancerId) + ":group:" + tab, page, size);
+    }
+
+    public static String freelancerProjectsPagesPattern(UUID freelancerId) {
+        return freelancerProjects(freelancerId) + ":*";
+    }
+
     public static String proposalsByJob(UUID jobId) {
         return "proposal:job:" + jobId;
     }
@@ -167,6 +177,10 @@ public final class RedisKeys {
     // MODULE: PAYMENT
     // ==========================================
     private static final String PREFIX_PAYMENT_CONTRACT = "payment:contract:";
+
+    public static String freelancerEscrowSummary(UUID freelancerId) {
+        return "payment:freelancer:escrow-summary:" + freelancerId;
+    }
 
     public static String contractPayments(UUID contractId) {
         return PREFIX_PAYMENT_CONTRACT + contractId;
