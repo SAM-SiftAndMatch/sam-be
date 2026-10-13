@@ -18,6 +18,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -38,6 +39,24 @@ public class ChatController {
         List<ChatMessageDto> response =
                 chatService.getMessageHistory(roomId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<ChatMessageDto>>builder().result(response).build();
+    }
+
+    @GetMapping("/rooms/{roomId}/messages/recent")
+    @Operation(
+            summary = "Get recent chat messages",
+            description = "Return up to 100 latest messages in chronological order")
+    public ApiResponse<List<ChatMessageDto>> getRecentMessages(
+            @PathVariable UUID roomId, @RequestParam(defaultValue = "50") int limit) {
+        if (limit < 1 || limit > 100) {
+            throw new com.sam.be.common.exception.ApiException(
+                    com.sam.be.common.exception.ErrorCode.VALIDATION_ERROR,
+                    "limit phải từ 1 đến 100");
+        }
+        return ApiResponse.<List<ChatMessageDto>>builder()
+                .result(
+                        chatService.getRecentMessages(
+                                roomId, SecurityUtils.getCurrentUserId(), limit))
+                .build();
     }
 
     // Danh sách phòng chat của tôi (cả client lẫn freelancer) -> trang Tin nhắn

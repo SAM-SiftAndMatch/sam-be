@@ -14,6 +14,8 @@ public interface ChatService {
 
     List<ChatMessageDto> getMessageHistory(UUID roomId, UUID userId);
 
+    List<ChatMessageDto> getRecentMessages(UUID roomId, UUID userId, int limit);
+
     ChatMessageDto saveAndBroadcastMessage(UUID roomId, SendMessagePayload payload);
 
     // Tin hệ thống/AI: không gắn user gửi, FE render bubble riêng (icon + màu khác)

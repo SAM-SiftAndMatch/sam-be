@@ -64,10 +64,6 @@ public final class RedisKeys {
         return PREFIX_SKILL + "all";
     }
 
-    public static String skillSearch(String query) {
-        return PREFIX_SKILL + "search:" + (query != null ? query.trim().toLowerCase() : "");
-    }
-
     public static String skillPattern() {
         return PREFIX_SKILL + "*";
     }

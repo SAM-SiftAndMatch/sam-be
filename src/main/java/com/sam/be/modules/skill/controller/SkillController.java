@@ -4,7 +4,6 @@ import com.sam.be.common.response.ApiResponse;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.skill.dto.response.SkillResponse;
-import com.sam.be.modules.skill.entity.Skill;
 import com.sam.be.modules.skill.repository.SkillRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,27 +30,13 @@ public class SkillController {
             description = "Retrieve list of all skills with optional keyword search")
     public ApiResponse<List<SkillResponse>> getSkills(
             @RequestParam(required = false) String search) {
-        String cacheKey =
-                (search != null && !search.isBlank())
-                        ? RedisKeys.skillSearch(search)
-                        : RedisKeys.skillAll();
-
         List<SkillResponse> response =
                 redisCacheService.getListOrSet(
-                        cacheKey,
-                        Duration.ofHours(24),
+                        RedisKeys.skillAll(),
+                        Duration.ofHours(1),
                         SkillResponse.class,
                         () -> {
-                            List<Skill> skills;
-                            if (search != null && !search.isBlank()) {
-                                skills =
-                                        skillRepository.findByNameContainingIgnoreCase(
-                                                search.trim());
-                            } else {
-                                skills = skillRepository.findAll();
-                            }
-
-                            return skills.stream()
+                            return skillRepository.findAll().stream()
                                     .map(
                                             s ->
                                                     SkillResponse.builder()
@@ -60,6 +45,18 @@ public class SkillController {
                                                             .build())
                                     .toList();
                         });
+
+        if (search != null && !search.isBlank()) {
+            String keyword = search.trim().toLowerCase(java.util.Locale.ROOT);
+            response =
+                    response.stream()
+                            .filter(
+                                    skill ->
+                                            skill.getName()
+                                                    .toLowerCase(java.util.Locale.ROOT)
+                                                    .contains(keyword))
+                            .toList();
+        }
 
         return ApiResponse.<List<SkillResponse>>builder().result(response).build();
     }

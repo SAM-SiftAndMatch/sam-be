@@ -30,7 +30,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -532,34 +531,16 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
-        List<Payment> payments = paymentRepository.findAllByFreelancerId(freelancerId);
-        BigDecimal heldFunds =
-                sumPayments(
-                        payments,
+        var totals =
+                paymentRepository.summarizeFreelancerEscrow(
+                        freelancerId,
                         com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND,
-                        PaymentStatus.HELD_IN_ESCROW);
-        BigDecimal releasedFunds =
-                sumPayments(
-                        payments,
-                        com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND,
-                        PaymentStatus.RELEASED);
-        BigDecimal lockedDeposit =
-                sumPayments(
-                        payments,
                         com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT,
-                        PaymentStatus.HELD_IN_ESCROW);
-        int fundedProjectCount =
-                payments.stream()
-                        .filter(
-                                payment ->
-                                        payment.getPaymentType()
-                                                        == com.sam.be.common.constant.enums
-                                                                .PaymentType.CONTRACT_FUND
-                                                && payment.getStatus()
-                                                        == PaymentStatus.HELD_IN_ESCROW)
-                        .map(payment -> payment.getContract().getId())
-                        .collect(Collectors.toSet())
-                        .size();
+                        PaymentStatus.HELD_IN_ESCROW,
+                        PaymentStatus.RELEASED);
+        BigDecimal heldFunds = zeroIfNull(totals != null ? totals.getHeldFunds() : null);
+        BigDecimal releasedFunds = zeroIfNull(totals != null ? totals.getReleasedFunds() : null);
+        BigDecimal lockedDeposit = zeroIfNull(totals != null ? totals.getLockedDeposit() : null);
 
         return FreelancerEscrowSummaryResponse.builder()
                 .freelancerId(freelancerId)
@@ -569,21 +550,15 @@ public class PaymentServiceImpl implements PaymentService {
                 .releasedToFreelancer(netPayout(releasedFunds))
                 .platformFeePending(
                         heldFunds.multiply(PLATFORM_FEE_RATE).setScale(2, RoundingMode.HALF_UP))
-                .fundedProjectCount(fundedProjectCount)
+                .fundedProjectCount(
+                        totals != null && totals.getFundedProjectCount() != null
+                                ? totals.getFundedProjectCount().intValue()
+                                : 0)
                 .build();
     }
 
-    private BigDecimal sumPayments(
-            List<Payment> payments,
-            com.sam.be.common.constant.enums.PaymentType type,
-            PaymentStatus status) {
-        return payments.stream()
-                .filter(
-                        payment ->
-                                payment.getPaymentType() == type && payment.getStatus() == status)
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
+    private BigDecimal zeroIfNull(BigDecimal value) {
+        return (value != null ? value : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal netPayout(BigDecimal grossAmount) {
