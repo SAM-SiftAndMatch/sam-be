@@ -6,6 +6,7 @@ import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
@@ -61,6 +62,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final com.sam.be.modules.job.repository.JobRepository jobRepository;
 
     private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
@@ -303,7 +305,7 @@ public class PaymentServiceImpl implements PaymentService {
                 vnpayClient.buildPaymentUrl(txnRef, amountVnd, orderInfo, null, returnUrl);
 
         log.info("Created {} payment {} for contract {}", type, payment.getId(), contract.getId());
-        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+        cacheInvalidationService.paymentsChanged(contract.getId());
         return toResponse(payment, vnpayUrl);
     }
 
@@ -369,7 +371,7 @@ public class PaymentServiceImpl implements PaymentService {
                 "PAYMENT_ESCROW_HELD",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
         log.info("Funding confirmed by FE for payment {}", payment.getId());
-        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+        cacheInvalidationService.paymentsChanged(contract.getId());
 
         maybeStartProject(contract);
         return toResponse(payment, null);
@@ -421,7 +423,7 @@ public class PaymentServiceImpl implements PaymentService {
                     payment,
                     "PAYMENT_ESCROW_HELD",
                     "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
-            redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+            cacheInvalidationService.paymentsChanged(contract.getId());
             log.info("Escrow held for payment {}", payment.getId());
 
             // Đủ cả 2 khoản (client 100% + freelancer cọc 2%) thì cho dự án chạy
@@ -460,8 +462,9 @@ public class PaymentServiceImpl implements PaymentService {
         }
         job.setStatus(com.sam.be.common.constant.enums.JobStatus.IN_PROGRESS);
         jobRepository.save(job);
-        // Job đổi trạng thái: xóa cache chi tiết để list/detail hiện đúng
-        redisCacheService.delete(RedisKeys.jobDetail(job.getId()));
+        // Đồng bộ các cache liên quan sau khi giao dịch DB commit.
+        cacheInvalidationService.jobChanged(
+                job.getId(), contract.getClient().getId(), contract.getFreelancer().getId());
         pushPaymentEvent(
                 contract, null, "PROJECT_STARTED", "Đã nạp đủ tiền, dự án chính thức bắt đầu!");
         log.info("Project started for contract {}", contract.getId());
@@ -492,7 +495,7 @@ public class PaymentServiceImpl implements PaymentService {
                 payment,
                 "PAYMENT_RELEASED",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã được giải ngân.");
-        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+        cacheInvalidationService.paymentsChanged(contract.getId());
         log.info("Escrow released for payment {}", payment.getId());
         return toResponse(payment, null);
     }

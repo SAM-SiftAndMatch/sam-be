@@ -5,10 +5,15 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProposalRepository extends JpaRepository<Proposal, UUID> {
+    @Query("SELECT DISTINCT p.job.id FROM Proposal p WHERE p.freelancer.id = :freelancerId")
+    List<UUID> findJobIdsByFreelancerId(@Param("freelancerId") UUID freelancerId);
+
     List<Proposal> findAllByJobId(UUID jobId);
 
     List<Proposal> findAllByFreelancerId(UUID freelancerId);

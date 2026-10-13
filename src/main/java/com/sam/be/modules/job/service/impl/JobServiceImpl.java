@@ -7,6 +7,7 @@ import com.sam.be.common.constant.enums.SubscriptionStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.ai.dto.response.AiCandidateScore;
 import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
@@ -68,6 +69,7 @@ public class JobServiceImpl implements JobService {
     private final NotificationService notificationService;
     private final ChatService chatService;
     private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
@@ -165,7 +167,7 @@ public class JobServiceImpl implements JobService {
         }
 
         JobResponse response = mapToResponse(savedJob);
-        redisCacheService.delete(RedisKeys.clientJobs(clientId));
+        cacheInvalidationService.jobChanged(savedJob.getId(), clientId, null);
         return response;
     }
 
@@ -445,8 +447,7 @@ public class JobServiceImpl implements JobService {
         jobRepository.save(job);
 
         JobResponse response = mapToResponse(job);
-        redisCacheService.delete(RedisKeys.jobDetail(jobId));
-        redisCacheService.delete(RedisKeys.clientJobs(clientId));
+        cacheInvalidationService.jobChanged(jobId, clientId, null);
         return response;
     }
 
@@ -526,18 +527,30 @@ public class JobServiceImpl implements JobService {
                 && !com.sam.be.common.security.util.SecurityUtils.isAdmin()) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
-        return jobRepository.findAllProjectsByFreelancerId(freelancerId).stream()
-                .map(this::mapToResponse)
-                .toList();
+        return redisCacheService.getListOrSet(
+                RedisKeys.freelancerProjects(freelancerId),
+                Duration.ofSeconds(30),
+                JobResponse.class,
+                () ->
+                        jobRepository.findAllProjectsByFreelancerId(freelancerId).stream()
+                                .map(this::mapToResponse)
+                                .toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<JobResponse> getAllOpenJobs() {
-        List<Job> jobs =
-                jobRepository.findAllOpenJobsFiltered(
-                        JobStatus.OPEN, java.time.LocalDateTime.now().minusMinutes(5));
-        return jobs.stream().map(this::mapToResponse).collect(Collectors.toList());
+        return redisCacheService.getListOrSet(
+                RedisKeys.openJobs(),
+                Duration.ofSeconds(30),
+                JobResponse.class,
+                () ->
+                        jobRepository
+                                .findAllOpenJobsFiltered(
+                                        JobStatus.OPEN, LocalDateTime.now().minusMinutes(5))
+                                .stream()
+                                .map(this::mapToResponse)
+                                .toList());
     }
 
     private JobResponse mapToResponse(Job job) {
@@ -676,7 +689,7 @@ public class JobServiceImpl implements JobService {
                 job.getTitle(),
                 recommendation.getMatchScore(),
                 recommendation.getId());
-        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
+        cacheInvalidationService.recommendationChanged(jobId);
     }
 
     @Override
@@ -710,7 +723,7 @@ public class JobServiceImpl implements JobService {
         } catch (Exception e) {
             log.warn("Failed to send CHAT_OPENED to client", e);
         }
-        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
+        cacheInvalidationService.recommendationChanged(jobId);
 
         // 4. Trả về roomId cho Frontend
         return AcceptInvitationResponse.builder().roomId(room.getId()).build();
@@ -729,7 +742,7 @@ public class JobServiceImpl implements JobService {
         // Đổi trạng thái sang REJECTED
         recommendation.setStatus(RecommendationStatus.REJECTED);
         aiJobRecommendationRepository.save(recommendation);
-        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
+        cacheInvalidationService.recommendationChanged(jobId);
     }
 
     // Hàm dùng chung để validate bảo mật tránh Dev này nhận bừa job của Dev khác
@@ -786,7 +799,7 @@ public class JobServiceImpl implements JobService {
         } catch (Exception e) {
             log.warn("Failed to send DEV_CLAIM to client", e);
         }
-        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
+        cacheInvalidationService.recommendationChanged(jobId);
     }
 
     @Override
@@ -829,7 +842,7 @@ public class JobServiceImpl implements JobService {
         } catch (Exception e) {
             log.warn("Failed to send CHAT_OPENED to freelancer", e);
         }
-        redisCacheService.delete(RedisKeys.jobRecommendations(jobId));
+        cacheInvalidationService.recommendationChanged(jobId);
 
         return AcceptInvitationResponse.builder().roomId(room.getId()).build();
     }

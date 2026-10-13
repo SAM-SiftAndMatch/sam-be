@@ -4,6 +4,9 @@ import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.constant.enums.ProposalStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.chat.entity.ChatRoom;
 import com.sam.be.modules.chat.service.ChatService;
 import com.sam.be.modules.job.entity.Job;
@@ -19,6 +22,7 @@ import com.sam.be.modules.proposal.service.ProposalService;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.FreelancerProfileRepository;
 import com.sam.be.modules.user.repository.UserRepository;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -37,6 +41,8 @@ public class ProposalServiceImpl implements ProposalService {
     private final AiJobRecommendationRepository aiJobRecommendationRepository;
     private final ChatService chatService;
     private final NotificationService notificationService;
+    private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
@@ -78,6 +84,7 @@ public class ProposalServiceImpl implements ProposalService {
                                 .attachmentName(request.getAttachmentName())
                                 .status(ProposalStatus.PENDING)
                                 .build());
+        cacheInvalidationService.proposalChanged(job.getId(), freelancerId);
 
         notificationService.sendProposalNotification(
                 job.getClient().getId(),
@@ -100,15 +107,27 @@ public class ProposalServiceImpl implements ProposalService {
         if (job.getClient() == null || !job.getClient().getId().equals(clientId)) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
-        return proposalRepository.findAllByJobId(jobId).stream().map(this::mapToResponse).toList();
+        return redisCacheService.getListOrSet(
+                RedisKeys.proposalsByJob(jobId),
+                Duration.ofMinutes(1),
+                ProposalResponse.class,
+                () ->
+                        proposalRepository.findAllByJobId(jobId).stream()
+                                .map(this::mapToResponse)
+                                .toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<ProposalResponse> getMyProposals(UUID freelancerId) {
-        return proposalRepository.findAllByFreelancerId(freelancerId).stream()
-                .map(this::mapToResponse)
-                .toList();
+        return redisCacheService.getListOrSet(
+                RedisKeys.proposalsByFreelancer(freelancerId),
+                Duration.ofMinutes(1),
+                ProposalResponse.class,
+                () ->
+                        proposalRepository.findAllByFreelancerId(freelancerId).stream()
+                                .map(this::mapToResponse)
+                                .toList());
     }
 
     @Override
@@ -130,6 +149,8 @@ public class ProposalServiceImpl implements ProposalService {
         }
         proposal.setStatus(ProposalStatus.INVITED);
         proposalRepository.save(proposal);
+        cacheInvalidationService.proposalChanged(
+                proposal.getJob().getId(), proposal.getFreelancer().getId());
 
         notificationService.sendProposalNotification(
                 proposal.getFreelancer().getId(),
@@ -156,6 +177,8 @@ public class ProposalServiceImpl implements ProposalService {
         }
         proposal.setStatus(ProposalStatus.ACCEPTED);
         proposalRepository.save(proposal);
+        cacheInvalidationService.proposalChanged(
+                proposal.getJob().getId(), proposal.getFreelancer().getId());
 
         ChatRoom room = chatService.getOrCreateRoom(proposal.getJob(), proposal.getFreelancer());
 
@@ -196,6 +219,8 @@ public class ProposalServiceImpl implements ProposalService {
                     ErrorCode.REQUEST_FAILED, "Thao tác không hợp lệ với trạng thái hiện tại.");
         }
         proposalRepository.save(proposal);
+        cacheInvalidationService.proposalChanged(
+                proposal.getJob().getId(), proposal.getFreelancer().getId());
 
         UUID otherSide =
                 isClient ? proposal.getFreelancer().getId() : proposal.getJob().getClient().getId();

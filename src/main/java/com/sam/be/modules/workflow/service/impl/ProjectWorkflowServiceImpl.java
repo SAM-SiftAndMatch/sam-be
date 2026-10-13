@@ -6,6 +6,9 @@ import com.sam.be.common.constant.enums.ProjectTaskStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.security.util.SecurityUtils;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.contract.entity.Contract;
 import com.sam.be.modules.contract.repository.ContractRepository;
 import com.sam.be.modules.job.entity.Job;
@@ -30,6 +33,7 @@ import com.sam.be.modules.workflow.repository.ProjectTimelineTaskRepository;
 import com.sam.be.modules.workflow.service.ManualQaPlanService;
 import com.sam.be.modules.workflow.service.ProjectWorkflowService;
 import com.sam.be.modules.workflow.service.SrsTimelineParser;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -50,17 +54,29 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
     private final ManualQaPlanService manualQaPlanService;
     private final com.sam.be.modules.wallet.service.SandboxSettlementService
             sandboxSettlementService;
+    private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
     public ProjectTimelineResponse getTimeline(UUID userId, UUID jobId) {
-        Job job = getAccessibleJobForUpdate(userId, jobId);
+        Job job = getAccessibleJob(userId, jobId);
+        var cached =
+                redisCacheService.get(
+                        RedisKeys.workflowTimeline(jobId), ProjectTimelineResponse.class);
+        if (cached.isPresent()) return cached.get();
+
         List<ProjectTimelineTask> tasks =
                 taskRepository.findAllByJobIdOrderByWeekNumberAscSortOrderAsc(jobId);
         if (tasks.isEmpty()) {
-            tasks = initializeTimeline(job);
+            Job lockedJob = getAccessibleJobForUpdate(userId, jobId);
+            tasks = taskRepository.findAllByJobIdOrderByWeekNumberAscSortOrderAsc(jobId);
+            if (tasks.isEmpty()) tasks = initializeTimeline(lockedJob);
+            return toTimelineResponse(job, tasks);
         }
-        return toTimelineResponse(job, tasks);
+        ProjectTimelineResponse response = toTimelineResponse(job, tasks);
+        redisCacheService.set(RedisKeys.workflowTimeline(jobId), response, Duration.ofSeconds(30));
+        return response;
     }
 
     @Override
@@ -112,6 +128,7 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
                         .progress(reportedProgress)
                         .reportedStatus(request.getStatus())
                         .build());
+        cacheInvalidationService.timelineChanged(jobId);
 
         return toTimelineResponse(
                 job, taskRepository.findAllByJobIdOrderByWeekNumberAscSortOrderAsc(jobId));
@@ -121,9 +138,14 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
     @Transactional(readOnly = true)
     public List<ProjectDeliveryResponse> getDeliveries(UUID userId, UUID jobId) {
         getAccessibleJob(userId, jobId);
-        return deliveryRepository.findAllByJobIdOrderByVersionNumberDesc(jobId).stream()
-                .map(this::toDeliveryResponse)
-                .toList();
+        return redisCacheService.getListOrSet(
+                RedisKeys.workflowDeliveries(jobId),
+                Duration.ofSeconds(30),
+                ProjectDeliveryResponse.class,
+                () ->
+                        deliveryRepository.findAllByJobIdOrderByVersionNumberDesc(jobId).stream()
+                                .map(this::toDeliveryResponse)
+                                .toList());
     }
 
     @Override
@@ -166,6 +188,8 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
                         .build();
         ProjectDelivery savedDelivery = deliveryRepository.save(delivery);
         manualQaPlanService.generateForDelivery(savedDelivery, job.getSrsContent(), tasks);
+        cacheInvalidationService.deliveriesChanged(jobId);
+        cacheInvalidationService.qaPlanChanged(savedDelivery.getId());
         return toDeliveryResponse(savedDelivery);
     }
 
@@ -176,7 +200,11 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         deliveryRepository
                 .findByIdAndJobId(deliveryId, jobId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        return manualQaPlanService.getByDeliveryId(deliveryId);
+        return redisCacheService.getOrSet(
+                RedisKeys.workflowQaPlan(deliveryId),
+                Duration.ofHours(24),
+                QaPlanResponse.class,
+                () -> manualQaPlanService.getByDeliveryId(deliveryId));
     }
 
     @Override
@@ -203,6 +231,7 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         delivery.setStatus(DeliveryStatus.REVISION_REQUESTED);
         delivery.setRevisionReason(request.getReason().trim());
         delivery.setReviewedAt(LocalDateTime.now());
+        cacheInvalidationService.deliveriesChanged(jobId);
         return toDeliveryResponse(deliveryRepository.save(delivery));
     }
 
@@ -230,6 +259,8 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         delivery.setStatus(DeliveryStatus.ACCEPTED);
         delivery.setReviewedAt(LocalDateTime.now());
         ProjectDelivery savedDelivery = deliveryRepository.save(delivery);
+        cacheInvalidationService.deliveriesChanged(jobId);
+        cacheInvalidationService.timelineChanged(jobId);
         return DeliveryAcceptanceResponse.builder()
                 .delivery(toDeliveryResponse(savedDelivery))
                 .settlement(sandboxSettlementService.settle(contract.getId(), savedDelivery))
