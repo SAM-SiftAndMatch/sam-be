@@ -4,9 +4,11 @@ import java.util.List;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Data;
+import lombok.extern.jackson.Jacksonized;
 
 @Data
 @Builder
+@Jacksonized
 public class ProjectTimelineResponse {
     private UUID jobId;
     private String jobTitle;
