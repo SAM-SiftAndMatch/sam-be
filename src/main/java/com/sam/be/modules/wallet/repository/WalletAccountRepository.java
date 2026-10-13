@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface WalletAccountRepository extends JpaRepository<WalletAccount, UUID> {
     Optional<WalletAccount> findByOwnerId(UUID ownerId);
@@ -12,8 +14,10 @@ public interface WalletAccountRepository extends JpaRepository<WalletAccount, UU
     Optional<WalletAccount> findByWalletKey(String walletKey);
 
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    Optional<WalletAccount> findByOwnerIdForUpdate(UUID ownerId);
+    @Query("SELECT w FROM WalletAccount w WHERE w.owner.id = :ownerId")
+    Optional<WalletAccount> findByOwnerIdForUpdate(@Param("ownerId") UUID ownerId);
 
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    Optional<WalletAccount> findByWalletKeyForUpdate(String walletKey);
+    @Query("SELECT w FROM WalletAccount w WHERE w.walletKey = :walletKey")
+    Optional<WalletAccount> findByWalletKeyForUpdate(@Param("walletKey") String walletKey);
 }
