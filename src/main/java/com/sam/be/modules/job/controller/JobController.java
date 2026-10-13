@@ -70,6 +70,18 @@ public class JobController {
         return ApiResponse.<List<JobResponse>>builder().result(response).build();
     }
 
+    @GetMapping("/freelancers/{freelancerId}/projects")
+    @PreAuthorize("hasRole('FREELANCER') or hasRole('ADMIN')")
+    @Operation(
+            summary = "Get projects assigned to a freelancer",
+            description = "A freelancer can only read their own projects; Admin can read all")
+    public ApiResponse<List<JobResponse>> getFreelancerProjects(@PathVariable UUID freelancerId) {
+        List<JobResponse> response =
+                jobService.getProjectsByFreelancerId(
+                        SecurityUtils.getCurrentUserId(), freelancerId);
+        return ApiResponse.<List<JobResponse>>builder().result(response).build();
+    }
+
     @GetMapping("/{jobId}/recommendations")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(

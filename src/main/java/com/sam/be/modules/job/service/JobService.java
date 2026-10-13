@@ -16,6 +16,8 @@ public interface JobService {
 
     List<JobResponse> getJobsByClientId(UUID clientId);
 
+    List<JobResponse> getProjectsByFreelancerId(UUID requesterId, UUID freelancerId);
+
     /** Lấy tất cả OPEN jobs, sắp xếp mới nhất trước (public endpoint) */
     List<JobResponse> getAllOpenJobs();
 

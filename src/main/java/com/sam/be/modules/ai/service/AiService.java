@@ -27,4 +27,6 @@ public interface AiService {
 
     AiContractReview reviewContractTerms(
             String contractTerms, BigDecimal agreedAmount, BigDecimal initialAmount);
+
+    AiQaPlan generateManualQaPlan(String srsContent, String timelineSummary, String deliveryUrl);
 }

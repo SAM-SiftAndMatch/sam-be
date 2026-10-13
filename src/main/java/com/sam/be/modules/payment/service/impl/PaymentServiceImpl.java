@@ -15,6 +15,7 @@ import com.sam.be.modules.contract.service.ContractService;
 import com.sam.be.modules.notification.service.NotificationService;
 import com.sam.be.modules.payment.dto.request.ConfirmFundingRequest;
 import com.sam.be.modules.payment.dto.request.CreateEscrowRequest;
+import com.sam.be.modules.payment.dto.response.FreelancerEscrowSummaryResponse;
 import com.sam.be.modules.payment.dto.response.FundingStatusResponse;
 import com.sam.be.modules.payment.dto.response.PaymentResponse;
 import com.sam.be.modules.payment.entity.Payment;
@@ -28,6 +29,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -168,7 +170,8 @@ public class PaymentServiceImpl implements PaymentService {
                 fundStatus == PaymentStatus.HELD_IN_ESCROW || fundStatus == PaymentStatus.RELEASED;
         boolean depositPaid =
                 depositStatus == PaymentStatus.HELD_IN_ESCROW
-                        || depositStatus == PaymentStatus.RELEASED;
+                        || depositStatus == PaymentStatus.RELEASED
+                        || depositStatus == PaymentStatus.REFUNDED;
 
         return FundingStatusResponse.builder()
                 .contractId(contract.getId())
@@ -190,17 +193,19 @@ public class PaymentServiceImpl implements PaymentService {
     private PaymentStatus latestStatus(
             UUID contractId, com.sam.be.common.constant.enums.PaymentType type) {
         List<Payment> all = paymentRepository.findAllByContractIdAndPaymentType(contractId, type);
-        // Ưu tiên trạng thái đã trả, rồi tới đơn đang chờ; bỏ qua đơn hết hạn/hoàn
+        // Ưu tiên trạng thái đã được nạp hoặc đã hoàn cọc, rồi tới đơn đang chờ.
         return all.stream()
                 .map(Payment::getStatus)
-                .filter(s -> s != PaymentStatus.EXPIRED && s != PaymentStatus.REFUNDED)
+                .filter(s -> s != PaymentStatus.EXPIRED)
                 .sorted((a, b) -> Integer.compare(statusRank(a), statusRank(b)))
                 .findFirst()
                 .orElse(null);
     }
 
     private int statusRank(PaymentStatus s) {
-        if (s == PaymentStatus.HELD_IN_ESCROW || s == PaymentStatus.RELEASED) return 0;
+        if (s == PaymentStatus.HELD_IN_ESCROW
+                || s == PaymentStatus.RELEASED
+                || s == PaymentStatus.REFUNDED) return 0;
         if (s == PaymentStatus.PENDING) return 1;
         return 2;
     }
@@ -471,9 +476,7 @@ public class PaymentServiceImpl implements PaymentService {
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         Contract contract = payment.getContract();
-        boolean isOwner =
-                contract.getClient() != null && contract.getClient().getId().equals(userId);
-        if (!isOwner && !SecurityUtils.isAdmin()) {
+        if (!SecurityUtils.isAdmin()) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
         if (payment.getStatus() != PaymentStatus.HELD_IN_ESCROW) {
@@ -516,6 +519,74 @@ public class PaymentServiceImpl implements PaymentService {
                                 .sorted(Comparator.comparing(Payment::getInstallmentNo))
                                 .map(p -> toResponse(p, null))
                                 .toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public FreelancerEscrowSummaryResponse getFreelancerEscrowSummary(
+            UUID requesterId, UUID freelancerId) {
+        if (!requesterId.equals(freelancerId) && !SecurityUtils.isAdmin()) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+
+        List<Payment> payments = paymentRepository.findAllByFreelancerId(freelancerId);
+        BigDecimal heldFunds =
+                sumPayments(
+                        payments,
+                        com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND,
+                        PaymentStatus.HELD_IN_ESCROW);
+        BigDecimal releasedFunds =
+                sumPayments(
+                        payments,
+                        com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND,
+                        PaymentStatus.RELEASED);
+        BigDecimal lockedDeposit =
+                sumPayments(
+                        payments,
+                        com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT,
+                        PaymentStatus.HELD_IN_ESCROW);
+        int fundedProjectCount =
+                payments.stream()
+                        .filter(
+                                payment ->
+                                        payment.getPaymentType()
+                                                        == com.sam.be.common.constant.enums
+                                                                .PaymentType.CONTRACT_FUND
+                                                && payment.getStatus()
+                                                        == PaymentStatus.HELD_IN_ESCROW)
+                        .map(payment -> payment.getContract().getId())
+                        .collect(Collectors.toSet())
+                        .size();
+
+        return FreelancerEscrowSummaryResponse.builder()
+                .freelancerId(freelancerId)
+                .currency("VND")
+                .heldForPayout(netPayout(heldFunds))
+                .lockedSecurityDeposit(lockedDeposit)
+                .releasedToFreelancer(netPayout(releasedFunds))
+                .platformFeePending(
+                        heldFunds.multiply(PLATFORM_FEE_RATE).setScale(2, RoundingMode.HALF_UP))
+                .fundedProjectCount(fundedProjectCount)
+                .build();
+    }
+
+    private BigDecimal sumPayments(
+            List<Payment> payments,
+            com.sam.be.common.constant.enums.PaymentType type,
+            PaymentStatus status) {
+        return payments.stream()
+                .filter(
+                        payment ->
+                                payment.getPaymentType() == type && payment.getStatus() == status)
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal netPayout(BigDecimal grossAmount) {
+        return grossAmount
+                .subtract(grossAmount.multiply(PLATFORM_FEE_RATE))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private void pushPaymentEvent(Contract contract, Payment payment, String type, String message) {
