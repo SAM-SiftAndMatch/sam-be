@@ -1,6 +1,7 @@
 package com.sam.be.modules.workflow.service;
 
 import com.sam.be.modules.workflow.dto.request.DeliveryCreateRequest;
+import com.sam.be.modules.workflow.dto.request.DeliveryRevisionRequest;
 import com.sam.be.modules.workflow.dto.request.TaskReportRequest;
 import com.sam.be.modules.workflow.dto.response.DeliveryAcceptanceResponse;
 import com.sam.be.modules.workflow.dto.response.ProjectDeliveryResponse;
@@ -21,6 +22,9 @@ public interface ProjectWorkflowService {
             UUID freelancerId, UUID jobId, DeliveryCreateRequest request);
 
     QaPlanResponse getQaPlan(UUID userId, UUID jobId, UUID deliveryId);
+
+    ProjectDeliveryResponse requestDeliveryRevision(
+            UUID clientId, UUID jobId, UUID deliveryId, DeliveryRevisionRequest request);
 
     DeliveryAcceptanceResponse acceptDelivery(UUID clientId, UUID jobId, UUID deliveryId);
 }
