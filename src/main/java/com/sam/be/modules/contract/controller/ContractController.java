@@ -1,6 +1,7 @@
 package com.sam.be.modules.contract.controller;
 
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.contract.dto.response.ContractDetailResponse;
 import com.sam.be.modules.contract.dto.response.ContractDraftResponse;
@@ -51,6 +52,19 @@ public class ContractController {
                 contractService.getRevisionsByRoom(roomId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<java.util.List<ContractRevisionResponse>>builder()
                 .result(response)
+                .build();
+    }
+
+    @GetMapping("/{roomId}/contract/revisions/page")
+    @Operation(summary = "Get a page of contract revisions")
+    public ApiResponse<PageResponse<ContractRevisionResponse>> getRevisionsPage(
+            @PathVariable UUID roomId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.<PageResponse<ContractRevisionResponse>>builder()
+                .result(
+                        contractService.getRevisionsByRoomPage(
+                                roomId, SecurityUtils.getCurrentUserId(), page, size))
                 .build();
     }
 }

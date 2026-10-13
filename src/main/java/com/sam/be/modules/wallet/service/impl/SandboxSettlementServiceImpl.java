@@ -4,6 +4,7 @@ import com.sam.be.common.constant.enums.*;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.security.util.SecurityUtils;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.modules.contract.entity.Contract;
 import com.sam.be.modules.contract.repository.ContractRepository;
 import com.sam.be.modules.job.repository.JobRepository;
@@ -41,6 +42,7 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
     private final WalletLedgerEntryRepository ledgerEntryRepository;
     private final JobRepository jobRepository;
     private final NotificationService notificationService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
@@ -115,6 +117,12 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
         contract.getJob().setStatus(JobStatus.COMPLETED);
         contractRepository.save(contract);
         jobRepository.save(contract.getJob());
+        cacheInvalidationService.paymentsChanged(contractId, contract.getFreelancer().getId());
+        cacheInvalidationService.completedContractChanged(contract.getJob().getId());
+        cacheInvalidationService.jobChanged(
+                contract.getJob().getId(),
+                contract.getClient().getId(),
+                contract.getFreelancer().getId());
 
         notificationService.sendPaymentNotification(
                 contract.getFreelancer().getId(),

@@ -1,6 +1,7 @@
 package com.sam.be.modules.payment.controller;
 
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.ai.dto.response.AiAmountVerification;
 import com.sam.be.modules.payment.dto.request.ConfirmFundingRequest;
@@ -108,6 +109,19 @@ public class PaymentController {
         List<PaymentResponse> response =
                 paymentService.getByContract(SecurityUtils.getCurrentUserId(), contractId);
         return ApiResponse.<List<PaymentResponse>>builder().result(response).build();
+    }
+
+    @GetMapping("/contract/{contractId}/page")
+    @Operation(summary = "Get a page of contract payments")
+    public ApiResponse<PageResponse<PaymentResponse>> getByContractPage(
+            @PathVariable UUID contractId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.<PageResponse<PaymentResponse>>builder()
+                .result(
+                        paymentService.getByContractPage(
+                                SecurityUtils.getCurrentUserId(), contractId, page, size))
+                .build();
     }
 
     @GetMapping("/freelancers/{freelancerId}/escrow-summary")

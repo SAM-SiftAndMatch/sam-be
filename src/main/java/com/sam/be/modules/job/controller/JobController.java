@@ -1,6 +1,8 @@
 package com.sam.be.modules.job.controller;
 
+import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
 import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
@@ -10,6 +12,7 @@ import com.sam.be.modules.job.service.JobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +63,35 @@ public class JobController {
         return ApiResponse.<List<JobResponse>>builder().result(response).build();
     }
 
+    @GetMapping("/page")
+    @Operation(summary = "Get a page of open jobs without SRS content")
+    public ApiResponse<PageResponse<JobResponse>> getOpenJobsPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Integer skillId,
+            @RequestParam(required = false) String skillNames,
+            @RequestParam(required = false) String customSkill,
+            @RequestParam(defaultValue = "false") boolean negotiable,
+            @RequestParam(required = false) BigDecimal minBudget,
+            @RequestParam(required = false) BigDecimal maxBudget,
+            @RequestParam(defaultValue = "newest") String sort) {
+        return ApiResponse.<PageResponse<JobResponse>>builder()
+                .result(
+                        jobService.getOpenJobsPage(
+                                page,
+                                size,
+                                search,
+                                skillId,
+                                skillNames,
+                                customSkill,
+                                negotiable,
+                                minBudget,
+                                maxBudget,
+                                sort))
+                .build();
+    }
+
     @GetMapping("/client/me")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(
@@ -68,6 +100,21 @@ public class JobController {
     public ApiResponse<List<JobResponse>> getMyJobs() {
         List<JobResponse> response = jobService.getJobsByClientId(SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<JobResponse>>builder().result(response).build();
+    }
+
+    @GetMapping("/client/me/page")
+    @PreAuthorize("hasRole('CLIENT')")
+    @Operation(summary = "Get a page of my jobs without SRS content")
+    public ApiResponse<PageResponse<JobResponse>> getMyJobsPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) JobStatus status,
+            @RequestParam(required = false) String search) {
+        return ApiResponse.<PageResponse<JobResponse>>builder()
+                .result(
+                        jobService.getClientJobsPage(
+                                SecurityUtils.getCurrentUserId(), page, size, status, search))
+                .build();
     }
 
     @GetMapping("/freelancers/{freelancerId}/projects")
@@ -80,6 +127,29 @@ public class JobController {
                 jobService.getProjectsByFreelancerId(
                         SecurityUtils.getCurrentUserId(), freelancerId);
         return ApiResponse.<List<JobResponse>>builder().result(response).build();
+    }
+
+    @GetMapping("/freelancers/{freelancerId}/projects/page")
+    @PreAuthorize("hasRole('FREELANCER') or hasRole('ADMIN')")
+    @Operation(summary = "Get a page of assigned projects without SRS content")
+    public ApiResponse<PageResponse<JobResponse>> getFreelancerProjectsPage(
+            @PathVariable UUID freelancerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) JobStatus status,
+            @RequestParam(required = false) String group,
+            @RequestParam(required = false) String search) {
+        return ApiResponse.<PageResponse<JobResponse>>builder()
+                .result(
+                        jobService.getFreelancerProjectsPage(
+                                SecurityUtils.getCurrentUserId(),
+                                freelancerId,
+                                page,
+                                size,
+                                status,
+                                group,
+                                search))
+                .build();
     }
 
     @GetMapping("/{jobId}/recommendations")

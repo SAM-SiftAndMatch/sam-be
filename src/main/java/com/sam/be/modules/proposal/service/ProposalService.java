@@ -1,5 +1,7 @@
 package com.sam.be.modules.proposal.service;
 
+import com.sam.be.common.constant.enums.ProposalStatus;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.proposal.dto.request.ProposalCreateRequest;
 import com.sam.be.modules.proposal.dto.response.AcceptProposalResponse;
 import com.sam.be.modules.proposal.dto.response.ProposalResponse;
@@ -15,6 +17,12 @@ public interface ProposalService {
 
     // Freelancer xem hồ sơ mình đã nộp (tất cả hoặc theo job)
     List<ProposalResponse> getMyProposals(UUID freelancerId);
+
+    PageResponse<ProposalResponse> getProposalsByJobPage(
+            UUID clientId, UUID jobId, int page, int size, ProposalStatus status);
+
+    PageResponse<ProposalResponse> getMyProposalsPage(
+            UUID freelancerId, int page, int size, ProposalStatus status);
 
     ProposalResponse getMyProposalForJob(UUID freelancerId, UUID jobId);
 

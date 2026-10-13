@@ -3,7 +3,10 @@ package com.sam.be.modules.user.service.impl;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
+import com.sam.be.modules.job.repository.AiJobRecommendationRepository;
+import com.sam.be.modules.proposal.repository.ProposalRepository;
 import com.sam.be.modules.skill.entity.Skill;
 import com.sam.be.modules.skill.repository.SkillRepository;
 import com.sam.be.modules.user.dto.request.ClientProfileRequest;
@@ -40,6 +43,9 @@ public class ProfileServiceImpl implements ProfileService {
     private final FreelancerSkillRepository freelancerSkillRepository;
     private final SkillRepository skillRepository;
     private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
+    private final AiJobRecommendationRepository recommendationRepository;
+    private final ProposalRepository proposalRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -94,6 +100,7 @@ public class ProfileServiceImpl implements ProfileService {
         freelancerSkillRepository.deleteAll(existingSkills);
 
         List<FreelancerSkill> newSkills = new ArrayList<>();
+        boolean createdSkill = false;
         if (request.getSkills() != null && !request.getSkills().isEmpty()) {
             for (FreelancerSkillRequest skillRequest : request.getSkills()) {
                 Skill skill = null;
@@ -105,15 +112,11 @@ public class ProfileServiceImpl implements ProfileService {
                         && skillRequest.getSkillName() != null
                         && !skillRequest.getSkillName().isBlank()) {
                     String cleanName = skillRequest.getSkillName().trim();
-                    skill =
-                            skillRepository
-                                    .findByNameIgnoreCase(cleanName)
-                                    .orElseGet(
-                                            () ->
-                                                    skillRepository.save(
-                                                            Skill.builder()
-                                                                    .name(cleanName)
-                                                                    .build()));
+                    skill = skillRepository.findByNameIgnoreCase(cleanName).orElse(null);
+                    if (skill == null) {
+                        skill = skillRepository.save(Skill.builder().name(cleanName).build());
+                        createdSkill = true;
+                    }
                 }
 
                 if (skill == null) {
@@ -135,7 +138,11 @@ public class ProfileServiceImpl implements ProfileService {
 
         FreelancerProfileResponse response =
                 mapToFreelancerProfileResponse(user, profile, newSkills);
-        redisCacheService.delete(RedisKeys.freelancerProfile(userId));
+        cacheInvalidationService.profileChanged(
+                userId,
+                recommendationRepository.findJobIdsByFreelancerId(userId),
+                proposalRepository.findJobIdsByFreelancerId(userId));
+        if (createdSkill) cacheInvalidationService.skillCatalogChanged();
         return response;
     }
 
@@ -183,7 +190,7 @@ public class ProfileServiceImpl implements ProfileService {
         clientProfileRepository.save(profile);
 
         ClientProfileResponse response = mapToClientProfileResponse(user, profile);
-        redisCacheService.delete(RedisKeys.clientProfile(userId));
+        cacheInvalidationService.clientProfileChanged(userId);
         return response;
     }
 

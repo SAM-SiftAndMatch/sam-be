@@ -1,5 +1,6 @@
 package com.sam.be.modules.payment.service;
 
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.ai.dto.response.AiAmountVerification;
 import com.sam.be.modules.payment.dto.request.ConfirmFundingRequest;
 import com.sam.be.modules.payment.dto.request.CreateEscrowRequest;
@@ -32,6 +33,9 @@ public interface PaymentService {
     PaymentResponse releaseEscrow(UUID userId, UUID paymentId);
 
     List<PaymentResponse> getByContract(UUID userId, UUID contractId);
+
+    PageResponse<PaymentResponse> getByContractPage(
+            UUID userId, UUID contractId, int page, int size);
 
     FreelancerEscrowSummaryResponse getFreelancerEscrowSummary(UUID requesterId, UUID freelancerId);
 }

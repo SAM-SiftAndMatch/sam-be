@@ -5,9 +5,11 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Data;
+import lombok.extern.jackson.Jacksonized;
 
 @Data
 @Builder
+@Jacksonized
 public class ProjectDeliveryResponse {
     private UUID id;
     private UUID jobId;

@@ -1,8 +1,14 @@
 package com.sam.be.modules.contract.service.impl;
 
+import com.sam.be.common.constant.enums.ContractStatus;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
+import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
+import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.ai.dto.response.AiContractDraft;
 import com.sam.be.modules.ai.service.AiService;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
@@ -23,6 +29,7 @@ import com.sam.be.modules.contract.repository.ContractRevisionRepository;
 import com.sam.be.modules.contract.service.ContractService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.job.repository.JobRepository;
+import java.time.Duration;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -40,7 +47,8 @@ public class ContractServiceImpl implements ContractService {
     private final AiService aiService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatService chatService;
-    private final com.sam.be.infrastructure.cache.service.RedisCacheService redisCacheService;
+    private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
@@ -63,8 +71,8 @@ public class ContractServiceImpl implements ContractService {
 
         job.setStatus(JobStatus.NEGOTIATING);
         jobRepository.save(job);
-        redisCacheService.delete(
-                com.sam.be.infrastructure.cache.keys.RedisKeys.jobDetail(job.getId()));
+        cacheInvalidationService.jobChanged(
+                job.getId(), room.getClient().getId(), room.getFreelancer().getId());
 
         String srsData = job.getTitle() + "\n" + job.getDescription();
 
@@ -120,12 +128,26 @@ public class ContractServiceImpl implements ContractService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
+        var cached =
+                redisCacheService.get(
+                        RedisKeys.completedContractByJob(room.getJob().getId()),
+                        ContractDetailResponse.class);
+        if (cached.isPresent()) return cached.get();
+
         Contract contract =
                 contractRepository
                         .findByJobId(room.getJob().getId())
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        return toDetail(contract);
+        if (contract.getStatus() != com.sam.be.common.constant.enums.ContractStatus.COMPLETED) {
+            return toDetail(contract);
+        }
+        ContractDetailResponse response = toDetail(contract);
+        redisCacheService.set(
+                RedisKeys.completedContractByJob(room.getJob().getId()),
+                response,
+                Duration.ofMinutes(15));
+        return response;
     }
 
     @Override
@@ -151,6 +173,43 @@ public class ContractServiceImpl implements ContractService {
                 .stream()
                 .map(rev -> toRevisionResponse(rev, contract))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ContractRevisionResponse> getRevisionsByRoomPage(
+            UUID roomId, UUID userId, int page, int size) {
+        ChatRoom room =
+                chatRoomRepository
+                        .findById(roomId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!room.getClient().getId().equals(userId)
+                && !room.getFreelancer().getId().equals(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        Contract contract =
+                contractRepository
+                        .findByJobId(room.getJob().getId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.desc("createdAt"),
+                                org.springframework.data.domain.Sort.Order.desc("id")));
+        java.util.function.Supplier<PageResponse<ContractRevisionResponse>> source =
+                () ->
+                        PageResponse.from(
+                                contractRevisionRepository
+                                        .findByContractId(contract.getId(), pageable)
+                                        .map(revision -> toRevisionResponse(revision, contract)));
+        if (contract.getStatus() != ContractStatus.COMPLETED || page >= 2) return source.get();
+        return redisCacheService.getPageOrSet(
+                RedisKeys.page(RedisKeys.contractRevisions(roomId), page, size),
+                Duration.ofMinutes(15),
+                ContractRevisionResponse.class,
+                source);
     }
 
     private ContractRevisionResponse toRevisionResponse(ContractRevision rev, Contract contract) {
@@ -443,8 +502,8 @@ public class ContractServiceImpl implements ContractService {
         Job job = contract.getJob();
         job.setStatus(JobStatus.AWAITING_PAYMENT);
         jobRepository.save(job);
-        redisCacheService.delete(
-                com.sam.be.infrastructure.cache.keys.RedisKeys.jobDetail(job.getId()));
+        cacheInvalidationService.jobChanged(
+                job.getId(), contract.getClient().getId(), contract.getFreelancer().getId());
     }
 
     private ContractBroadcastData broadcastOf(Contract contract, String type) {

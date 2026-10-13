@@ -2,6 +2,9 @@ package com.sam.be.modules.chat.service.impl;
 
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.CursorResponse;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
 import com.sam.be.modules.chat.dto.ChatRoomDto;
 import com.sam.be.modules.chat.dto.SendMessagePayload;
@@ -13,9 +16,15 @@ import com.sam.be.modules.chat.service.ChatService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.UserRepository;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,20 +59,70 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public List<ChatMessageDto> getMessageHistory(UUID roomId, UUID userId) {
-        ChatRoom room =
-                chatRoomRepository
-                        .findById(roomId)
-                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-
-        // Bảo mật: Chỉ người trong phòng mới được xem lịch sử
-        if (!room.getClient().getId().equals(userId)
-                && !room.getFreelancer().getId().equals(userId)) {
-            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
-        }
+        ChatRoom room = requireMemberRoom(roomId, userId);
 
         return chatMessageRepository.findByRoomIdOrderByCreatedAtAsc(roomId).stream()
                 .map(msg -> toDto(room.getId(), msg))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ChatMessageDto> getRecentMessages(UUID roomId, UUID userId, int limit) {
+        ChatRoom room = requireMemberRoom(roomId, userId);
+        // Query từ mới đến cũ để DB có thể dừng ở LIMIT; trả về theo thứ tự chat cũ đến mới.
+        List<ChatMessage> recent =
+                chatMessageRepository.findRecentByRoomId(roomId, PageRequest.of(0, limit));
+        return java.util.stream.IntStream.range(0, recent.size())
+                .mapToObj(index -> toDto(room.getId(), recent.get(recent.size() - 1 - index)))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CursorResponse<ChatMessageDto> getMessagePage(
+            UUID roomId, UUID userId, String before, int size) {
+        PageRequests.of(0, size, org.springframework.data.domain.Sort.unsorted());
+        ChatRoom room = requireMemberRoom(roomId, userId);
+        LocalDateTime beforeAt = null;
+        UUID beforeId = null;
+        if (before != null && !before.isBlank()) {
+            try {
+                String[] parts = before.split("\\|", -1);
+                if (parts.length != 2) throw new IllegalArgumentException("cursor");
+                beforeAt = LocalDateTime.parse(parts[0]);
+                beforeId = UUID.fromString(parts[1]);
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(ErrorCode.VALIDATION_ERROR, "Cursor không hợp lệ");
+            }
+        }
+        List<ChatMessage> fetched =
+                beforeAt == null
+                        ? chatMessageRepository.findRecentByRoomId(
+                                roomId, PageRequest.of(0, size + 1))
+                        : chatMessageRepository.findHistoryBefore(
+                                roomId, beforeAt, beforeId, PageRequest.of(0, size + 1));
+        boolean hasMore = fetched.size() > size;
+        List<ChatMessage> window = fetched.subList(0, Math.min(size, fetched.size()));
+        String next =
+                hasMore && !window.isEmpty()
+                        ? window.getLast().getCreatedAt() + "|" + window.getLast().getId()
+                        : null;
+        List<ChatMessageDto> items =
+                java.util.stream.IntStream.range(0, window.size())
+                        .mapToObj(
+                                index -> toDto(room.getId(), window.get(window.size() - 1 - index)))
+                        .toList();
+        return new CursorResponse<>(items, next, hasMore);
+    }
+
+    private ChatRoom requireMemberRoom(UUID roomId, UUID userId) {
+        ChatRoom room =
+                chatRoomRepository
+                        .findById(roomId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        assertMember(room, userId);
+        return room;
     }
 
     @Override
@@ -94,6 +153,9 @@ public class ChatServiceImpl implements ChatService {
                                 .content(payload.getContent())
                                 .build());
 
+        room.setUpdatedAt(LocalDateTime.now());
+        chatRoomRepository.save(room);
+
         return toDto(room.getId(), savedMsg);
     }
 
@@ -108,6 +170,9 @@ public class ChatServiceImpl implements ChatService {
         ChatMessage savedMsg =
                 chatMessageRepository.save(
                         ChatMessage.builder().room(room).isSystem(true).content(content).build());
+
+        room.setUpdatedAt(LocalDateTime.now());
+        chatRoomRepository.save(room);
 
         return toDto(room.getId(), savedMsg);
     }
@@ -128,8 +193,56 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public List<ChatRoomDto> getMyRooms(UUID userId) {
-        return chatRoomRepository.findAllByMemberId(userId).stream()
-                .map(room -> toRoomDto(room, userId))
+        List<ChatRoom> rooms = chatRoomRepository.findAllByMemberId(userId);
+        return mapRooms(rooms);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ChatRoomDto> getMyRoomsPage(
+            UUID userId, int page, int size, String search) {
+        var pageable = PageRequests.of(page, size, org.springframework.data.domain.Sort.unsorted());
+        String query =
+                search == null || search.isBlank()
+                        ? null
+                        : "%" + search.trim().toLowerCase(java.util.Locale.ROOT) + "%";
+        Page<ChatRoom> result = chatRoomRepository.findPageByMemberId(userId, query, pageable);
+        return new PageResponse<>(
+                mapRooms(result.getContent()),
+                page,
+                size,
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.hasNext());
+    }
+
+    private List<ChatRoomDto> mapRooms(List<ChatRoom> rooms) {
+        if (rooms.isEmpty()) return List.of();
+        List<UUID> roomIds = rooms.stream().map(ChatRoom::getId).toList();
+        List<UUID> jobIds = rooms.stream().map(room -> room.getJob().getId()).distinct().toList();
+        Map<UUID, ChatMessage> latestByRoom =
+                chatMessageRepository.findLatestForRooms(roomIds).stream()
+                        .collect(
+                                Collectors.toMap(
+                                        message -> message.getRoom().getId(),
+                                        Function.identity(),
+                                        (left, right) ->
+                                                left.getId().compareTo(right.getId()) >= 0
+                                                        ? left
+                                                        : right));
+        Map<UUID, com.sam.be.common.constant.enums.ContractStatus> statusByJob =
+                contractRepository.findAllByJobIdIn(jobIds).stream()
+                        .collect(
+                                Collectors.toMap(
+                                        contract -> contract.getJob().getId(),
+                                        com.sam.be.modules.contract.entity.Contract::getStatus));
+        return rooms.stream()
+                .map(
+                        room ->
+                                toRoomDto(
+                                        room,
+                                        latestByRoom.get(room.getId()),
+                                        statusByJob.get(room.getJob().getId())))
                 .toList();
     }
 
@@ -138,7 +251,7 @@ public class ChatServiceImpl implements ChatService {
     public ChatRoomDto getRoomDetail(UUID roomId, UUID userId) {
         ChatRoom room =
                 chatRoomRepository
-                        .findById(roomId)
+                        .findDetailById(roomId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         assertMember(room, userId);
         return toRoomDto(room, userId);
@@ -176,21 +289,22 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private ChatRoomDto toRoomDto(ChatRoom room, UUID userId) {
-        String lastMessage = null;
-        java.time.LocalDateTime lastMessageAt = null;
-        try {
-            var last = chatMessageRepository.findTopByRoomIdOrderByCreatedAtDesc(room.getId());
-            if (last.isPresent()) {
-                lastMessage = last.get().getContent();
-                lastMessageAt = last.get().getCreatedAt();
-            }
-        } catch (Exception ignored) {
-        }
+        ChatMessage last =
+                chatMessageRepository
+                        .findTopByRoomIdOrderByCreatedAtDesc(room.getId())
+                        .orElse(null);
         var contractStatus =
                 contractRepository
                         .findByJobId(room.getJob().getId())
                         .map(com.sam.be.modules.contract.entity.Contract::getStatus)
                         .orElse(null);
+        return toRoomDto(room, last, contractStatus);
+    }
+
+    private ChatRoomDto toRoomDto(
+            ChatRoom room,
+            ChatMessage last,
+            com.sam.be.common.constant.enums.ContractStatus contractStatus) {
         return ChatRoomDto.builder()
                 .id(room.getId())
                 .jobId(room.getJob().getId())
@@ -201,8 +315,8 @@ public class ChatServiceImpl implements ChatService {
                 .clientName(room.getClient().getFullName())
                 .freelancerId(room.getFreelancer().getId())
                 .freelancerName(room.getFreelancer().getFullName())
-                .lastMessage(lastMessage)
-                .lastMessageAt(lastMessageAt)
+                .lastMessage(last != null ? last.getContent() : null)
+                .lastMessageAt(last != null ? last.getCreatedAt() : null)
                 .createdAt(room.getCreatedAt())
                 .build();
     }

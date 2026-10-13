@@ -5,8 +5,11 @@ import com.sam.be.common.constant.enums.SubscriptionStatus;
 import com.sam.be.common.constant.enums.UserRole;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
@@ -56,6 +59,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     private final NotificationService notificationService;
 
     private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
@@ -122,6 +126,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                         .status(SubscriptionStatus.PENDING)
                         .build();
         subscription = userSubscriptionRepository.save(subscription);
+        cacheInvalidationService.subscriptionChanged(userId);
         String txnRef = subscription.getId().toString().replace("-", "");
         subscription.setGatewayTxnRef(txnRef);
 
@@ -205,7 +210,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                     subscription.getId(),
                     "SUBSCRIPTION_ACTIVE",
                     "Gói " + subscription.getServicePackage().getName() + " đã được kích hoạt.");
-            redisCacheService.delete(RedisKeys.userSubscriptions(subscription.getUser().getId()));
+            cacheInvalidationService.subscriptionChanged(subscription.getUser().getId());
             log.info("Subscription activated: {}", subscription.getId());
         }
         return Map.of("RspCode", "00", "Message", "Confirm Success");
@@ -238,7 +243,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                     subscription.getId(),
                     "SUBSCRIPTION_ACTIVE",
                     "Gói " + subscription.getServicePackage().getName() + " đã được kích hoạt.");
-            redisCacheService.delete(RedisKeys.userSubscriptions(userId));
+            cacheInvalidationService.subscriptionChanged(userId);
             log.info("Subscription activated by FE confirm: {}", subscription.getId());
         }
 
@@ -256,6 +261,30 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                         userSubscriptionRepository.findByUser_Id(userId).stream()
                                 .map(s -> toResponse(s, null))
                                 .toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<UserSubscriptionResponse> getMinePage(UUID userId, int page, int size) {
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.desc("createdAt"),
+                                org.springframework.data.domain.Sort.Order.desc("id")));
+        java.util.function.Supplier<PageResponse<UserSubscriptionResponse>> source =
+                () ->
+                        PageResponse.from(
+                                userSubscriptionRepository
+                                        .findByUser_Id(userId, pageable)
+                                        .map(subscription -> toResponse(subscription, null)));
+        if (page >= 2) return source.get();
+        return redisCacheService.getPageOrSet(
+                RedisKeys.page(RedisKeys.userSubscriptions(userId), page, size),
+                Duration.ofMinutes(5),
+                UserSubscriptionResponse.class,
+                source);
     }
 
     private UserSubscriptionResponse toResponse(UserSubscription subscription, String vnpayUrl) {

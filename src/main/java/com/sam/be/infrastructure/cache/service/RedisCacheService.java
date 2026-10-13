@@ -1,5 +1,6 @@
 package com.sam.be.infrastructure.cache.service;
 
+import com.sam.be.common.response.PageResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -34,4 +35,7 @@ public interface RedisCacheService {
     /** Cache-Aside Pattern cho danh sách List. */
     <T> List<T> getListOrSet(
             String key, Duration ttl, Class<T> elementClass, Supplier<List<T>> dbSupplier);
+
+    <T> PageResponse<T> getPageOrSet(
+            String key, Duration ttl, Class<T> elementClass, Supplier<PageResponse<T>> dbSupplier);
 }

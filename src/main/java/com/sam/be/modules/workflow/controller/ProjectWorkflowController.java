@@ -1,6 +1,7 @@
 package com.sam.be.modules.workflow.controller;
 
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.workflow.dto.request.DeliveryCreateRequest;
 import com.sam.be.modules.workflow.dto.request.DeliveryRevisionRequest;
@@ -9,6 +10,7 @@ import com.sam.be.modules.workflow.dto.response.DeliveryAcceptanceResponse;
 import com.sam.be.modules.workflow.dto.response.ProjectDeliveryResponse;
 import com.sam.be.modules.workflow.dto.response.ProjectTimelineResponse;
 import com.sam.be.modules.workflow.dto.response.QaPlanResponse;
+import com.sam.be.modules.workflow.dto.response.TaskReportResponse;
 import com.sam.be.modules.workflow.service.ProjectWorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,6 +37,39 @@ public class ProjectWorkflowController {
                 .build();
     }
 
+    @GetMapping("/{jobId}/timeline/summary")
+    @Operation(summary = "Get project timeline without report history")
+    public ApiResponse<ProjectTimelineResponse> getTimelineSummary(@PathVariable UUID jobId) {
+        return ApiResponse.<ProjectTimelineResponse>builder()
+                .result(workflowService.getTimelineSummary(SecurityUtils.getCurrentUserId(), jobId))
+                .build();
+    }
+
+    @GetMapping("/{jobId}/timeline/tasks/{taskId}/reports/page")
+    @Operation(summary = "Get a page of task reports")
+    public ApiResponse<PageResponse<TaskReportResponse>> getTaskReportsPage(
+            @PathVariable UUID jobId,
+            @PathVariable UUID taskId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.<PageResponse<TaskReportResponse>>builder()
+                .result(
+                        workflowService.getTaskReportsPage(
+                                SecurityUtils.getCurrentUserId(), jobId, taskId, page, size))
+                .build();
+    }
+
+    @GetMapping("/{jobId}/timeline/tasks/{taskId}/reports")
+    @Operation(summary = "Get all reports for one timeline task")
+    public ApiResponse<List<TaskReportResponse>> getTaskReports(
+            @PathVariable UUID jobId, @PathVariable UUID taskId) {
+        return ApiResponse.<List<TaskReportResponse>>builder()
+                .result(
+                        workflowService.getTaskReports(
+                                SecurityUtils.getCurrentUserId(), jobId, taskId))
+                .build();
+    }
+
     @PostMapping("/{jobId}/timeline/tasks/{taskId}/reports")
     @PreAuthorize("hasRole('FREELANCER')")
     @Operation(summary = "Freelancer reports progress for a timeline task")
@@ -54,6 +89,19 @@ public class ProjectWorkflowController {
     public ApiResponse<List<ProjectDeliveryResponse>> getDeliveries(@PathVariable UUID jobId) {
         return ApiResponse.<List<ProjectDeliveryResponse>>builder()
                 .result(workflowService.getDeliveries(SecurityUtils.getCurrentUserId(), jobId))
+                .build();
+    }
+
+    @GetMapping("/{jobId}/deliveries/page")
+    @Operation(summary = "Get a page of product delivery versions")
+    public ApiResponse<PageResponse<ProjectDeliveryResponse>> getDeliveriesPage(
+            @PathVariable UUID jobId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.<PageResponse<ProjectDeliveryResponse>>builder()
+                .result(
+                        workflowService.getDeliveriesPage(
+                                SecurityUtils.getCurrentUserId(), jobId, page, size))
                 .build();
     }
 

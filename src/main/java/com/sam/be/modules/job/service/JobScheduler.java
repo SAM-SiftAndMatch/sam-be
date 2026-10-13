@@ -1,6 +1,7 @@
 package com.sam.be.modules.job.service;
 
 import com.sam.be.common.constant.enums.JobStatus;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.job.repository.JobRepository;
 import java.time.LocalDateTime;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class JobScheduler {
 
     private final JobRepository jobRepository;
+    private final CacheInvalidationService cacheInvalidationService;
 
     /**
      * Chạy mỗi phút (60,000ms) để kiểm tra các Job đã quá hạn chót (deadline < now) mà vẫn đang ở
@@ -32,6 +34,9 @@ public class JobScheduler {
             log.info("Found {} expired jobs. Cancelling...", expiredJobs.size());
             expiredJobs.forEach(job -> job.setStatus(JobStatus.CANCELLED));
             jobRepository.saveAll(expiredJobs);
+            cacheInvalidationService.jobsChanged(
+                    expiredJobs.stream().map(Job::getId).toList(),
+                    expiredJobs.stream().map(job -> job.getClient().getId()).toList());
             log.info("Successfully cancelled {} expired jobs.", expiredJobs.size());
         }
     }
