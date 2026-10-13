@@ -110,7 +110,9 @@ Ràng buộc JSON:
 - Domain/hosting/tài khoản dịch vụ, dữ liệu mẫu, logo/bộ nhận diện nếu áp dụng.
 
 # 8. Mốc thời gian và tiêu chí nghiệm thu
-- Mốc giao diện/luồng cơ bản, hoàn thiện chức năng, bàn giao.
+- BẮT BUỘC chia timeline theo từng tuần bằng đúng định dạng `### Tuần N: Tên mốc`.
+- Dưới mỗi tuần là danh sách gạch đầu dòng các task/sản phẩm cần hoàn thành và tiêu chí kiểm chứng được.
+- Mốc giao diện/luồng cơ bản, hoàn thiện chức năng và bàn giao phải nằm trong các tuần tương ứng.
 
 # 9. Bảo hành và hỗ trợ kỹ thuật
 - Phạm vi và thời gian bảo hành theo thỏa thuận.
@@ -119,4 +121,4 @@ Ràng buộc JSON:
 - Ngân sách được khách xác nhận; đề xuất các đợt thanh toán.
 
 # 11. Thời hạn hoàn thành
-- Timeline được khách xác nhận và các điều kiện bắt đầu dự án.
+- Tổng số tuần/tháng được khách xác nhận, ngày dự kiến hoàn tất và điều kiện bắt đầu dự án.

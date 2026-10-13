@@ -5,6 +5,7 @@ import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.ai.dto.response.AiAmountVerification;
 import com.sam.be.modules.payment.dto.request.ConfirmFundingRequest;
 import com.sam.be.modules.payment.dto.request.CreateEscrowRequest;
+import com.sam.be.modules.payment.dto.response.FreelancerEscrowSummaryResponse;
 import com.sam.be.modules.payment.dto.response.FundingStatusResponse;
 import com.sam.be.modules.payment.dto.response.PaymentResponse;
 import com.sam.be.modules.payment.service.PaymentService;
@@ -88,10 +89,11 @@ public class PaymentController {
     }
 
     @PostMapping("/{paymentId}/release")
-    @PreAuthorize("@paymentAccessGuard.canRelease(#paymentId)")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(
             summary = "Release escrow",
-            description = "Only the contract client or Admin can release a held escrow")
+            description =
+                    "Admin recovery endpoint only. Normal sandbox settlement is triggered by client acceptance")
     public ApiResponse<PaymentResponse> releaseEscrow(@PathVariable UUID paymentId) {
         PaymentResponse response =
                 paymentService.releaseEscrow(SecurityUtils.getCurrentUserId(), paymentId);
@@ -106,6 +108,20 @@ public class PaymentController {
         List<PaymentResponse> response =
                 paymentService.getByContract(SecurityUtils.getCurrentUserId(), contractId);
         return ApiResponse.<List<PaymentResponse>>builder().result(response).build();
+    }
+
+    @GetMapping("/freelancers/{freelancerId}/escrow-summary")
+    @PreAuthorize("hasRole('FREELANCER') or hasRole('ADMIN')")
+    @Operation(
+            summary = "Get a freelancer escrow summary",
+            description = "Shows net payout held, locked deposit, released amount and pending fee")
+    public ApiResponse<FreelancerEscrowSummaryResponse> getFreelancerEscrowSummary(
+            @PathVariable UUID freelancerId) {
+        return ApiResponse.<FreelancerEscrowSummaryResponse>builder()
+                .result(
+                        paymentService.getFreelancerEscrowSummary(
+                                SecurityUtils.getCurrentUserId(), freelancerId))
+                .build();
     }
 
     @PostMapping("/contracts/{contractId}/verify-amount")

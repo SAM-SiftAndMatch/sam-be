@@ -6,12 +6,17 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
+
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT j FROM Job j WHERE j.id = :id")
+    Optional<Job> findByIdForWorkflowUpdate(@Param("id") UUID id);
 
     @Query(
             "SELECT DISTINCT j FROM Job j "
@@ -37,4 +42,13 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
             @Param("fiveMinsAgo") java.time.LocalDateTime fiveMinsAgo);
 
     List<Job> findByStatusAndDeadlineBefore(JobStatus status, java.time.LocalDateTime deadline);
+
+    @Query(
+            "SELECT DISTINCT j FROM Contract c JOIN c.job j "
+                    + "LEFT JOIN FETCH j.client "
+                    + "LEFT JOIN FETCH j.jobSkills js "
+                    + "LEFT JOIN FETCH js.skill "
+                    + "WHERE c.freelancer.id = :freelancerId "
+                    + "ORDER BY j.createdAt DESC")
+    List<Job> findAllProjectsByFreelancerId(@Param("freelancerId") UUID freelancerId);
 }

@@ -3,6 +3,7 @@ package com.sam.be.modules.payment.service;
 import com.sam.be.modules.ai.dto.response.AiAmountVerification;
 import com.sam.be.modules.payment.dto.request.ConfirmFundingRequest;
 import com.sam.be.modules.payment.dto.request.CreateEscrowRequest;
+import com.sam.be.modules.payment.dto.response.FreelancerEscrowSummaryResponse;
 import com.sam.be.modules.payment.dto.response.FundingStatusResponse;
 import com.sam.be.modules.payment.dto.response.PaymentResponse;
 import java.util.List;
@@ -31,4 +32,6 @@ public interface PaymentService {
     PaymentResponse releaseEscrow(UUID userId, UUID paymentId);
 
     List<PaymentResponse> getByContract(UUID userId, UUID contractId);
+
+    FreelancerEscrowSummaryResponse getFreelancerEscrowSummary(UUID requesterId, UUID freelancerId);
 }

@@ -521,6 +521,18 @@ public class JobServiceImpl implements JobService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<JobResponse> getProjectsByFreelancerId(UUID requesterId, UUID freelancerId) {
+        if (!requesterId.equals(freelancerId)
+                && !com.sam.be.common.security.util.SecurityUtils.isAdmin()) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        return jobRepository.findAllProjectsByFreelancerId(freelancerId).stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<JobResponse> getAllOpenJobs() {
         List<Job> jobs =
                 jobRepository.findAllOpenJobsFiltered(
