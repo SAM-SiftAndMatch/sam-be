@@ -4,6 +4,8 @@ import com.sam.be.common.constant.enums.ContractStatus;
 import com.sam.be.common.constant.enums.PaymentStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
@@ -521,6 +523,39 @@ public class PaymentServiceImpl implements PaymentService {
                                 .sorted(Comparator.comparing(Payment::getInstallmentNo))
                                 .map(p -> toResponse(p, null))
                                 .toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getByContractPage(
+            UUID userId, UUID contractId, int page, int size) {
+        Contract contract = contractService.getContractById(contractId);
+        boolean isClient =
+                contract.getClient() != null && contract.getClient().getId().equals(userId);
+        boolean isFreelancer =
+                contract.getFreelancer() != null && contract.getFreelancer().getId().equals(userId);
+        if (!isClient && !isFreelancer && !SecurityUtils.isAdmin()) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.asc("installmentNo"),
+                                org.springframework.data.domain.Sort.Order.asc("id")));
+        java.util.function.Supplier<PageResponse<PaymentResponse>> source =
+                () ->
+                        PageResponse.from(
+                                paymentRepository
+                                        .findAllByContractId(contractId, pageable)
+                                        .map(payment -> toResponse(payment, null)));
+        if (page >= 2) return source.get();
+        return redisCacheService.getPageOrSet(
+                RedisKeys.page(RedisKeys.contractPayments(contractId), page, size),
+                Duration.ofMinutes(5),
+                PaymentResponse.class,
+                source);
     }
 
     @Override

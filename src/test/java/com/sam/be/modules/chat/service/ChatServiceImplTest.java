@@ -2,6 +2,9 @@ package com.sam.be.modules.chat.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -26,6 +29,57 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ChatServiceImplTest {
+
+    @Test
+    void cursorPageReturnsOldestToNewestWithNextCursor() {
+        ChatRoomRepository rooms = mock(ChatRoomRepository.class);
+        ChatMessageRepository messages = mock(ChatMessageRepository.class);
+        UUID userId = UUID.randomUUID();
+        ChatRoom room =
+                ChatRoom.builder()
+                        .id(UUID.randomUUID())
+                        .client(User.builder().id(userId).build())
+                        .freelancer(User.builder().id(UUID.randomUUID()).build())
+                        .build();
+        LocalDateTime now = LocalDateTime.now();
+        ChatMessage newest =
+                ChatMessage.builder()
+                        .id(UUID.randomUUID())
+                        .room(room)
+                        .content("newest")
+                        .createdAt(now)
+                        .build();
+        ChatMessage older =
+                ChatMessage.builder()
+                        .id(UUID.randomUUID())
+                        .room(room)
+                        .content("older")
+                        .createdAt(now.minusMinutes(1))
+                        .build();
+        ChatMessage extra =
+                ChatMessage.builder()
+                        .id(UUID.randomUUID())
+                        .room(room)
+                        .content("extra")
+                        .createdAt(now.minusMinutes(2))
+                        .build();
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        when(messages.findHistoryPage(eq(room.getId()), isNull(), isNull(), any()))
+                .thenReturn(List.of(newest, older, extra));
+        var service =
+                new ChatServiceImpl(
+                        rooms,
+                        messages,
+                        mock(UserRepository.class),
+                        mock(ContractRepository.class));
+
+        var result = service.getMessagePage(room.getId(), userId, null, 2);
+
+        assertEquals("older", result.items().getFirst().getContent());
+        assertEquals("newest", result.items().getLast().getContent());
+        assertEquals(older.getCreatedAt() + "|" + older.getId(), result.nextCursor());
+        assertEquals(true, result.hasMore());
+    }
 
     @Test
     void recentMessagesStillRequireRoomMembership() {

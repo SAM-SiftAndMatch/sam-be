@@ -1,5 +1,6 @@
 package com.sam.be.modules.subscription.service;
 
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.subscription.dto.request.PurchaseSubscriptionRequest;
 import com.sam.be.modules.subscription.dto.response.UserSubscriptionResponse;
 import java.util.List;
@@ -14,4 +15,6 @@ public interface SubscriptionService {
     UserSubscriptionResponse confirmPayment(UUID userId, UUID subscriptionId);
 
     List<UserSubscriptionResponse> getMine(UUID userId);
+
+    PageResponse<UserSubscriptionResponse> getMinePage(UUID userId, int page, int size);
 }

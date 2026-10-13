@@ -6,6 +6,8 @@ import com.sam.be.common.constant.enums.RecommendationStatus;
 import com.sam.be.common.constant.enums.SubscriptionStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
@@ -37,15 +39,19 @@ import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.FreelancerProfileRepository;
 import com.sam.be.modules.user.repository.FreelancerSkillRepository;
 import com.sam.be.modules.user.repository.UserRepository;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -551,6 +557,178 @@ public class JobServiceImpl implements JobService {
                                 .stream()
                                 .map(this::mapToResponse)
                                 .toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<JobResponse> getOpenJobsPage(
+            int page,
+            int size,
+            String search,
+            Integer skillId,
+            String skillNames,
+            String customSkill,
+            boolean negotiable,
+            BigDecimal minBudget,
+            BigDecimal maxBudget,
+            String sort) {
+        PageRequest pageable =
+                PageRequests.of(page, size, org.springframework.data.domain.Sort.unsorted());
+        String query = searchPattern(search);
+        String order = sort == null || sort.isBlank() ? "newest" : sort;
+        if (!java.util.Set.of("newest", "budget_asc", "budget_desc").contains(order)) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "sort không hợp lệ");
+        }
+        List<String> names =
+                skillNames == null || skillNames.isBlank()
+                        ? List.of()
+                        : java.util.Arrays.stream(skillNames.split(","))
+                                .map(name -> name.trim().toLowerCase(java.util.Locale.ROOT))
+                                .filter(name -> !name.isBlank())
+                                .toList();
+        String custom = searchPattern(customSkill);
+        boolean skillsActive = !names.isEmpty() || custom != null;
+        List<String> queryNames = names.isEmpty() ? List.of("") : names;
+        Supplier<PageResponse<JobResponse>> source =
+                () ->
+                        mapJobPage(
+                                jobRepository.findOpenPage(
+                                        JobStatus.OPEN,
+                                        LocalDateTime.now().minusMinutes(5),
+                                        query,
+                                        skillId,
+                                        skillsActive,
+                                        queryNames,
+                                        custom,
+                                        negotiable,
+                                        minBudget,
+                                        maxBudget,
+                                        order,
+                                        pageable));
+        if (query == null
+                && skillId == null
+                && !skillsActive
+                && !negotiable
+                && minBudget == null
+                && maxBudget == null
+                && order.equals("newest")
+                && page < 2) {
+            return redisCacheService.getPageOrSet(
+                    RedisKeys.page(RedisKeys.openJobs(), page, size),
+                    Duration.ofSeconds(30),
+                    JobResponse.class,
+                    source);
+        }
+        return source.get();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<JobResponse> getClientJobsPage(
+            UUID clientId, int page, int size, JobStatus status, String search) {
+        PageRequest pageable =
+                PageRequests.of(page, size, org.springframework.data.domain.Sort.unsorted());
+        String query = searchPattern(search);
+        Supplier<PageResponse<JobResponse>> source =
+                () ->
+                        mapJobPage(
+                                jobRepository.findClientPage(
+                                        clientId, status, query, JobStatus.CANCELLED, pageable));
+        if (status == null && query == null && page < 2) {
+            return redisCacheService.getPageOrSet(
+                    RedisKeys.page(RedisKeys.clientJobs(clientId), page, size),
+                    Duration.ofMinutes(1),
+                    JobResponse.class,
+                    source);
+        }
+        return source.get();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<JobResponse> getFreelancerProjectsPage(
+            UUID requesterId,
+            UUID freelancerId,
+            int page,
+            int size,
+            JobStatus status,
+            String group,
+            String search) {
+        if (!requesterId.equals(freelancerId)
+                && !com.sam.be.common.security.util.SecurityUtils.isAdmin()) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        PageRequest pageable =
+                PageRequests.of(page, size, org.springframework.data.domain.Sort.unsorted());
+        String query = searchPattern(search);
+        List<JobStatus> groups =
+                switch (group == null ? "" : group) {
+                    case "" -> List.of(JobStatus.OPEN);
+                    case "preparing" ->
+                            List.of(
+                                    JobStatus.OPEN,
+                                    JobStatus.NEGOTIATING,
+                                    JobStatus.AWAITING_PAYMENT);
+                    case "in_progress" -> List.of(JobStatus.IN_PROGRESS);
+                    case "completed" -> List.of(JobStatus.COMPLETED);
+                    case "cancelled" -> List.of(JobStatus.CANCELLED);
+                    default ->
+                            throw new ApiException(
+                                    ErrorCode.VALIDATION_ERROR, "group không hợp lệ");
+                };
+        Supplier<PageResponse<JobResponse>> source =
+                () ->
+                        mapJobPage(
+                                jobRepository.findFreelancerProjectsPage(
+                                        freelancerId,
+                                        status,
+                                        group != null && !group.isBlank(),
+                                        groups,
+                                        query,
+                                        pageable));
+        if (status == null && query == null && (group == null || group.isBlank()) && page < 2) {
+            return redisCacheService.getPageOrSet(
+                    RedisKeys.page(RedisKeys.freelancerProjects(freelancerId), page, size),
+                    Duration.ofSeconds(30),
+                    JobResponse.class,
+                    source);
+        }
+        return source.get();
+    }
+
+    private PageResponse<JobResponse> mapJobPage(Page<Job> page) {
+        List<UUID> ids = page.getContent().stream().map(Job::getId).toList();
+        if (ids.isEmpty())
+            return new PageResponse<>(
+                    List.of(),
+                    page.getNumber(),
+                    page.getSize(),
+                    page.getTotalElements(),
+                    page.getTotalPages(),
+                    page.hasNext());
+        Map<UUID, Job> details =
+                jobRepository.findPageDetails(ids).stream()
+                        .collect(Collectors.toMap(Job::getId, job -> job));
+        List<JobResponse> items =
+                ids.stream()
+                        .map(details::get)
+                        .filter(java.util.Objects::nonNull)
+                        .map(this::mapToResponse)
+                        .peek(response -> response.setSrsContent(null))
+                        .toList();
+        return new PageResponse<>(
+                items,
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.hasNext());
+    }
+
+    private String searchPattern(String search) {
+        return search == null || search.isBlank()
+                ? null
+                : "%" + search.trim().toLowerCase(java.util.Locale.ROOT) + "%";
     }
 
     private JobResponse mapToResponse(Job job) {

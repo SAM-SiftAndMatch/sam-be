@@ -1,6 +1,7 @@
 package com.sam.be.modules.subscription.controller;
 
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.subscription.dto.request.PurchaseSubscriptionRequest;
 import com.sam.be.modules.subscription.dto.response.UserSubscriptionResponse;
@@ -61,5 +62,17 @@ public class SubscriptionController {
         List<UserSubscriptionResponse> response =
                 subscriptionService.getMine(SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<UserSubscriptionResponse>>builder().result(response).build();
+    }
+
+    @GetMapping("/me/page")
+    @Operation(summary = "Get a page of my subscriptions")
+    public ApiResponse<PageResponse<UserSubscriptionResponse>> getMinePage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.<PageResponse<UserSubscriptionResponse>>builder()
+                .result(
+                        subscriptionService.getMinePage(
+                                SecurityUtils.getCurrentUserId(), page, size))
+                .build();
     }
 }

@@ -6,6 +6,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -15,6 +18,9 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
             String packageName, SubscriptionStatus status, LocalDateTime date);
 
     List<UserSubscription> findByUser_Id(UUID userId);
+
+    @EntityGraph(attributePaths = {"servicePackage", "targetProject"})
+    Page<UserSubscription> findByUser_Id(UUID userId, Pageable pageable);
 
     Optional<UserSubscription> findByGatewayTxnRef(String gatewayTxnRef);
 }

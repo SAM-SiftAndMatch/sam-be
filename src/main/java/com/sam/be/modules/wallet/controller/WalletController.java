@@ -1,6 +1,7 @@
 package com.sam.be.modules.wallet.controller;
 
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.wallet.dto.response.WalletLedgerEntryResponse;
 import com.sam.be.modules.wallet.dto.response.WalletSummaryResponse;
@@ -9,7 +10,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,16 +43,19 @@ public class WalletController {
 
     @GetMapping("/me/transactions/page")
     @Operation(summary = "Get a page of my sandbox wallet ledger")
-    public ApiResponse<Page<WalletLedgerEntryResponse>> getMyTransactionsPage(
+    public ApiResponse<PageResponse<WalletLedgerEntryResponse>> getMyTransactionsPage(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "10") int size) {
         if (page < 0 || size < 1 || size > 100) {
             throw new com.sam.be.common.exception.ApiException(
                     com.sam.be.common.exception.ErrorCode.VALIDATION_ERROR,
                     "page phải >= 0 và size phải từ 1 đến 100");
         }
-        return ApiResponse.<Page<WalletLedgerEntryResponse>>builder()
-                .result(walletService.getMyLedgerPage(SecurityUtils.getCurrentUserId(), page, size))
+        return ApiResponse.<PageResponse<WalletLedgerEntryResponse>>builder()
+                .result(
+                        PageResponse.from(
+                                walletService.getMyLedgerPage(
+                                        SecurityUtils.getCurrentUserId(), page, size)))
                 .build();
     }
 }

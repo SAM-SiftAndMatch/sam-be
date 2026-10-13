@@ -1,6 +1,7 @@
 package com.sam.be.modules.chat.repository;
 
 import com.sam.be.modules.chat.entity.ChatMessage;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,4 +30,15 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
             "SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender WHERE m.room.id = :roomId "
                     + "ORDER BY m.createdAt DESC, m.id DESC")
     List<ChatMessage> findRecentByRoomId(@Param("roomId") UUID roomId, Pageable pageable);
+
+    @Query(
+            "SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender WHERE m.room.id = :roomId "
+                    + "AND (:beforeAt IS NULL OR m.createdAt < :beforeAt "
+                    + "OR (m.createdAt = :beforeAt AND m.id < :beforeId)) "
+                    + "ORDER BY m.createdAt DESC, m.id DESC")
+    List<ChatMessage> findHistoryPage(
+            @Param("roomId") UUID roomId,
+            @Param("beforeAt") LocalDateTime beforeAt,
+            @Param("beforeId") UUID beforeId,
+            Pageable pageable);
 }

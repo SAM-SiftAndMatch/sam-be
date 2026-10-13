@@ -1,8 +1,11 @@
 package com.sam.be.modules.contract.service.impl;
 
+import com.sam.be.common.constant.enums.ContractStatus;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
@@ -170,6 +173,43 @@ public class ContractServiceImpl implements ContractService {
                 .stream()
                 .map(rev -> toRevisionResponse(rev, contract))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ContractRevisionResponse> getRevisionsByRoomPage(
+            UUID roomId, UUID userId, int page, int size) {
+        ChatRoom room =
+                chatRoomRepository
+                        .findById(roomId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!room.getClient().getId().equals(userId)
+                && !room.getFreelancer().getId().equals(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        Contract contract =
+                contractRepository
+                        .findByJobId(room.getJob().getId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.desc("createdAt"),
+                                org.springframework.data.domain.Sort.Order.desc("id")));
+        java.util.function.Supplier<PageResponse<ContractRevisionResponse>> source =
+                () ->
+                        PageResponse.from(
+                                contractRevisionRepository
+                                        .findByContractId(contract.getId(), pageable)
+                                        .map(revision -> toRevisionResponse(revision, contract)));
+        if (contract.getStatus() != ContractStatus.COMPLETED || page >= 2) return source.get();
+        return redisCacheService.getPageOrSet(
+                RedisKeys.page(RedisKeys.contractRevisions(roomId), page, size),
+                Duration.ofMinutes(15),
+                ContractRevisionResponse.class,
+                source);
     }
 
     private ContractRevisionResponse toRevisionResponse(ContractRevision rev, Contract contract) {

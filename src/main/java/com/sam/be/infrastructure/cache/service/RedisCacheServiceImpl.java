@@ -2,6 +2,7 @@ package com.sam.be.infrastructure.cache.service;
 
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sam.be.common.response.PageResponse;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -62,6 +63,27 @@ public class RedisCacheServiceImpl implements RedisCacheService {
         } catch (Exception ex) {
             count(key, "getList", "error");
             log.warn("Redis error reading list key {}: {}", key, ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private <T> Optional<PageResponse<T>> getPage(String key, Class<T> elementClass) {
+        try {
+            String json = redisTemplate.opsForValue().get(key);
+            if (json == null || json.isBlank()) {
+                count(key, "getPage", "miss");
+                return Optional.empty();
+            }
+            JavaType type =
+                    objectMapper
+                            .getTypeFactory()
+                            .constructParametricType(PageResponse.class, elementClass);
+            PageResponse<T> value = objectMapper.readValue(json, type);
+            count(key, "getPage", "hit");
+            return Optional.ofNullable(value);
+        } catch (Exception ex) {
+            count(key, "getPage", "error");
+            log.warn("Redis error reading page key {}: {}", key, ex.getMessage());
             return Optional.empty();
         }
     }
@@ -181,6 +203,22 @@ public class RedisCacheServiceImpl implements RedisCacheService {
         if (result != null) {
             set(key, result, ttl);
         }
+        return result;
+    }
+
+    @Override
+    public <T> PageResponse<T> getPageOrSet(
+            String key, Duration ttl, Class<T> elementClass, Supplier<PageResponse<T>> dbSupplier) {
+        Optional<PageResponse<T>> cached = getPage(key, elementClass);
+        if (cached.isPresent()) return cached.get();
+        long start = System.nanoTime();
+        PageResponse<T> result;
+        try {
+            result = dbSupplier.get();
+        } finally {
+            recordLoadTime(key, start);
+        }
+        if (result != null) set(key, result, ttl);
         return result;
     }
 

@@ -5,6 +5,8 @@ import com.sam.be.common.constant.enums.SubscriptionStatus;
 import com.sam.be.common.constant.enums.UserRole;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
@@ -259,6 +261,30 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                         userSubscriptionRepository.findByUser_Id(userId).stream()
                                 .map(s -> toResponse(s, null))
                                 .toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<UserSubscriptionResponse> getMinePage(UUID userId, int page, int size) {
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.desc("createdAt"),
+                                org.springframework.data.domain.Sort.Order.desc("id")));
+        java.util.function.Supplier<PageResponse<UserSubscriptionResponse>> source =
+                () ->
+                        PageResponse.from(
+                                userSubscriptionRepository
+                                        .findByUser_Id(userId, pageable)
+                                        .map(subscription -> toResponse(subscription, null)));
+        if (page >= 2) return source.get();
+        return redisCacheService.getPageOrSet(
+                RedisKeys.page(RedisKeys.userSubscriptions(userId), page, size),
+                Duration.ofMinutes(5),
+                UserSubscriptionResponse.class,
+                source);
     }
 
     private UserSubscriptionResponse toResponse(UserSubscription subscription, String vnpayUrl) {

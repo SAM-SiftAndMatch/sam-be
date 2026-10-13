@@ -5,6 +5,8 @@ import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.constant.enums.ProjectTaskStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
@@ -81,6 +83,47 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
 
     @Override
     @Transactional
+    public ProjectTimelineResponse getTimelineSummary(UUID userId, UUID jobId) {
+        Job job = getAccessibleJob(userId, jobId);
+        var cached =
+                redisCacheService.get(
+                        RedisKeys.workflowTimelineSummary(jobId), ProjectTimelineResponse.class);
+        if (cached.isPresent()) return cached.get();
+        List<ProjectTimelineTask> tasks =
+                taskRepository.findAllByJobIdOrderByWeekNumberAscSortOrderAsc(jobId);
+        if (tasks.isEmpty()) {
+            Job lockedJob = getAccessibleJobForUpdate(userId, jobId);
+            tasks = taskRepository.findAllByJobIdOrderByWeekNumberAscSortOrderAsc(jobId);
+            if (tasks.isEmpty()) tasks = initializeTimeline(lockedJob);
+            return toTimelineResponse(job, tasks, false);
+        }
+        ProjectTimelineResponse response = toTimelineResponse(job, tasks, false);
+        redisCacheService.set(
+                RedisKeys.workflowTimelineSummary(jobId), response, Duration.ofSeconds(30));
+        return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<TaskReportResponse> getTaskReportsPage(
+            UUID userId, UUID jobId, UUID taskId, int page, int size) {
+        getAccessibleJob(userId, jobId);
+        taskRepository
+                .findByIdAndJobId(taskId, jobId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.desc("createdAt"),
+                                org.springframework.data.domain.Sort.Order.desc("id")));
+        return PageResponse.from(
+                reportRepository.findAllByTaskId(taskId, pageable).map(this::toReportResponse));
+    }
+
+    @Override
+    @Transactional
     public ProjectTimelineResponse addTaskReport(
             UUID freelancerId, UUID jobId, UUID taskId, TaskReportRequest request) {
         Job job = getAccessibleJob(freelancerId, jobId);
@@ -146,6 +189,32 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
                         deliveryRepository.findAllByJobIdOrderByVersionNumberDesc(jobId).stream()
                                 .map(this::toDeliveryResponse)
                                 .toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ProjectDeliveryResponse> getDeliveriesPage(
+            UUID userId, UUID jobId, int page, int size) {
+        getAccessibleJob(userId, jobId);
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.desc("versionNumber"),
+                                org.springframework.data.domain.Sort.Order.desc("id")));
+        java.util.function.Supplier<PageResponse<ProjectDeliveryResponse>> source =
+                () ->
+                        PageResponse.from(
+                                deliveryRepository
+                                        .findAllByJobId(jobId, pageable)
+                                        .map(this::toDeliveryResponse));
+        if (page >= 2) return source.get();
+        return redisCacheService.getPageOrSet(
+                RedisKeys.page(RedisKeys.workflowDeliveries(jobId), page, size),
+                Duration.ofSeconds(30),
+                ProjectDeliveryResponse.class,
+                source);
     }
 
     @Override
@@ -284,9 +353,14 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
     }
 
     private ProjectTimelineResponse toTimelineResponse(Job job, List<ProjectTimelineTask> tasks) {
+        return toTimelineResponse(job, tasks, true);
+    }
+
+    private ProjectTimelineResponse toTimelineResponse(
+            Job job, List<ProjectTimelineTask> tasks, boolean includeReports) {
         List<UUID> taskIds = tasks.stream().map(ProjectTimelineTask::getId).toList();
         Map<UUID, List<ProjectTaskReport>> reportsByTask =
-                taskIds.isEmpty()
+                !includeReports || taskIds.isEmpty()
                         ? Map.of()
                         : reportRepository.findAllByTaskIdInOrderByCreatedAtDesc(taskIds).stream()
                                 .collect(

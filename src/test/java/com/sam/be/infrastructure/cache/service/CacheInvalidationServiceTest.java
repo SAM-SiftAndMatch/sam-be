@@ -50,8 +50,13 @@ class CacheInvalidationServiceTest {
 
         assertTrue(cache.deleted.contains(RedisKeys.jobDetail(jobId)));
         assertTrue(cache.deleted.contains(RedisKeys.openJobs()));
+        assertTrue(cache.deleted.contains(RedisKeys.pagesPattern(RedisKeys.openJobs())));
         assertTrue(cache.deleted.contains(RedisKeys.clientJobs(clientId)));
+        assertTrue(cache.deleted.contains(RedisKeys.pagesPattern(RedisKeys.clientJobs(clientId))));
         assertTrue(cache.deleted.contains(RedisKeys.freelancerProjects(freelancerId)));
+        assertTrue(
+                cache.deleted.contains(
+                        RedisKeys.pagesPattern(RedisKeys.freelancerProjects(freelancerId))));
     }
 
     @Test
@@ -131,6 +136,15 @@ class CacheInvalidationServiceTest {
         @Override
         public <T> List<T> getListOrSet(
                 String key, Duration ttl, Class<T> elementClass, Supplier<List<T>> dbSupplier) {
+            return dbSupplier.get();
+        }
+
+        @Override
+        public <T> com.sam.be.common.response.PageResponse<T> getPageOrSet(
+                String key,
+                Duration ttl,
+                Class<T> elementClass,
+                Supplier<com.sam.be.common.response.PageResponse<T>> dbSupplier) {
             return dbSupplier.get();
         }
     }

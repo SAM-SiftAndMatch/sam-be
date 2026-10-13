@@ -1,6 +1,8 @@
 package com.sam.be.modules.chat.controller;
 
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.CursorResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
 import com.sam.be.modules.chat.dto.ChatRoomDto;
@@ -46,7 +48,7 @@ public class ChatController {
             summary = "Get recent chat messages",
             description = "Return up to 100 latest messages in chronological order")
     public ApiResponse<List<ChatMessageDto>> getRecentMessages(
-            @PathVariable UUID roomId, @RequestParam(defaultValue = "50") int limit) {
+            @PathVariable UUID roomId, @RequestParam(defaultValue = "10") int limit) {
         if (limit < 1 || limit > 100) {
             throw new com.sam.be.common.exception.ApiException(
                     com.sam.be.common.exception.ErrorCode.VALIDATION_ERROR,
@@ -59,6 +61,19 @@ public class ChatController {
                 .build();
     }
 
+    @GetMapping("/rooms/{roomId}/messages/page")
+    @Operation(summary = "Get a cursor page of chat history")
+    public ApiResponse<CursorResponse<ChatMessageDto>> getMessagePage(
+            @PathVariable UUID roomId,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String before) {
+        return ApiResponse.<CursorResponse<ChatMessageDto>>builder()
+                .result(
+                        chatService.getMessagePage(
+                                roomId, SecurityUtils.getCurrentUserId(), before, size))
+                .build();
+    }
+
     // Danh sách phòng chat của tôi (cả client lẫn freelancer) -> trang Tin nhắn
     @GetMapping("/rooms")
     @Operation(
@@ -67,6 +82,19 @@ public class ChatController {
     public ApiResponse<List<ChatRoomDto>> getMyRooms() {
         List<ChatRoomDto> response = chatService.getMyRooms(SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<ChatRoomDto>>builder().result(response).build();
+    }
+
+    @GetMapping("/rooms/page")
+    @Operation(summary = "Get a page of my chat rooms")
+    public ApiResponse<PageResponse<ChatRoomDto>> getMyRoomsPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String search) {
+        return ApiResponse.<PageResponse<ChatRoomDto>>builder()
+                .result(
+                        chatService.getMyRoomsPage(
+                                SecurityUtils.getCurrentUserId(), page, size, search))
+                .build();
     }
 
     // Chi tiết 1 phòng (để mở đúng tên job + đối phương)

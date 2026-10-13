@@ -106,6 +106,18 @@ public final class RedisKeys {
         return "job:open";
     }
 
+    public static String page(String baseKey, int page, int size) {
+        return baseKey + ":page:" + page + ":" + size;
+    }
+
+    public static String pagesPattern(String baseKey) {
+        return baseKey + ":page:*";
+    }
+
+    public static String chatRooms(UUID userId) {
+        return "chat:rooms:" + userId;
+    }
+
     public static String freelancerProjects(UUID freelancerId) {
         return PREFIX_JOB_FREELANCER + freelancerId;
     }
@@ -122,6 +134,10 @@ public final class RedisKeys {
         return "workflow:timeline:" + jobId;
     }
 
+    public static String workflowTimelineSummary(UUID jobId) {
+        return "workflow:timeline:summary:" + jobId;
+    }
+
     public static String workflowDeliveries(UUID jobId) {
         return "workflow:deliveries:" + jobId;
     }
@@ -132,6 +148,10 @@ public final class RedisKeys {
 
     public static String completedContractByJob(UUID jobId) {
         return "contract:completed:job:" + jobId;
+    }
+
+    public static String contractRevisions(UUID roomId) {
+        return "contract:revisions:room:" + roomId;
     }
 
     // ==========================================

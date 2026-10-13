@@ -2,6 +2,9 @@ package com.sam.be.modules.chat.service.impl;
 
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.CursorResponse;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
 import com.sam.be.modules.chat.dto.ChatRoomDto;
 import com.sam.be.modules.chat.dto.SendMessagePayload;
@@ -13,12 +16,14 @@ import com.sam.be.modules.chat.service.ChatService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.UserRepository;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,6 +78,41 @@ public class ChatServiceImpl implements ChatService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public CursorResponse<ChatMessageDto> getMessagePage(
+            UUID roomId, UUID userId, String before, int size) {
+        PageRequests.of(0, size, org.springframework.data.domain.Sort.unsorted());
+        ChatRoom room = requireMemberRoom(roomId, userId);
+        LocalDateTime beforeAt = null;
+        UUID beforeId = null;
+        if (before != null && !before.isBlank()) {
+            try {
+                String[] parts = before.split("\\|", -1);
+                if (parts.length != 2) throw new IllegalArgumentException("cursor");
+                beforeAt = LocalDateTime.parse(parts[0]);
+                beforeId = UUID.fromString(parts[1]);
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(ErrorCode.VALIDATION_ERROR, "Cursor không hợp lệ");
+            }
+        }
+        List<ChatMessage> fetched =
+                chatMessageRepository.findHistoryPage(
+                        roomId, beforeAt, beforeId, PageRequest.of(0, size + 1));
+        boolean hasMore = fetched.size() > size;
+        List<ChatMessage> window = fetched.subList(0, Math.min(size, fetched.size()));
+        String next =
+                hasMore && !window.isEmpty()
+                        ? window.getLast().getCreatedAt() + "|" + window.getLast().getId()
+                        : null;
+        List<ChatMessageDto> items =
+                java.util.stream.IntStream.range(0, window.size())
+                        .mapToObj(
+                                index -> toDto(room.getId(), window.get(window.size() - 1 - index)))
+                        .toList();
+        return new CursorResponse<>(items, next, hasMore);
+    }
+
     private ChatRoom requireMemberRoom(UUID roomId, UUID userId) {
         ChatRoom room =
                 chatRoomRepository
@@ -110,6 +150,9 @@ public class ChatServiceImpl implements ChatService {
                                 .content(payload.getContent())
                                 .build());
 
+        room.setUpdatedAt(LocalDateTime.now());
+        chatRoomRepository.save(room);
+
         return toDto(room.getId(), savedMsg);
     }
 
@@ -124,6 +167,9 @@ public class ChatServiceImpl implements ChatService {
         ChatMessage savedMsg =
                 chatMessageRepository.save(
                         ChatMessage.builder().room(room).isSystem(true).content(content).build());
+
+        room.setUpdatedAt(LocalDateTime.now());
+        chatRoomRepository.save(room);
 
         return toDto(room.getId(), savedMsg);
     }
@@ -145,6 +191,29 @@ public class ChatServiceImpl implements ChatService {
     @Transactional(readOnly = true)
     public List<ChatRoomDto> getMyRooms(UUID userId) {
         List<ChatRoom> rooms = chatRoomRepository.findAllByMemberId(userId);
+        return mapRooms(rooms);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ChatRoomDto> getMyRoomsPage(
+            UUID userId, int page, int size, String search) {
+        var pageable = PageRequests.of(page, size, org.springframework.data.domain.Sort.unsorted());
+        String query =
+                search == null || search.isBlank()
+                        ? null
+                        : "%" + search.trim().toLowerCase(java.util.Locale.ROOT) + "%";
+        Page<ChatRoom> result = chatRoomRepository.findPageByMemberId(userId, query, pageable);
+        return new PageResponse<>(
+                mapRooms(result.getContent()),
+                page,
+                size,
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.hasNext());
+    }
+
+    private List<ChatRoomDto> mapRooms(List<ChatRoom> rooms) {
         if (rooms.isEmpty()) return List.of();
         List<UUID> roomIds = rooms.stream().map(ChatRoom::getId).toList();
         List<UUID> jobIds = rooms.stream().map(room -> room.getJob().getId()).distinct().toList();

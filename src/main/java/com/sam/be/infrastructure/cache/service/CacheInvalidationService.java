@@ -21,9 +21,16 @@ public class CacheInvalidationService {
                 () -> {
                     cache.delete(RedisKeys.jobDetail(jobId));
                     cache.delete(RedisKeys.openJobs());
+                    cache.deleteByPattern(RedisKeys.pagesPattern(RedisKeys.openJobs()));
                     if (clientId != null) cache.delete(RedisKeys.clientJobs(clientId));
+                    if (clientId != null)
+                        cache.deleteByPattern(
+                                RedisKeys.pagesPattern(RedisKeys.clientJobs(clientId)));
                     if (freelancerId != null)
                         cache.delete(RedisKeys.freelancerProjects(freelancerId));
+                    if (freelancerId != null)
+                        cache.deleteByPattern(
+                                RedisKeys.pagesPattern(RedisKeys.freelancerProjects(freelancerId)));
                 });
     }
 
@@ -33,8 +40,15 @@ public class CacheInvalidationService {
                     new HashSet<>(jobIds)
                             .forEach(jobId -> cache.delete(RedisKeys.jobDetail(jobId)));
                     new HashSet<>(clientIds)
-                            .forEach(clientId -> cache.delete(RedisKeys.clientJobs(clientId)));
+                            .forEach(
+                                    clientId -> {
+                                        cache.delete(RedisKeys.clientJobs(clientId));
+                                        cache.deleteByPattern(
+                                                RedisKeys.pagesPattern(
+                                                        RedisKeys.clientJobs(clientId)));
+                                    });
                     cache.delete(RedisKeys.openJobs());
+                    cache.deleteByPattern(RedisKeys.pagesPattern(RedisKeys.openJobs()));
                 });
     }
 
@@ -50,7 +64,14 @@ public class CacheInvalidationService {
                     recommendationJobs.forEach(
                             jobId -> cache.delete(RedisKeys.jobRecommendations(jobId)));
                     proposalJobs.forEach(jobId -> cache.delete(RedisKeys.proposalsByJob(jobId)));
+                    proposalJobs.forEach(
+                            jobId ->
+                                    cache.deleteByPattern(
+                                            RedisKeys.pagesPattern(
+                                                    RedisKeys.proposalsByJob(jobId))));
                     cache.delete(RedisKeys.proposalsByFreelancer(freelancerId));
+                    cache.deleteByPattern(
+                            RedisKeys.pagesPattern(RedisKeys.proposalsByFreelancer(freelancerId)));
                 });
     }
 
@@ -63,11 +84,21 @@ public class CacheInvalidationService {
     }
 
     public void subscriptionChanged(UUID userId) {
-        afterCommit(() -> cache.delete(RedisKeys.userSubscriptions(userId)));
+        afterCommit(
+                () -> {
+                    cache.delete(RedisKeys.userSubscriptions(userId));
+                    cache.deleteByPattern(
+                            RedisKeys.pagesPattern(RedisKeys.userSubscriptions(userId)));
+                });
     }
 
     public void paymentsChanged(UUID contractId) {
-        afterCommit(() -> cache.delete(RedisKeys.contractPayments(contractId)));
+        afterCommit(
+                () -> {
+                    cache.delete(RedisKeys.contractPayments(contractId));
+                    cache.deleteByPattern(
+                            RedisKeys.pagesPattern(RedisKeys.contractPayments(contractId)));
+                });
     }
 
     public void completedContractChanged(UUID jobId) {
@@ -79,15 +110,27 @@ public class CacheInvalidationService {
                 () -> {
                     cache.delete(RedisKeys.proposalsByJob(jobId));
                     cache.delete(RedisKeys.proposalsByFreelancer(freelancerId));
+                    cache.deleteByPattern(RedisKeys.pagesPattern(RedisKeys.proposalsByJob(jobId)));
+                    cache.deleteByPattern(
+                            RedisKeys.pagesPattern(RedisKeys.proposalsByFreelancer(freelancerId)));
                 });
     }
 
     public void timelineChanged(UUID jobId) {
-        afterCommit(() -> cache.delete(RedisKeys.workflowTimeline(jobId)));
+        afterCommit(
+                () -> {
+                    cache.delete(RedisKeys.workflowTimeline(jobId));
+                    cache.delete(RedisKeys.workflowTimelineSummary(jobId));
+                });
     }
 
     public void deliveriesChanged(UUID jobId) {
-        afterCommit(() -> cache.delete(RedisKeys.workflowDeliveries(jobId)));
+        afterCommit(
+                () -> {
+                    cache.delete(RedisKeys.workflowDeliveries(jobId));
+                    cache.deleteByPattern(
+                            RedisKeys.pagesPattern(RedisKeys.workflowDeliveries(jobId)));
+                });
     }
 
     public void qaPlanChanged(UUID deliveryId) {

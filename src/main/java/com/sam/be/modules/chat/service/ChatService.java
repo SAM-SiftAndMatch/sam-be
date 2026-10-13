@@ -1,5 +1,7 @@
 package com.sam.be.modules.chat.service;
 
+import com.sam.be.common.response.CursorResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.chat.dto.ChatMessageDto;
 import com.sam.be.modules.chat.dto.ChatRoomDto;
 import com.sam.be.modules.chat.dto.SendMessagePayload;
@@ -16,12 +18,17 @@ public interface ChatService {
 
     List<ChatMessageDto> getRecentMessages(UUID roomId, UUID userId, int limit);
 
+    CursorResponse<ChatMessageDto> getMessagePage(
+            UUID roomId, UUID userId, String before, int size);
+
     ChatMessageDto saveAndBroadcastMessage(UUID roomId, SendMessagePayload payload);
 
     // Tin hệ thống/AI: không gắn user gửi, FE render bubble riêng (icon + màu khác)
     ChatMessageDto saveSystemMessage(UUID roomId, String content);
 
     List<ChatRoomDto> getMyRooms(UUID userId);
+
+    PageResponse<ChatRoomDto> getMyRoomsPage(UUID userId, int page, int size, String search);
 
     ChatRoomDto getRoomDetail(UUID roomId, UUID userId);
 
