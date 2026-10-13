@@ -33,10 +33,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
 
     @Query(
             "SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender WHERE m.room.id = :roomId "
-                    + "AND (:beforeAt IS NULL OR m.createdAt < :beforeAt "
+                    + "AND (m.createdAt < :beforeAt "
                     + "OR (m.createdAt = :beforeAt AND m.id < :beforeId)) "
                     + "ORDER BY m.createdAt DESC, m.id DESC")
-    List<ChatMessage> findHistoryPage(
+    List<ChatMessage> findHistoryBefore(
             @Param("roomId") UUID roomId,
             @Param("beforeAt") LocalDateTime beforeAt,
             @Param("beforeId") UUID beforeId,

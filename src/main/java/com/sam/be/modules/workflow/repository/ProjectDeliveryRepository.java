@@ -6,12 +6,14 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProjectDeliveryRepository extends JpaRepository<ProjectDelivery, UUID> {
+    @EntityGraph(attributePaths = "submittedBy")
     List<ProjectDelivery> findAllByJobIdOrderByVersionNumberDesc(UUID jobId);
 
     Page<ProjectDelivery> findAllByJobId(UUID jobId, Pageable pageable);

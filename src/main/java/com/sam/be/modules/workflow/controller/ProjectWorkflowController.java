@@ -59,6 +59,17 @@ public class ProjectWorkflowController {
                 .build();
     }
 
+    @GetMapping("/{jobId}/timeline/tasks/{taskId}/reports")
+    @Operation(summary = "Get all reports for one timeline task")
+    public ApiResponse<List<TaskReportResponse>> getTaskReports(
+            @PathVariable UUID jobId, @PathVariable UUID taskId) {
+        return ApiResponse.<List<TaskReportResponse>>builder()
+                .result(
+                        workflowService.getTaskReports(
+                                SecurityUtils.getCurrentUserId(), jobId, taskId))
+                .build();
+    }
+
     @PostMapping("/{jobId}/timeline/tasks/{taskId}/reports")
     @PreAuthorize("hasRole('FREELANCER')")
     @Operation(summary = "Freelancer reports progress for a timeline task")

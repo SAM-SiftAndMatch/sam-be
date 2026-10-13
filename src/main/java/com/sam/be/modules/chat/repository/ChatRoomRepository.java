@@ -17,6 +17,10 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, UUID> {
     Optional<ChatRoom> findByJobIdAndFreelancerId(UUID jobId, UUID freelancerId);
 
     @EntityGraph(attributePaths = {"job", "client", "freelancer"})
+    @Query("SELECT r FROM ChatRoom r WHERE r.id = :roomId")
+    Optional<ChatRoom> findDetailById(@Param("roomId") UUID roomId);
+
+    @EntityGraph(attributePaths = {"job", "client", "freelancer"})
     @Query(
             "SELECT r FROM ChatRoom r WHERE r.client.id = :userId OR r.freelancer.id = :userId ORDER BY r.updatedAt DESC")
     List<ChatRoom> findAllByMemberId(@Param("userId") UUID userId);
@@ -30,6 +34,7 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, UUID> {
     Page<ChatRoom> findPageByMemberId(
             @Param("userId") UUID userId, @Param("search") String search, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"job", "client", "freelancer"})
     @Query(
             "SELECT r FROM ChatRoom r WHERE r.job.id = :jobId AND (r.client.id = :userId OR r.freelancer.id = :userId)")
     Optional<ChatRoom> findByJobIdAndMemberId(

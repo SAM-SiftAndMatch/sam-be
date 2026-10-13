@@ -14,4 +14,7 @@ public interface ProjectTaskReportRepository extends JpaRepository<ProjectTaskRe
 
     @EntityGraph(attributePaths = "reporter")
     Page<ProjectTaskReport> findAllByTaskId(UUID taskId, Pageable pageable);
+
+    @EntityGraph(attributePaths = "reporter")
+    List<ProjectTaskReport> findAllByTaskIdOrderByCreatedAtDescIdDesc(UUID taskId);
 }

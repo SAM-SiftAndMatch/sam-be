@@ -123,6 +123,18 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<TaskReportResponse> getTaskReports(UUID userId, UUID jobId, UUID taskId) {
+        getAccessibleJob(userId, jobId);
+        taskRepository
+                .findByIdAndJobId(taskId, jobId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        return reportRepository.findAllByTaskIdOrderByCreatedAtDescIdDesc(taskId).stream()
+                .map(this::toReportResponse)
+                .toList();
+    }
+
+    @Override
     @Transactional
     public ProjectTimelineResponse addTaskReport(
             UUID freelancerId, UUID jobId, UUID taskId, TaskReportRequest request) {

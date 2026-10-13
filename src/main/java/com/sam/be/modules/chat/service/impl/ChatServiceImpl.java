@@ -97,8 +97,11 @@ public class ChatServiceImpl implements ChatService {
             }
         }
         List<ChatMessage> fetched =
-                chatMessageRepository.findHistoryPage(
-                        roomId, beforeAt, beforeId, PageRequest.of(0, size + 1));
+                beforeAt == null
+                        ? chatMessageRepository.findRecentByRoomId(
+                                roomId, PageRequest.of(0, size + 1))
+                        : chatMessageRepository.findHistoryBefore(
+                                roomId, beforeAt, beforeId, PageRequest.of(0, size + 1));
         boolean hasMore = fetched.size() > size;
         List<ChatMessage> window = fetched.subList(0, Math.min(size, fetched.size()));
         String next =
@@ -248,7 +251,7 @@ public class ChatServiceImpl implements ChatService {
     public ChatRoomDto getRoomDetail(UUID roomId, UUID userId) {
         ChatRoom room =
                 chatRoomRepository
-                        .findById(roomId)
+                        .findDetailById(roomId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         assertMember(room, userId);
         return toRoomDto(room, userId);

@@ -20,6 +20,8 @@ public interface ProjectWorkflowService {
     PageResponse<TaskReportResponse> getTaskReportsPage(
             UUID userId, UUID jobId, UUID taskId, int page, int size);
 
+    List<TaskReportResponse> getTaskReports(UUID userId, UUID jobId, UUID taskId);
+
     ProjectTimelineResponse addTaskReport(
             UUID freelancerId, UUID jobId, UUID taskId, TaskReportRequest request);
 

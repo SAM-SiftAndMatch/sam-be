@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -64,7 +63,7 @@ class ChatServiceImplTest {
                         .createdAt(now.minusMinutes(2))
                         .build();
         when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
-        when(messages.findHistoryPage(eq(room.getId()), isNull(), isNull(), any()))
+        when(messages.findRecentByRoomId(eq(room.getId()), any()))
                 .thenReturn(List.of(newest, older, extra));
         var service =
                 new ChatServiceImpl(
@@ -79,6 +78,38 @@ class ChatServiceImplTest {
         assertEquals("newest", result.items().getLast().getContent());
         assertEquals(older.getCreatedAt() + "|" + older.getId(), result.nextCursor());
         assertEquals(true, result.hasMore());
+        verify(messages).findRecentByRoomId(eq(room.getId()), any());
+        verifyNoMoreInteractions(messages);
+    }
+
+    @Test
+    void cursorPageUsesNonNullableBeforeQuery() {
+        ChatRoomRepository rooms = mock(ChatRoomRepository.class);
+        ChatMessageRepository messages = mock(ChatMessageRepository.class);
+        UUID userId = UUID.randomUUID();
+        ChatRoom room =
+                ChatRoom.builder()
+                        .id(UUID.randomUUID())
+                        .client(User.builder().id(userId).build())
+                        .freelancer(User.builder().id(UUID.randomUUID()).build())
+                        .build();
+        LocalDateTime beforeAt = LocalDateTime.now();
+        UUID beforeId = UUID.randomUUID();
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        when(messages.findHistoryBefore(eq(room.getId()), eq(beforeAt), eq(beforeId), any()))
+                .thenReturn(List.of());
+        var service =
+                new ChatServiceImpl(
+                        rooms,
+                        messages,
+                        mock(UserRepository.class),
+                        mock(ContractRepository.class));
+
+        var result = service.getMessagePage(room.getId(), userId, beforeAt + "|" + beforeId, 10);
+
+        assertEquals(0, result.items().size());
+        verify(messages).findHistoryBefore(eq(room.getId()), eq(beforeAt), eq(beforeId), any());
+        verifyNoMoreInteractions(messages);
     }
 
     @Test
