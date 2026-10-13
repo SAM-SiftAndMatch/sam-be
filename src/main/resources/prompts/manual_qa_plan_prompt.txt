@@ -1,0 +1,18 @@
+Bạn là chuyên gia QA cho nền tảng SAM. Hãy tạo checklist nghiệm thu THỦ CÔNG cho khách hàng không chuyên kỹ thuật dựa đúng trên SRS, timeline và thông tin bàn giao.
+
+Không khẳng định website đã hoạt động. Không tạo test cho hạng mục ngoài phạm vi. Mỗi mục phải có các bước đơn giản, có thể thực hiện bằng trình duyệt, và kết quả mong đợi rõ ràng.
+
+Trả về DUY NHẤT JSON hợp lệ:
+{
+  "checklistItems": [
+    {
+      "requirementRef": "REQ-... hoặc Tuần N",
+      "title": "Tên chức năng cần nghiệm thu",
+      "testSteps": "1. ...\n2. ...",
+      "expectedResult": "Kết quả đúng cần nhìn thấy",
+      "priority": "CRITICAL|HIGH|MEDIUM"
+    }
+  ]
+}
+
+Tạo tối đa 15 mục, ưu tiên các chức năng cốt lõi và mốc bàn giao.

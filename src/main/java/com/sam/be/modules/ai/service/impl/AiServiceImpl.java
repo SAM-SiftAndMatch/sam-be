@@ -57,6 +57,9 @@ public class AiServiceImpl implements AiService {
     @Value("classpath:prompts/contract_amount_review_prompt.txt")
     private Resource amountReviewPromptResource;
 
+    @Value("classpath:prompts/manual_qa_plan_prompt.txt")
+    private Resource manualQaPlanPromptResource;
+
     private String baSystemPrompt;
     private String riskSystemPrompt;
     private String skillMatchingPrompt;
@@ -64,6 +67,7 @@ public class AiServiceImpl implements AiService {
     private String contractSystemPrompt;
     private String amountVerifyPrompt;
     private String amountReviewPrompt;
+    private String manualQaPlanPrompt;
     private List<AiQuestion> baseQuestions;
 
     private final ObjectMapper objectMapper;
@@ -96,6 +100,9 @@ public class AiServiceImpl implements AiService {
             amountReviewPrompt =
                     StreamUtils.copyToString(
                             amountReviewPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            manualQaPlanPrompt =
+                    StreamUtils.copyToString(
+                            manualQaPlanPromptResource.getInputStream(), StandardCharsets.UTF_8);
             String questionsJson =
                     StreamUtils.copyToString(
                             baseQuestionsResource.getInputStream(), StandardCharsets.UTF_8);
@@ -228,6 +235,30 @@ public class AiServiceImpl implements AiService {
         } catch (Exception e) {
             log.error("AI Contract Generation failed. Raw: {}", aiResponseJson, e);
             throw new ApiException(ErrorCode.UNEXPECTED_ERROR);
+        }
+    }
+
+    @Override
+    public AiQaPlan generateManualQaPlan(
+            String srsContent, String timelineSummary, String deliveryUrl) {
+        String userMessage =
+                String.format(
+                        "SRS:\n%s\n\nTIMELINE:\n%s\n\nURL BÀN GIAO: %s",
+                        srsContent == null ? "" : srsContent,
+                        timelineSummary == null ? "" : timelineSummary,
+                        deliveryUrl == null ? "" : deliveryUrl);
+        List<Map<String, Object>> history = new ArrayList<>();
+        history.add(createMessage("user", userMessage));
+        try {
+            String raw = geminiClient.generateContent(manualQaPlanPrompt, history);
+            AiQaPlan result = objectMapper.readValue(cleanJson(raw), AiQaPlan.class);
+            if (result.getChecklistItems() == null || result.getChecklistItems().isEmpty()) {
+                throw new IllegalArgumentException("Empty QA plan");
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("AI manual QA plan failed. Falling back to SRS timeline.", e);
+            return new AiQaPlan();
         }
     }
 
