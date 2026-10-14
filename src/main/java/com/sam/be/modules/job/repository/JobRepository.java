@@ -39,8 +39,8 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     Optional<Job> findByIdWithDetails(@Param("id") UUID id);
 
     @Query(
-            "SELECT j FROM Job j WHERE j.status = :status AND (j.isUrgentHiring = false OR (j.isUrgentHiring = true AND j.createdAt <= :fiveMinsAgo)) ORDER BY j.createdAt DESC")
-    List<Job> findAllOpenJobsFiltered(
+            "SELECT j.id FROM Job j WHERE j.status = :status AND (j.isUrgentHiring = false OR (j.isUrgentHiring = true AND j.createdAt <= :fiveMinsAgo)) ORDER BY j.createdAt DESC")
+    List<UUID> findAllOpenJobIdsFiltered(
             @Param("status") JobStatus status,
             @Param("fiveMinsAgo") java.time.LocalDateTime fiveMinsAgo);
 

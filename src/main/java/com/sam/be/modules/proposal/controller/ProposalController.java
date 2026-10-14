@@ -11,7 +11,6 @@ import com.sam.be.modules.proposal.service.ProposalService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,17 +37,6 @@ public class ProposalController {
         return ApiResponse.<ProposalResponse>builder().result(response).build();
     }
 
-    @GetMapping("/job/{jobId}")
-    @PreAuthorize("hasRole('CLIENT')")
-    @Operation(
-            summary = "List proposals of a job",
-            description = "Client views all proposals submitted for their job")
-    public ApiResponse<List<ProposalResponse>> getByJob(@PathVariable UUID jobId) {
-        List<ProposalResponse> response =
-                proposalService.getProposalsByJob(SecurityUtils.getCurrentUserId(), jobId);
-        return ApiResponse.<List<ProposalResponse>>builder().result(response).build();
-    }
-
     @GetMapping("/job/{jobId}/page")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(summary = "Get a page of proposals for a job")
@@ -62,15 +50,6 @@ public class ProposalController {
                         proposalService.getProposalsByJobPage(
                                 SecurityUtils.getCurrentUserId(), jobId, page, size, status))
                 .build();
-    }
-
-    @GetMapping("/me")
-    @PreAuthorize("hasRole('FREELANCER')")
-    @Operation(summary = "List my proposals", description = "Freelancer views own proposals")
-    public ApiResponse<List<ProposalResponse>> getMine() {
-        List<ProposalResponse> response =
-                proposalService.getMyProposals(SecurityUtils.getCurrentUserId());
-        return ApiResponse.<List<ProposalResponse>>builder().result(response).build();
     }
 
     @GetMapping("/me/page")

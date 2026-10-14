@@ -54,15 +54,6 @@ public class JobController {
         return ApiResponse.<JobResponse>builder().result(response).build();
     }
 
-    @GetMapping
-    @Operation(
-            summary = "Get all open jobs",
-            description = "Public endpoint — returns all OPEN jobs sorted by newest first")
-    public ApiResponse<List<JobResponse>> getAllOpenJobs() {
-        List<JobResponse> response = jobService.getAllOpenJobs();
-        return ApiResponse.<List<JobResponse>>builder().result(response).build();
-    }
-
     @GetMapping("/page")
     @Operation(summary = "Get a page of open jobs without SRS content")
     public ApiResponse<PageResponse<JobResponse>> getOpenJobsPage(
@@ -92,16 +83,6 @@ public class JobController {
                 .build();
     }
 
-    @GetMapping("/client/me")
-    @PreAuthorize("hasRole('CLIENT')")
-    @Operation(
-            summary = "Get jobs of current client",
-            description = "Retrieve all jobs posted by the logged-in client")
-    public ApiResponse<List<JobResponse>> getMyJobs() {
-        List<JobResponse> response = jobService.getJobsByClientId(SecurityUtils.getCurrentUserId());
-        return ApiResponse.<List<JobResponse>>builder().result(response).build();
-    }
-
     @GetMapping("/client/me/page")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(summary = "Get a page of my jobs without SRS content")
@@ -115,18 +96,6 @@ public class JobController {
                         jobService.getClientJobsPage(
                                 SecurityUtils.getCurrentUserId(), page, size, status, search))
                 .build();
-    }
-
-    @GetMapping("/freelancers/{freelancerId}/projects")
-    @PreAuthorize("hasRole('FREELANCER') or hasRole('ADMIN')")
-    @Operation(
-            summary = "Get projects assigned to a freelancer",
-            description = "A freelancer can only read their own projects; Admin can read all")
-    public ApiResponse<List<JobResponse>> getFreelancerProjects(@PathVariable UUID freelancerId) {
-        List<JobResponse> response =
-                jobService.getProjectsByFreelancerId(
-                        SecurityUtils.getCurrentUserId(), freelancerId);
-        return ApiResponse.<List<JobResponse>>builder().result(response).build();
     }
 
     @GetMapping("/freelancers/{freelancerId}/projects/page")
