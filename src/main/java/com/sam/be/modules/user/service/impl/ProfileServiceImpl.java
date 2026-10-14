@@ -57,14 +57,14 @@ public class ProfileServiceImpl implements ProfileService {
                 () -> {
                     User user =
                             userRepository
-                                    .findByIdWithFreelancerProfile(userId)
+                                    .findById(userId)
                                     .orElseThrow(
                                             () -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
                     FreelancerProfile profile =
-                            user.getFreelancerProfile() != null
-                                    ? user.getFreelancerProfile()
-                                    : new FreelancerProfile();
+                            freelancerProfileRepository
+                                    .findByUserId(userId)
+                                    .orElseGet(FreelancerProfile::new);
 
                     List<FreelancerSkill> skills =
                             freelancerSkillRepository.findAllByFreelancerId(userId);
@@ -156,14 +156,14 @@ public class ProfileServiceImpl implements ProfileService {
                 () -> {
                     User user =
                             userRepository
-                                    .findByIdWithClientProfile(userId)
+                                    .findById(userId)
                                     .orElseThrow(
                                             () -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
                     ClientProfile profile =
-                            user.getClientProfile() != null
-                                    ? user.getClientProfile()
-                                    : new ClientProfile();
+                            clientProfileRepository
+                                    .findByUserId(userId)
+                                    .orElseGet(ClientProfile::new);
 
                     return mapToClientProfileResponse(user, profile);
                 });

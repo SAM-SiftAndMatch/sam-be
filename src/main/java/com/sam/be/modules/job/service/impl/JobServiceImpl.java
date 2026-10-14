@@ -550,13 +550,20 @@ public class JobServiceImpl implements JobService {
                 RedisKeys.openJobs(),
                 Duration.ofSeconds(30),
                 JobResponse.class,
-                () ->
-                        jobRepository
-                                .findAllOpenJobsFiltered(
-                                        JobStatus.OPEN, LocalDateTime.now().minusMinutes(5))
-                                .stream()
-                                .map(this::mapToResponse)
-                                .toList());
+                () -> {
+                    List<UUID> ids =
+                            jobRepository.findAllOpenJobIdsFiltered(
+                                    JobStatus.OPEN, LocalDateTime.now().minusMinutes(5));
+                    if (ids.isEmpty()) return List.of();
+                    Map<UUID, Job> details =
+                            jobRepository.findPageDetails(ids).stream()
+                                    .collect(Collectors.toMap(Job::getId, job -> job));
+                    return ids.stream()
+                            .map(details::get)
+                            .filter(java.util.Objects::nonNull)
+                            .map(this::mapToResponse)
+                            .toList();
+                });
     }
 
     @Override
