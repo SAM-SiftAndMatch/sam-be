@@ -42,19 +42,6 @@ public class ContractController {
         return ApiResponse.<ContractDetailResponse>builder().result(response).build();
     }
 
-    @GetMapping("/{roomId}/contract/revisions")
-    @Operation(
-            summary = "Get contract edit history",
-            description = "Snapshots of each edit with editor side, newest first")
-    public ApiResponse<java.util.List<ContractRevisionResponse>> getRevisions(
-            @PathVariable UUID roomId) {
-        java.util.List<ContractRevisionResponse> response =
-                contractService.getRevisionsByRoom(roomId, SecurityUtils.getCurrentUserId());
-        return ApiResponse.<java.util.List<ContractRevisionResponse>>builder()
-                .result(response)
-                .build();
-    }
-
     @GetMapping("/{roomId}/contract/revisions/page")
     @Operation(summary = "Get a page of contract revisions")
     public ApiResponse<PageResponse<ContractRevisionResponse>> getRevisionsPage(

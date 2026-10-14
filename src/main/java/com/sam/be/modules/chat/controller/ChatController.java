@@ -10,7 +10,6 @@ import com.sam.be.modules.chat.dto.SendMessagePayload;
 import com.sam.be.modules.chat.service.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -32,35 +31,6 @@ public class ChatController {
     private final ChatService chatService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    // 1. REST API: FE gọi lúc vừa mở màn hình để load lịch sử
-    @GetMapping("/rooms/{roomId}/messages")
-    @Operation(
-            summary = "Get chat history",
-            description = "Retrieve all previous messages for a specific room")
-    public ApiResponse<List<ChatMessageDto>> getChatHistory(@PathVariable UUID roomId) {
-        List<ChatMessageDto> response =
-                chatService.getMessageHistory(roomId, SecurityUtils.getCurrentUserId());
-        return ApiResponse.<List<ChatMessageDto>>builder().result(response).build();
-    }
-
-    @GetMapping("/rooms/{roomId}/messages/recent")
-    @Operation(
-            summary = "Get recent chat messages",
-            description = "Return up to 100 latest messages in chronological order")
-    public ApiResponse<List<ChatMessageDto>> getRecentMessages(
-            @PathVariable UUID roomId, @RequestParam(defaultValue = "10") int limit) {
-        if (limit < 1 || limit > 100) {
-            throw new com.sam.be.common.exception.ApiException(
-                    com.sam.be.common.exception.ErrorCode.VALIDATION_ERROR,
-                    "limit phải từ 1 đến 100");
-        }
-        return ApiResponse.<List<ChatMessageDto>>builder()
-                .result(
-                        chatService.getRecentMessages(
-                                roomId, SecurityUtils.getCurrentUserId(), limit))
-                .build();
-    }
-
     @GetMapping("/rooms/{roomId}/messages/page")
     @Operation(summary = "Get a cursor page of chat history")
     public ApiResponse<CursorResponse<ChatMessageDto>> getMessagePage(
@@ -72,16 +42,6 @@ public class ChatController {
                         chatService.getMessagePage(
                                 roomId, SecurityUtils.getCurrentUserId(), before, size))
                 .build();
-    }
-
-    // Danh sách phòng chat của tôi (cả client lẫn freelancer) -> trang Tin nhắn
-    @GetMapping("/rooms")
-    @Operation(
-            summary = "Get my chat rooms",
-            description = "List all chat rooms where current user is client or freelancer")
-    public ApiResponse<List<ChatRoomDto>> getMyRooms() {
-        List<ChatRoomDto> response = chatService.getMyRooms(SecurityUtils.getCurrentUserId());
-        return ApiResponse.<List<ChatRoomDto>>builder().result(response).build();
     }
 
     @GetMapping("/rooms/page")
@@ -115,18 +75,15 @@ public class ChatController {
         return ApiResponse.<ChatRoomDto>builder().result(response).build();
     }
 
-    // Tìm phòng theo hợp đồng (trang thanh toán chỉ có contractId)
     @GetMapping("/by-contract/{contractId}")
-    @Operation(
-            summary = "Get chat room by contract",
-            description = "Resolve the chat room of current user for a given contract")
+    @Operation(summary = "Get chat room by contract")
     public ApiResponse<ChatRoomDto> getRoomByContract(@PathVariable UUID contractId) {
         ChatRoomDto response =
                 chatService.getRoomByContract(contractId, SecurityUtils.getCurrentUserId());
         return ApiResponse.<ChatRoomDto>builder().result(response).build();
     }
 
-    // 2. WEBSOCKET ENDPOINT: FE bắn tin nhắn vào đây
+    // WEBSOCKET ENDPOINT: FE bắn tin nhắn vào đây
     // URL phía FE sẽ gọi: /app/chat/{roomId}/send
     @MessageMapping("/chat/{roomId}/send")
     public void sendMessage(@DestinationVariable UUID roomId, @Payload SendMessagePayload payload) {

@@ -796,18 +796,36 @@ public class JobServiceImpl implements JobService {
                     List<AiJobRecommendation> recommendations =
                             aiJobRecommendationRepository.findAllByJobIdOrderByMatchScoreDesc(
                                     jobId);
+                    if (recommendations.isEmpty()) {
+                        return List.of();
+                    }
+
+                    List<UUID> freelancerIds =
+                            recommendations.stream()
+                                    .map(rec -> rec.getFreelancer().getId())
+                                    .distinct()
+                                    .toList();
+                    Map<UUID, FreelancerProfile> profilesByUserId =
+                            freelancerProfileRepository.findAllByUserIdIn(freelancerIds).stream()
+                                    .collect(
+                                            Collectors.toMap(
+                                                    profile -> profile.getUser().getId(),
+                                                    profile -> profile));
+                    Map<UUID, List<FreelancerSkill>> skillsByFreelancerId =
+                            freelancerSkillRepository.findByFreelancerIdIn(freelancerIds).stream()
+                                    .collect(
+                                            Collectors.groupingBy(
+                                                    skill -> skill.getFreelancer().getId()));
 
                     return recommendations.stream()
                             .map(
                                     rec -> {
                                         User dev = rec.getFreelancer();
                                         FreelancerProfile profile =
-                                                freelancerProfileRepository
-                                                        .findByUserId(dev.getId())
-                                                        .orElse(null);
+                                                profilesByUserId.get(dev.getId());
                                         List<FreelancerSkill> fSkills =
-                                                freelancerSkillRepository.findByFreelancerIdIn(
-                                                        List.of(dev.getId()));
+                                                skillsByFreelancerId.getOrDefault(
+                                                        dev.getId(), List.of());
 
                                         List<SkillExperienceDto> skillDtos =
                                                 fSkills.stream()

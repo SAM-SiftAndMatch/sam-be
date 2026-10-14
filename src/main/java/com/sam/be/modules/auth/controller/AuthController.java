@@ -13,7 +13,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +21,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -101,19 +99,6 @@ public class AuthController {
         setRefreshTokenCookie(httpResponse, "", 0L);
 
         return ApiResponse.<Void>builder().message("Logged out successfully").build();
-    }
-
-    @GetMapping("/me")
-    public ApiResponse<Map<String, Object>> getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
-        return ApiResponse.<Map<String, Object>>builder()
-                .result(
-                        Map.of(
-                                "userId", jwt.getClaimAsString("user_id"),
-                                "email", jwt.getSubject(),
-                                "accountType", jwt.getClaimAsString("account_type"),
-                                "sessionId", jwt.getClaimAsString("session_id")))
-                .message("Current user retrieved successfully")
-                .build();
     }
 
     private void setRefreshTokenCookie(

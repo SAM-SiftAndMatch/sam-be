@@ -1,7 +1,6 @@
 package com.sam.be.modules.workflow.controller;
 
 import com.sam.be.common.response.ApiResponse;
-import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.workflow.dto.request.DeliveryCreateRequest;
 import com.sam.be.modules.workflow.dto.request.DeliveryRevisionRequest;
@@ -29,33 +28,11 @@ public class ProjectWorkflowController {
 
     private final ProjectWorkflowService workflowService;
 
-    @GetMapping("/{jobId}/timeline")
-    @Operation(summary = "Get the persisted project timeline generated from the SRS")
-    public ApiResponse<ProjectTimelineResponse> getTimeline(@PathVariable UUID jobId) {
-        return ApiResponse.<ProjectTimelineResponse>builder()
-                .result(workflowService.getTimeline(SecurityUtils.getCurrentUserId(), jobId))
-                .build();
-    }
-
     @GetMapping("/{jobId}/timeline/summary")
     @Operation(summary = "Get project timeline without report history")
     public ApiResponse<ProjectTimelineResponse> getTimelineSummary(@PathVariable UUID jobId) {
         return ApiResponse.<ProjectTimelineResponse>builder()
                 .result(workflowService.getTimelineSummary(SecurityUtils.getCurrentUserId(), jobId))
-                .build();
-    }
-
-    @GetMapping("/{jobId}/timeline/tasks/{taskId}/reports/page")
-    @Operation(summary = "Get a page of task reports")
-    public ApiResponse<PageResponse<TaskReportResponse>> getTaskReportsPage(
-            @PathVariable UUID jobId,
-            @PathVariable UUID taskId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.<PageResponse<TaskReportResponse>>builder()
-                .result(
-                        workflowService.getTaskReportsPage(
-                                SecurityUtils.getCurrentUserId(), jobId, taskId, page, size))
                 .build();
     }
 
@@ -89,19 +66,6 @@ public class ProjectWorkflowController {
     public ApiResponse<List<ProjectDeliveryResponse>> getDeliveries(@PathVariable UUID jobId) {
         return ApiResponse.<List<ProjectDeliveryResponse>>builder()
                 .result(workflowService.getDeliveries(SecurityUtils.getCurrentUserId(), jobId))
-                .build();
-    }
-
-    @GetMapping("/{jobId}/deliveries/page")
-    @Operation(summary = "Get a page of product delivery versions")
-    public ApiResponse<PageResponse<ProjectDeliveryResponse>> getDeliveriesPage(
-            @PathVariable UUID jobId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.<PageResponse<ProjectDeliveryResponse>>builder()
-                .result(
-                        workflowService.getDeliveriesPage(
-                                SecurityUtils.getCurrentUserId(), jobId, page, size))
                 .build();
     }
 
