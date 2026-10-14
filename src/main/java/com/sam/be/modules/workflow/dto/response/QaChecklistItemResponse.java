@@ -3,9 +3,11 @@ package com.sam.be.modules.workflow.dto.response;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Data;
+import lombok.extern.jackson.Jacksonized;
 
 @Data
 @Builder
+@Jacksonized
 public class QaChecklistItemResponse {
     private UUID id;
     private Integer sortOrder;

@@ -1,5 +1,6 @@
 package com.sam.be.modules.contract.service;
 
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.contract.dto.request.ContractSignPayload;
 import com.sam.be.modules.contract.dto.request.ContractSyncPayload;
 import com.sam.be.modules.contract.dto.response.ContractDetailResponse;
@@ -15,6 +16,9 @@ public interface ContractService {
     ContractDetailResponse getContractByRoom(UUID roomId, UUID userId);
 
     List<ContractRevisionResponse> getRevisionsByRoom(UUID roomId, UUID userId);
+
+    PageResponse<ContractRevisionResponse> getRevisionsByRoomPage(
+            UUID roomId, UUID userId, int page, int size);
 
     void syncContract(UUID contractId, ContractSyncPayload payload);
 

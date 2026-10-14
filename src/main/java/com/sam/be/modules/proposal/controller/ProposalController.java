@@ -1,6 +1,8 @@
 package com.sam.be.modules.proposal.controller;
 
+import com.sam.be.common.constant.enums.ProposalStatus;
 import com.sam.be.common.response.ApiResponse;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.proposal.dto.request.ProposalCreateRequest;
 import com.sam.be.modules.proposal.dto.response.AcceptProposalResponse;
@@ -47,6 +49,21 @@ public class ProposalController {
         return ApiResponse.<List<ProposalResponse>>builder().result(response).build();
     }
 
+    @GetMapping("/job/{jobId}/page")
+    @PreAuthorize("hasRole('CLIENT')")
+    @Operation(summary = "Get a page of proposals for a job")
+    public ApiResponse<PageResponse<ProposalResponse>> getByJobPage(
+            @PathVariable UUID jobId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) ProposalStatus status) {
+        return ApiResponse.<PageResponse<ProposalResponse>>builder()
+                .result(
+                        proposalService.getProposalsByJobPage(
+                                SecurityUtils.getCurrentUserId(), jobId, page, size, status))
+                .build();
+    }
+
     @GetMapping("/me")
     @PreAuthorize("hasRole('FREELANCER')")
     @Operation(summary = "List my proposals", description = "Freelancer views own proposals")
@@ -54,6 +71,20 @@ public class ProposalController {
         List<ProposalResponse> response =
                 proposalService.getMyProposals(SecurityUtils.getCurrentUserId());
         return ApiResponse.<List<ProposalResponse>>builder().result(response).build();
+    }
+
+    @GetMapping("/me/page")
+    @PreAuthorize("hasRole('FREELANCER')")
+    @Operation(summary = "Get a page of my proposals")
+    public ApiResponse<PageResponse<ProposalResponse>> getMinePage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) ProposalStatus status) {
+        return ApiResponse.<PageResponse<ProposalResponse>>builder()
+                .result(
+                        proposalService.getMyProposalsPage(
+                                SecurityUtils.getCurrentUserId(), page, size, status))
+                .build();
     }
 
     @GetMapping("/me/job/{jobId}")

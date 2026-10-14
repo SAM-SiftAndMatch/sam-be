@@ -64,10 +64,6 @@ public final class RedisKeys {
         return PREFIX_SKILL + "all";
     }
 
-    public static String skillSearch(String query) {
-        return PREFIX_SKILL + "search:" + (query != null ? query.trim().toLowerCase() : "");
-    }
-
     public static String skillPattern() {
         return PREFIX_SKILL + "*";
     }
@@ -92,6 +88,7 @@ public final class RedisKeys {
     private static final String PREFIX_JOB_DETAIL = "job:detail:";
     private static final String PREFIX_JOB_CLIENT = "job:client:";
     private static final String PREFIX_JOB_REC = "job:rec:";
+    private static final String PREFIX_JOB_FREELANCER = "job:freelancer:";
 
     public static String jobDetail(UUID jobId) {
         return PREFIX_JOB_DETAIL + jobId;
@@ -103,6 +100,68 @@ public final class RedisKeys {
 
     public static String jobRecommendations(UUID jobId) {
         return PREFIX_JOB_REC + jobId;
+    }
+
+    public static String openJobs() {
+        return "job:open";
+    }
+
+    public static String page(String baseKey, int page, int size) {
+        return baseKey + ":page:" + page + ":" + size;
+    }
+
+    public static String pagesPattern(String baseKey) {
+        return baseKey + ":page:*";
+    }
+
+    public static String chatRooms(UUID userId) {
+        return "chat:rooms:" + userId;
+    }
+
+    public static String freelancerProjects(UUID freelancerId) {
+        return PREFIX_JOB_FREELANCER + freelancerId;
+    }
+
+    public static String freelancerProjectsPage(
+            UUID freelancerId, String group, int page, int size) {
+        String tab = group == null || group.isBlank() ? "all" : group;
+        return page(freelancerProjects(freelancerId) + ":group:" + tab, page, size);
+    }
+
+    public static String freelancerProjectsPagesPattern(UUID freelancerId) {
+        return freelancerProjects(freelancerId) + ":*";
+    }
+
+    public static String proposalsByJob(UUID jobId) {
+        return "proposal:job:" + jobId;
+    }
+
+    public static String proposalsByFreelancer(UUID freelancerId) {
+        return "proposal:freelancer:" + freelancerId;
+    }
+
+    public static String workflowTimeline(UUID jobId) {
+        return "workflow:timeline:" + jobId;
+    }
+
+    public static String workflowTimelineSummary(UUID jobId) {
+        return "workflow:timeline:summary:" + jobId;
+    }
+
+    public static String workflowDeliveries(UUID jobId) {
+        return "workflow:deliveries:" + jobId;
+    }
+
+    public static String workflowQaPlan(UUID deliveryId) {
+        return "workflow:qa:" + deliveryId;
+    }
+
+    public static String completedContractByJob(UUID jobId) {
+        return "contract:completed:job:" + jobId;
+    }
+
+    public static String contractRevisions(UUID roomId) {
+        return "contract:revisions:room:" + roomId;
     }
 
     // ==========================================
@@ -118,6 +177,10 @@ public final class RedisKeys {
     // MODULE: PAYMENT
     // ==========================================
     private static final String PREFIX_PAYMENT_CONTRACT = "payment:contract:";
+
+    public static String freelancerEscrowSummary(UUID freelancerId) {
+        return "payment:freelancer:escrow-summary:" + freelancerId;
+    }
 
     public static String contractPayments(UUID contractId) {
         return PREFIX_PAYMENT_CONTRACT + contractId;

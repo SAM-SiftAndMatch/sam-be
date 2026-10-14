@@ -4,8 +4,11 @@ import com.sam.be.common.constant.enums.ContractStatus;
 import com.sam.be.common.constant.enums.PaymentStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
+import com.sam.be.common.response.PageRequests;
+import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
+import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
@@ -29,7 +32,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -61,6 +63,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final com.sam.be.modules.job.repository.JobRepository jobRepository;
 
     private final RedisCacheService redisCacheService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
@@ -303,7 +306,8 @@ public class PaymentServiceImpl implements PaymentService {
                 vnpayClient.buildPaymentUrl(txnRef, amountVnd, orderInfo, null, returnUrl);
 
         log.info("Created {} payment {} for contract {}", type, payment.getId(), contract.getId());
-        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+        cacheInvalidationService.paymentsChanged(
+                contract.getId(), contract.getFreelancer().getId());
         return toResponse(payment, vnpayUrl);
     }
 
@@ -369,7 +373,8 @@ public class PaymentServiceImpl implements PaymentService {
                 "PAYMENT_ESCROW_HELD",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
         log.info("Funding confirmed by FE for payment {}", payment.getId());
-        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+        cacheInvalidationService.paymentsChanged(
+                contract.getId(), contract.getFreelancer().getId());
 
         maybeStartProject(contract);
         return toResponse(payment, null);
@@ -421,7 +426,8 @@ public class PaymentServiceImpl implements PaymentService {
                     payment,
                     "PAYMENT_ESCROW_HELD",
                     "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
-            redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+            cacheInvalidationService.paymentsChanged(
+                    contract.getId(), contract.getFreelancer().getId());
             log.info("Escrow held for payment {}", payment.getId());
 
             // Đủ cả 2 khoản (client 100% + freelancer cọc 2%) thì cho dự án chạy
@@ -460,8 +466,9 @@ public class PaymentServiceImpl implements PaymentService {
         }
         job.setStatus(com.sam.be.common.constant.enums.JobStatus.IN_PROGRESS);
         jobRepository.save(job);
-        // Job đổi trạng thái: xóa cache chi tiết để list/detail hiện đúng
-        redisCacheService.delete(RedisKeys.jobDetail(job.getId()));
+        // Đồng bộ các cache liên quan sau khi giao dịch DB commit.
+        cacheInvalidationService.jobChanged(
+                job.getId(), contract.getClient().getId(), contract.getFreelancer().getId());
         pushPaymentEvent(
                 contract, null, "PROJECT_STARTED", "Đã nạp đủ tiền, dự án chính thức bắt đầu!");
         log.info("Project started for contract {}", contract.getId());
@@ -492,7 +499,8 @@ public class PaymentServiceImpl implements PaymentService {
                 payment,
                 "PAYMENT_RELEASED",
                 "Tiền ký quỹ (" + payment.getAmount() + " VND) đã được giải ngân.");
-        redisCacheService.delete(RedisKeys.contractPayments(contract.getId()));
+        cacheInvalidationService.paymentsChanged(
+                contract.getId(), contract.getFreelancer().getId());
         log.info("Escrow released for payment {}", payment.getId());
         return toResponse(payment, null);
     }
@@ -523,40 +531,63 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getByContractPage(
+            UUID userId, UUID contractId, int page, int size) {
+        Contract contract = contractService.getContractById(contractId);
+        boolean isClient =
+                contract.getClient() != null && contract.getClient().getId().equals(userId);
+        boolean isFreelancer =
+                contract.getFreelancer() != null && contract.getFreelancer().getId().equals(userId);
+        if (!isClient && !isFreelancer && !SecurityUtils.isAdmin()) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        var pageable =
+                PageRequests.of(
+                        page,
+                        size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Order.asc("installmentNo"),
+                                org.springframework.data.domain.Sort.Order.asc("id")));
+        java.util.function.Supplier<PageResponse<PaymentResponse>> source =
+                () ->
+                        PageResponse.from(
+                                paymentRepository
+                                        .findAllByContractId(contractId, pageable)
+                                        .map(payment -> toResponse(payment, null)));
+        if (page >= 2) return source.get();
+        return redisCacheService.getPageOrSet(
+                RedisKeys.page(RedisKeys.contractPayments(contractId), page, size),
+                Duration.ofMinutes(5),
+                PaymentResponse.class,
+                source);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public FreelancerEscrowSummaryResponse getFreelancerEscrowSummary(
             UUID requesterId, UUID freelancerId) {
         if (!requesterId.equals(freelancerId) && !SecurityUtils.isAdmin()) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
-        List<Payment> payments = paymentRepository.findAllByFreelancerId(freelancerId);
-        BigDecimal heldFunds =
-                sumPayments(
-                        payments,
+        return redisCacheService.getOrSet(
+                RedisKeys.freelancerEscrowSummary(freelancerId),
+                Duration.ofSeconds(30),
+                FreelancerEscrowSummaryResponse.class,
+                () -> loadFreelancerEscrowSummary(freelancerId));
+    }
+
+    private FreelancerEscrowSummaryResponse loadFreelancerEscrowSummary(UUID freelancerId) {
+        var totals =
+                paymentRepository.summarizeFreelancerEscrow(
+                        freelancerId,
                         com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND,
-                        PaymentStatus.HELD_IN_ESCROW);
-        BigDecimal releasedFunds =
-                sumPayments(
-                        payments,
-                        com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND,
-                        PaymentStatus.RELEASED);
-        BigDecimal lockedDeposit =
-                sumPayments(
-                        payments,
                         com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT,
-                        PaymentStatus.HELD_IN_ESCROW);
-        int fundedProjectCount =
-                payments.stream()
-                        .filter(
-                                payment ->
-                                        payment.getPaymentType()
-                                                        == com.sam.be.common.constant.enums
-                                                                .PaymentType.CONTRACT_FUND
-                                                && payment.getStatus()
-                                                        == PaymentStatus.HELD_IN_ESCROW)
-                        .map(payment -> payment.getContract().getId())
-                        .collect(Collectors.toSet())
-                        .size();
+                        PaymentStatus.HELD_IN_ESCROW,
+                        PaymentStatus.RELEASED);
+        BigDecimal heldFunds = zeroIfNull(totals != null ? totals.getHeldFunds() : null);
+        BigDecimal releasedFunds = zeroIfNull(totals != null ? totals.getReleasedFunds() : null);
+        BigDecimal lockedDeposit = zeroIfNull(totals != null ? totals.getLockedDeposit() : null);
 
         return FreelancerEscrowSummaryResponse.builder()
                 .freelancerId(freelancerId)
@@ -566,21 +597,15 @@ public class PaymentServiceImpl implements PaymentService {
                 .releasedToFreelancer(netPayout(releasedFunds))
                 .platformFeePending(
                         heldFunds.multiply(PLATFORM_FEE_RATE).setScale(2, RoundingMode.HALF_UP))
-                .fundedProjectCount(fundedProjectCount)
+                .fundedProjectCount(
+                        totals != null && totals.getFundedProjectCount() != null
+                                ? totals.getFundedProjectCount().intValue()
+                                : 0)
                 .build();
     }
 
-    private BigDecimal sumPayments(
-            List<Payment> payments,
-            com.sam.be.common.constant.enums.PaymentType type,
-            PaymentStatus status) {
-        return payments.stream()
-                .filter(
-                        payment ->
-                                payment.getPaymentType() == type && payment.getStatus() == status)
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
+    private BigDecimal zeroIfNull(BigDecimal value) {
+        return (value != null ? value : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal netPayout(BigDecimal grossAmount) {

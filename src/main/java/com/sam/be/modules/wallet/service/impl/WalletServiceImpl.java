@@ -15,6 +15,10 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,21 +47,38 @@ public class WalletServiceImpl implements WalletService {
                                 ledgerEntryRepository
                                         .findAllByWalletIdOrderByCreatedAtDesc(wallet.getId())
                                         .stream()
-                                        .map(
-                                                entry ->
-                                                        WalletLedgerEntryResponse.builder()
-                                                                .id(entry.getId())
-                                                                .contractId(
-                                                                        entry.getContract().getId())
-                                                                .entryType(entry.getEntryType())
-                                                                .amount(entry.getAmount())
-                                                                .balanceAfter(
-                                                                        entry.getBalanceAfter())
-                                                                .description(entry.getDescription())
-                                                                .createdAt(entry.getCreatedAt())
-                                                                .build())
+                                        .map(this::toLedgerResponse)
                                         .toList())
                 .orElse(List.of());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<WalletLedgerEntryResponse> getMyLedgerPage(UUID userId, int page, int size) {
+        var pageable =
+                PageRequest.of(
+                        page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+        return walletAccountRepository
+                .findByOwnerId(userId)
+                .map(
+                        wallet ->
+                                ledgerEntryRepository
+                                        .findAllByWalletId(wallet.getId(), pageable)
+                                        .map(this::toLedgerResponse))
+                .orElseGet(() -> new PageImpl<>(List.of(), pageable, 0));
+    }
+
+    private WalletLedgerEntryResponse toLedgerResponse(
+            com.sam.be.modules.wallet.entity.WalletLedgerEntry entry) {
+        return WalletLedgerEntryResponse.builder()
+                .id(entry.getId())
+                .contractId(entry.getContract().getId())
+                .entryType(entry.getEntryType())
+                .amount(entry.getAmount())
+                .balanceAfter(entry.getBalanceAfter())
+                .description(entry.getDescription())
+                .createdAt(entry.getCreatedAt())
+                .build();
     }
 
     WalletAccount getOrCreateFreelancerWallet(UUID userId) {

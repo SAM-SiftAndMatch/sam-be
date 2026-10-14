@@ -1,10 +1,15 @@
 package com.sam.be.modules.payment.repository;
 
+import com.sam.be.common.constant.enums.PaymentStatus;
 import com.sam.be.common.constant.enums.PaymentType;
 import com.sam.be.modules.payment.entity.Payment;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,16 +21,36 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     List<Payment> findAllByContractId(UUID contractId);
 
+    @EntityGraph(attributePaths = "contract")
+    Page<Payment> findAllByContractId(UUID contractId, Pageable pageable);
+
     List<Payment> findAllByContractIdAndPaymentType(UUID contractId, PaymentType paymentType);
 
     Optional<Payment> findByPaymentGatewayId(String paymentGatewayId);
 
+    interface EscrowTotals {
+        BigDecimal getHeldFunds();
+
+        BigDecimal getReleasedFunds();
+
+        BigDecimal getLockedDeposit();
+
+        Long getFundedProjectCount();
+    }
+
     @Query(
-            "SELECT p FROM Payment p "
-                    + "JOIN FETCH p.contract c "
-                    + "JOIN FETCH c.job "
-                    + "WHERE c.freelancer.id = :freelancerId")
-    List<Payment> findAllByFreelancerId(@Param("freelancerId") UUID freelancerId);
+            "SELECT "
+                    + "SUM(CASE WHEN p.paymentType = :fundType AND p.status = :held THEN p.amount ELSE 0 END) AS heldFunds, "
+                    + "SUM(CASE WHEN p.paymentType = :fundType AND p.status = :released THEN p.amount ELSE 0 END) AS releasedFunds, "
+                    + "SUM(CASE WHEN p.paymentType = :depositType AND p.status = :held THEN p.amount ELSE 0 END) AS lockedDeposit, "
+                    + "COUNT(DISTINCT CASE WHEN p.paymentType = :fundType AND p.status = :held THEN p.contract.id ELSE NULL END) AS fundedProjectCount "
+                    + "FROM Payment p WHERE p.contract.freelancer.id = :freelancerId")
+    EscrowTotals summarizeFreelancerEscrow(
+            @Param("freelancerId") UUID freelancerId,
+            @Param("fundType") PaymentType fundType,
+            @Param("depositType") PaymentType depositType,
+            @Param("held") PaymentStatus held,
+            @Param("released") PaymentStatus released);
 
     @org.springframework.data.jpa.repository.Lock(
             jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
