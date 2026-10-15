@@ -106,6 +106,11 @@ public final class RedisKeys {
         return "job:open";
     }
 
+    public static String openJobsPage(int page, int size, String sort) {
+        String key = page(openJobs(), page, size);
+        return "newest".equals(sort) ? key : key + ":sort:" + sort;
+    }
+
     public static String page(String baseKey, int page, int size) {
         return baseKey + ":page:" + page + ":" + size;
     }

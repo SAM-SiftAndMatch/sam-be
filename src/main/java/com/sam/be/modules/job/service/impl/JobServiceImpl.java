@@ -460,30 +460,32 @@ public class JobServiceImpl implements JobService {
     @Override
     @Transactional(readOnly = true)
     public JobResponse getJobById(UUID jobId) {
-        // Gating độc quyền 5 phút PHẢI chạy trước cache (cache dùng chung mọi user,
-        // không được để người ngoài top 5 đọc ké bản cache của người được mời)
-        Job gate =
-                jobRepository
-                        .findById(jobId)
-                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        assertVisible(gate);
-        return redisCacheService.getOrSet(
-                RedisKeys.jobDetail(jobId),
-                Duration.ofMinutes(30),
-                JobResponse.class,
-                () -> {
-                    Job job =
-                            jobRepository
-                                    .findByIdWithDetails(jobId)
-                                    .orElseThrow(
-                                            () -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-                    return mapToResponse(job);
-                });
+        JobResponse response =
+                redisCacheService.getOrSet(
+                        RedisKeys.jobDetail(jobId),
+                        Duration.ofMinutes(30),
+                        JobResponse.class,
+                        () -> {
+                            Job job =
+                                    jobRepository
+                                            .findByIdWithDetails(jobId)
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ApiException(
+                                                                    ErrorCode.RESOURCE_NOT_FOUND));
+                            JobResponse loaded = mapToResponse(job);
+                            // Không ghi cache chung nếu người gọi không được xem job tuyển gấp.
+                            assertVisible(loaded);
+                            return loaded;
+                        });
+        // Cache dùng chung mọi user: vẫn phải kiểm tra quyền trên mọi lần đọc.
+        assertVisible(response);
+        return response;
     }
 
     // Job gấp trong 5 phút đầu: ẩn cả xem trực tiếp — chỉ chủ job, admin và 5 người được
     // AI chọn mới xem được. Hết 5 phút hoặc job thường thì public.
-    private void assertVisible(Job job) {
+    private void assertVisible(JobResponse job) {
         if (!Boolean.TRUE.equals(job.getIsUrgentHiring())
                 || job.getStatus() != JobStatus.OPEN
                 || job.getCreatedAt() == null
@@ -499,7 +501,7 @@ public class JobServiceImpl implements JobService {
         if (caller == null) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
-        if (job.getClient() != null && caller.equals(job.getClient().getId())) {
+        if (caller.equals(job.getClientId())) {
             return;
         }
         boolean invited =
@@ -550,13 +552,20 @@ public class JobServiceImpl implements JobService {
                 RedisKeys.openJobs(),
                 Duration.ofSeconds(30),
                 JobResponse.class,
-                () ->
-                        jobRepository
-                                .findAllOpenJobsFiltered(
-                                        JobStatus.OPEN, LocalDateTime.now().minusMinutes(5))
-                                .stream()
-                                .map(this::mapToResponse)
-                                .toList());
+                () -> {
+                    List<UUID> ids =
+                            jobRepository.findAllOpenJobIdsFiltered(
+                                    JobStatus.OPEN, LocalDateTime.now().minusMinutes(5));
+                    if (ids.isEmpty()) return List.of();
+                    Map<UUID, Job> details =
+                            jobRepository.findPageDetails(ids).stream()
+                                    .collect(Collectors.toMap(Job::getId, job -> job));
+                    return ids.stream()
+                            .map(details::get)
+                            .filter(java.util.Objects::nonNull)
+                            .map(this::mapToResponse)
+                            .toList();
+                });
     }
 
     @Override
@@ -611,10 +620,10 @@ public class JobServiceImpl implements JobService {
                 && !negotiable
                 && minBudget == null
                 && maxBudget == null
-                && order.equals("newest")
-                && page < 2) {
+                && page < 2
+                && (order.equals("newest") || size <= 20)) {
             return redisCacheService.getPageOrSet(
-                    RedisKeys.page(RedisKeys.openJobs(), page, size),
+                    RedisKeys.openJobsPage(page, size, order),
                     Duration.ofSeconds(30),
                     JobResponse.class,
                     source);
@@ -789,18 +798,36 @@ public class JobServiceImpl implements JobService {
                     List<AiJobRecommendation> recommendations =
                             aiJobRecommendationRepository.findAllByJobIdOrderByMatchScoreDesc(
                                     jobId);
+                    if (recommendations.isEmpty()) {
+                        return List.of();
+                    }
+
+                    List<UUID> freelancerIds =
+                            recommendations.stream()
+                                    .map(rec -> rec.getFreelancer().getId())
+                                    .distinct()
+                                    .toList();
+                    Map<UUID, FreelancerProfile> profilesByUserId =
+                            freelancerProfileRepository.findAllByUserIdIn(freelancerIds).stream()
+                                    .collect(
+                                            Collectors.toMap(
+                                                    profile -> profile.getUser().getId(),
+                                                    profile -> profile));
+                    Map<UUID, List<FreelancerSkill>> skillsByFreelancerId =
+                            freelancerSkillRepository.findByFreelancerIdIn(freelancerIds).stream()
+                                    .collect(
+                                            Collectors.groupingBy(
+                                                    skill -> skill.getFreelancer().getId()));
 
                     return recommendations.stream()
                             .map(
                                     rec -> {
                                         User dev = rec.getFreelancer();
                                         FreelancerProfile profile =
-                                                freelancerProfileRepository
-                                                        .findByUserId(dev.getId())
-                                                        .orElse(null);
+                                                profilesByUserId.get(dev.getId());
                                         List<FreelancerSkill> fSkills =
-                                                freelancerSkillRepository.findByFreelancerIdIn(
-                                                        List.of(dev.getId()));
+                                                skillsByFreelancerId.getOrDefault(
+                                                        dev.getId(), List.of());
 
                                         List<SkillExperienceDto> skillDtos =
                                                 fSkills.stream()
