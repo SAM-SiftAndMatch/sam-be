@@ -57,6 +57,19 @@ public class ChatController {
                 .build();
     }
 
+    @GetMapping("/unread-count")
+    public ApiResponse<Long> getUnreadCount() {
+        return ApiResponse.<Long>builder()
+                .result(chatService.getUnreadMessageCount(SecurityUtils.getCurrentUserId()))
+                .build();
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/rooms/{roomId}/read")
+    public ApiResponse<Void> markRoomRead(@PathVariable UUID roomId) {
+        chatService.markRoomRead(roomId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.<Void>builder().build();
+    }
+
     // Chi tiết 1 phòng (để mở đúng tên job + đối phương)
     @GetMapping("/rooms/{roomId}")
     @Operation(summary = "Get chat room detail", description = "Room detail with job and members")

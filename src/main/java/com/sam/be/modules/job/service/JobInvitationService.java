@@ -83,7 +83,7 @@ public class JobInvitationService {
         syncLegacySent(invitation);
         if (source == JobInvitation.Source.DIRECT) {
             notifyAfterCommit(() -> notificationService.sendJobInvitationNotification(
-                    freelancerId, jobId, job.getTitle(), invitation.getId(), "JOB_INVITE",
+                    freelancerId, clientId, job.getClient().getFullName(), jobId, job.getTitle(), invitation.getId(), null, "JOB_INVITE",
                     "Bạn nhận được lời mời tham gia dự án."));
         }
         return toResponse(invitation);
@@ -102,7 +102,7 @@ public class JobInvitationService {
         syncLegacy(invitation, true);
         ChatRoom room = chatService.getOrCreateRoom(job, invitation.getFreelancer());
         notifyAfterCommit(() -> notificationService.sendJobInvitationNotification(
-                job.getClient().getId(), job.getId(), job.getTitle(), invitationId,
+                job.getClient().getId(), freelancerId, invitation.getFreelancer().getFullName(), job.getId(), job.getTitle(), invitationId, room.getId(),
                 "JOB_INVITE_ACCEPTED", "Freelancer đã đồng ý lời mời của bạn."));
         return toResponse(invitation, room.getId());
     }
@@ -130,7 +130,7 @@ public class JobInvitationService {
         invitation.setRespondedAt(LocalDateTime.now());
         syncLegacy(invitation, false);
         notifyAfterCommit(() -> notificationService.sendJobInvitationNotification(
-                job.getClient().getId(), job.getId(), job.getTitle(), invitationId,
+                job.getClient().getId(), freelancerId, invitation.getFreelancer().getFullName(), job.getId(), job.getTitle(), invitationId, null,
                 "JOB_INVITE_DECLINED", "Freelancer đã từ chối lời mời."));
         return toResponse(invitation);
     }
@@ -145,7 +145,7 @@ public class JobInvitationService {
         invitation.setRespondedAt(LocalDateTime.now());
         syncLegacy(invitation, false);
         notifyAfterCommit(() -> notificationService.sendJobInvitationNotification(
-                invitation.getFreelancer().getId(), job.getId(), job.getTitle(), invitationId,
+                invitation.getFreelancer().getId(), clientId, job.getClient().getFullName(), job.getId(), job.getTitle(), invitationId, null,
                 "JOB_INVITE_WITHDRAWN", "Khách hàng đã thu hồi lời mời."));
         return toResponse(invitation);
     }
@@ -161,9 +161,8 @@ public class JobInvitationService {
         if (contractRepository.findByJobId(jobId).isPresent()) {
             throw new ApiException(ErrorCode.DUPLICATE_RESOURCE, "Dự án đã có hợp đồng.");
         }
-        if (chatRoomRepository.findByJobIdAndFreelancerId(jobId, invitation.getFreelancer().getId()).isEmpty()) {
-            throw new ApiException(ErrorCode.REQUEST_FAILED, "Chưa có phòng chat cho ứng viên này.");
-        }
+        ChatRoom selectedRoom = chatRoomRepository.findByJobIdAndFreelancerId(jobId, invitation.getFreelancer().getId())
+                .orElseThrow(() -> new ApiException(ErrorCode.REQUEST_FAILED, "Chưa có phòng chat cho ứng viên này."));
         job.setSelectedFreelancer(invitation.getFreelancer());
         job.setStatus(JobStatus.NEGOTIATING);
         invitation.setStatus(JobInvitation.Status.SELECTED);
@@ -174,12 +173,12 @@ public class JobInvitationService {
                 syncLegacyClosed(other);
                 UUID otherFreelancerId = other.getFreelancer().getId();
                 notifyAfterCommit(() -> notificationService.sendJobInvitationNotification(
-                        otherFreelancerId, jobId, job.getTitle(), other.getId(),
+                        otherFreelancerId, clientId, job.getClient().getFullName(), jobId, job.getTitle(), other.getId(), null,
                         "JOB_INVITE_NOT_SELECTED", "Dự án đã chọn freelancer khác."));
             }
         }
         notifyAfterCommit(() -> notificationService.sendJobInvitationNotification(
-                invitation.getFreelancer().getId(), jobId, job.getTitle(), invitationId,
+                invitation.getFreelancer().getId(), clientId, job.getClient().getFullName(), jobId, job.getTitle(), invitationId, selectedRoom.getId(),
                 "JOB_INVITE_SELECTED", "Khách hàng đã chọn bạn để trao đổi hợp đồng."));
         cacheInvalidationService.jobChanged(jobId, clientId, invitation.getFreelancer().getId());
         return toResponse(invitation);

@@ -13,6 +13,7 @@ import com.sam.be.modules.chat.entity.ChatRoom;
 import com.sam.be.modules.chat.repository.ChatMessageRepository;
 import com.sam.be.modules.chat.repository.ChatRoomRepository;
 import com.sam.be.modules.chat.service.ChatService;
+import com.sam.be.modules.notification.service.UserNotificationService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.UserRepository;
@@ -35,6 +36,7 @@ public class ChatServiceImpl implements ChatService {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
+    private final UserNotificationService userNotificationService;
     private final com.sam.be.modules.contract.repository.ContractRepository contractRepository;
 
     @Override
@@ -51,6 +53,8 @@ public class ChatServiceImpl implements ChatService {
                                             .job(job)
                                             .client(job.getClient())
                                             .freelancer(freelancer)
+                                            .clientLastReadAt(LocalDateTime.now())
+                                            .freelancerLastReadAt(LocalDateTime.now())
                                             .build();
                             return chatRoomRepository.save(newRoom);
                         });
@@ -160,7 +164,29 @@ public class ChatServiceImpl implements ChatService {
         room.setUpdatedAt(LocalDateTime.now());
         chatRoomRepository.save(room);
 
+        UUID recipientId = room.getClient().getId().equals(sender.getId())
+                ? room.getFreelancer().getId() : room.getClient().getId();
+        userNotificationService.upsertChatMessage(recipientId, sender.getId(), sender.getFullName(),
+                room.getId(), room.getJob().getId(), room.getJob().getTitle());
+
         return toDto(room.getId(), savedMsg);
+    }
+
+    @Override
+    @Transactional
+    public void markRoomRead(UUID roomId, UUID userId) {
+        ChatRoom room = requireMemberRoom(roomId, userId);
+        LocalDateTime readAt = LocalDateTime.now();
+        if (room.getClient().getId().equals(userId)) room.setClientLastReadAt(readAt);
+        else room.setFreelancerLastReadAt(readAt);
+        chatRoomRepository.save(room);
+        userNotificationService.markRoomMessagesRead(userId, roomId, readAt);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long getUnreadMessageCount(UUID userId) {
+        return chatMessageRepository.countUnreadMessagesForUser(userId);
     }
 
     @Override

@@ -401,6 +401,8 @@ public class JobServiceImpl implements JobService {
                         try {
                             notificationService.sendInviteNotification(
                                     rec.getFreelancer().getId(),
+                                    job.getClient().getId(),
+                                    job.getClient().getFullName(),
                                     job.getId(),
                                     job.getTitle(),
                                     rec.getMatchScore(),
@@ -895,6 +897,8 @@ public class JobServiceImpl implements JobService {
 
         notificationService.sendInviteNotification(
                 recommendation.getFreelancer().getId(),
+                job.getClient().getId(),
+                job.getClient().getFullName(),
                 job.getId(),
                 job.getTitle(),
                 recommendation.getMatchScore(),
@@ -1005,6 +1009,7 @@ public class JobServiceImpl implements JobService {
                             : "Freelancer";
             notificationService.sendDevClaimNotification(
                     recommendation.getJob().getClient().getId(),
+                    freelancerId,
                     recommendation.getJob().getId(),
                     recommendation.getJob().getTitle(),
                     recommendation.getId(),

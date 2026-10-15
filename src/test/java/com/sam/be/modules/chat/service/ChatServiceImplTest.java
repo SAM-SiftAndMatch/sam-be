@@ -21,6 +21,7 @@ import com.sam.be.modules.chat.service.impl.ChatServiceImpl;
 import com.sam.be.modules.contract.entity.Contract;
 import com.sam.be.modules.contract.repository.ContractRepository;
 import com.sam.be.modules.job.entity.Job;
+import com.sam.be.modules.notification.service.UserNotificationService;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -72,6 +73,7 @@ class ChatServiceImplTest {
                         rooms,
                         messages,
                         mock(UserRepository.class),
+                        mock(UserNotificationService.class),
                         mock(ContractRepository.class));
 
         var result = service.getMessagePage(room.getId(), userId, null, 2);
@@ -105,6 +107,7 @@ class ChatServiceImplTest {
                         rooms,
                         messages,
                         mock(UserRepository.class),
+                        mock(UserNotificationService.class),
                         mock(ContractRepository.class));
 
         var result = service.getMessagePage(room.getId(), userId, beforeAt + "|" + beforeId, 10);
@@ -130,6 +133,7 @@ class ChatServiceImplTest {
                         rooms,
                         messages,
                         mock(UserRepository.class),
+                        mock(UserNotificationService.class),
                         mock(ContractRepository.class));
 
         assertThrows(
@@ -166,7 +170,7 @@ class ChatServiceImplTest {
         when(messages.findLatestForRooms(List.of(room.getId()))).thenReturn(List.of(last));
         when(contracts.findAllByJobIdIn(List.of(job.getId()))).thenReturn(List.of(contract));
 
-        var service = new ChatServiceImpl(rooms, messages, mock(UserRepository.class), contracts);
+        var service = new ChatServiceImpl(rooms, messages, mock(UserRepository.class), mock(UserNotificationService.class), contracts);
         var result = service.getMyRooms(userId);
 
         assertEquals("Last message", result.getFirst().getLastMessage());
@@ -191,7 +195,7 @@ class ChatServiceImplTest {
         when(messages.findLatestForRooms(List.of(otherRoom.getId()))).thenReturn(List.of());
         when(contracts.findAllByJobIdIn(List.of(job.getId()))).thenReturn(List.of(contract));
 
-        var service = new ChatServiceImpl(rooms, messages, mock(UserRepository.class), contracts);
+        var service = new ChatServiceImpl(rooms, messages, mock(UserRepository.class), mock(UserNotificationService.class), contracts);
         var result = service.getMyRooms(client.getId());
 
         assertNull(result.getFirst().getContractStatus());

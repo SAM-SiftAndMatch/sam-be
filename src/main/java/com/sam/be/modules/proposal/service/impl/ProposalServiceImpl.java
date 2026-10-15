@@ -94,6 +94,8 @@ public class ProposalServiceImpl implements ProposalService {
 
         notificationService.sendProposalNotification(
                 job.getClient().getId(),
+                freelancerId,
+                freelancer.getFullName(),
                 job.getId(),
                 job.getTitle(),
                 saved.getId(),
@@ -236,6 +238,8 @@ public class ProposalServiceImpl implements ProposalService {
 
         notificationService.sendProposalNotification(
                 proposal.getFreelancer().getId(),
+                clientId,
+                proposal.getJob().getClient().getFullName(),
                 proposal.getJob().getId(),
                 proposal.getJob().getTitle(),
                 proposal.getId(),
@@ -266,6 +270,8 @@ public class ProposalServiceImpl implements ProposalService {
 
         notificationService.sendProposalNotification(
                 proposal.getJob().getClient().getId(),
+                freelancerId,
+                proposal.getFreelancer().getFullName(),
                 proposal.getJob().getId(),
                 proposal.getJob().getTitle(),
                 proposal.getId(),
@@ -310,6 +316,8 @@ public class ProposalServiceImpl implements ProposalService {
                 isClient ? proposal.getFreelancer().getId() : proposal.getJob().getClient().getId();
         notificationService.sendProposalNotification(
                 otherSide,
+                userId,
+                isClient ? proposal.getJob().getClient().getFullName() : proposal.getFreelancer().getFullName(),
                 proposal.getJob().getId(),
                 proposal.getJob().getTitle(),
                 proposal.getId(),
