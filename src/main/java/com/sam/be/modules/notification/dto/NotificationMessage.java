@@ -25,4 +25,5 @@ public class NotificationMessage {
     private String actorName;
     // Luồng proposal phổ thông: FE bấm vào mở đúng hồ sơ
     private UUID proposalId;
+    private UUID invitationId;
 }

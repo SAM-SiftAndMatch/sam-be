@@ -1,6 +1,7 @@
 package com.sam.be.modules.chat.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.sam.be.common.constant.enums.ContractStatus;
+import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.modules.chat.entity.ChatMessage;
 import com.sam.be.modules.chat.entity.ChatRoom;
@@ -159,7 +161,7 @@ class ChatServiceImplTest {
                         .content("Last message")
                         .createdAt(LocalDateTime.now())
                         .build();
-        Contract contract = Contract.builder().job(job).status(ContractStatus.ACTIVE).build();
+        Contract contract = Contract.builder().job(job).freelancer(freelancer).status(ContractStatus.ACTIVE).build();
         when(rooms.findAllByMemberId(userId)).thenReturn(List.of(room));
         when(messages.findLatestForRooms(List.of(room.getId()))).thenReturn(List.of(last));
         when(contracts.findAllByJobIdIn(List.of(job.getId()))).thenReturn(List.of(contract));
@@ -172,5 +174,26 @@ class ChatServiceImplTest {
         verify(messages).findLatestForRooms(List.of(room.getId()));
         verify(contracts).findAllByJobIdIn(List.of(job.getId()));
         verifyNoMoreInteractions(messages, contracts);
+    }
+
+    @Test
+    void contractStatusIsHiddenInOtherFreelancerRoom() {
+        ChatRoomRepository rooms = mock(ChatRoomRepository.class);
+        ChatMessageRepository messages = mock(ChatMessageRepository.class);
+        ContractRepository contracts = mock(ContractRepository.class);
+        User client = User.builder().id(UUID.randomUUID()).fullName("Client").build();
+        User selected = User.builder().id(UUID.randomUUID()).build();
+        User other = User.builder().id(UUID.randomUUID()).fullName("Other").build();
+        Job job = Job.builder().id(UUID.randomUUID()).title("Job").status(JobStatus.OPEN).build();
+        ChatRoom otherRoom = ChatRoom.builder().id(UUID.randomUUID()).job(job).client(client).freelancer(other).build();
+        Contract contract = Contract.builder().job(job).freelancer(selected).status(ContractStatus.ACTIVE).build();
+        when(rooms.findAllByMemberId(client.getId())).thenReturn(List.of(otherRoom));
+        when(messages.findLatestForRooms(List.of(otherRoom.getId()))).thenReturn(List.of());
+        when(contracts.findAllByJobIdIn(List.of(job.getId()))).thenReturn(List.of(contract));
+
+        var service = new ChatServiceImpl(rooms, messages, mock(UserRepository.class), contracts);
+        var result = service.getMyRooms(client.getId());
+
+        assertNull(result.getFirst().getContractStatus());
     }
 }

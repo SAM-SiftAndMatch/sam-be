@@ -17,13 +17,17 @@ import org.springframework.stereotype.Repository;
 public interface ChatRoomRepository extends JpaRepository<ChatRoom, UUID> {
     Optional<ChatRoom> findByJobIdAndFreelancerId(UUID jobId, UUID freelancerId);
 
+    @Query("SELECT r FROM ChatRoom r WHERE r.job.id IN :jobIds AND r.freelancer.id IN :freelancerIds")
+    List<ChatRoom> findInvitationRooms(@Param("jobIds") List<UUID> jobIds,
+            @Param("freelancerIds") List<UUID> freelancerIds);
+
     @Query(
             "SELECT new com.sam.be.modules.chat.dto.WorkspaceSummaryDto("
-                    + "r.id, j.id, j.title, j.status, client.id, client.fullName, "
+                    + "r.id, j.id, j.title, j.status, j.selectedFreelancer.id, client.id, client.fullName, "
                     + "freelancer.id, freelancer.fullName, contract.id, contract.status, "
                     + "contract.agreedAmount, contract.reviewStatus) "
                     + "FROM ChatRoom r JOIN r.job j JOIN r.client client "
-                    + "JOIN r.freelancer freelancer LEFT JOIN Contract contract ON contract.job = j "
+                    + "JOIN r.freelancer freelancer LEFT JOIN Contract contract ON contract.job = j AND contract.freelancer = freelancer "
                     + "WHERE r.id = :roomId AND (client.id = :userId OR freelancer.id = :userId)")
     Optional<WorkspaceSummaryDto> findWorkspaceSummary(
             @Param("roomId") UUID roomId, @Param("userId") UUID userId);
@@ -49,6 +53,6 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, UUID> {
     @EntityGraph(attributePaths = {"job", "client", "freelancer"})
     @Query(
             "SELECT r FROM ChatRoom r WHERE r.job.id = :jobId AND (r.client.id = :userId OR r.freelancer.id = :userId)")
-    Optional<ChatRoom> findByJobIdAndMemberId(
+    List<ChatRoom> findByJobIdAndMemberId(
             @Param("jobId") UUID jobId, @Param("userId") UUID userId);
 }

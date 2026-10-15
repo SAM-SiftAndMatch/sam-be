@@ -26,6 +26,7 @@ class WorkspaceSummaryServiceTest {
                         UUID.randomUUID(),
                         "Job",
                         null,
+                        null,
                         userId,
                         "Client",
                         null,

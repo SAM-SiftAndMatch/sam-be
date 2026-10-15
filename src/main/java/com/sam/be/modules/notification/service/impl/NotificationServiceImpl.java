@@ -19,6 +19,15 @@ public class NotificationServiceImpl implements NotificationService {
     private final SimpMessagingTemplate messagingTemplate;
 
     @Override
+    public void sendJobInvitationNotification(UUID userId, UUID jobId, String jobTitle,
+            UUID invitationId, String type, String message) {
+        NotificationMessage payload = NotificationMessage.builder()
+                .type(type).jobId(jobId).jobTitle(jobTitle).invitationId(invitationId)
+                .message(message).timestamp(LocalDateTime.now()).build();
+        messagingTemplate.convertAndSend("/topic/users/" + userId + "/notifications", payload);
+    }
+
+    @Override
     public void sendInviteNotification(
             UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore) {
         sendInviteNotification(freelancerId, jobId, jobTitle, matchScore, null);

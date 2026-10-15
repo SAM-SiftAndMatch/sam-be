@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 public interface NotificationService {
+    void sendJobInvitationNotification(UUID userId, UUID jobId, String jobTitle,
+            UUID invitationId, String type, String message);
     void sendInviteNotification(
             UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore);
 

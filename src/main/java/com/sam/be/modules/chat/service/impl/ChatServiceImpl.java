@@ -143,6 +143,10 @@ public class ChatServiceImpl implements ChatService {
                 && !room.getFreelancer().getId().equals(sender.getId())) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
+        if (room.getJob().getSelectedFreelancer() != null
+                && !room.getJob().getSelectedFreelancer().getId().equals(room.getFreelancer().getId())) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
 
         // Lưu DB
         ChatMessage savedMsg =
@@ -230,19 +234,19 @@ public class ChatServiceImpl implements ChatService {
                                                 left.getId().compareTo(right.getId()) >= 0
                                                         ? left
                                                         : right));
-        Map<UUID, com.sam.be.common.constant.enums.ContractStatus> statusByJob =
+        Map<UUID, com.sam.be.modules.contract.entity.Contract> contractByJob =
                 contractRepository.findAllByJobIdIn(jobIds).stream()
                         .collect(
                                 Collectors.toMap(
                                         contract -> contract.getJob().getId(),
-                                        com.sam.be.modules.contract.entity.Contract::getStatus));
+                                        Function.identity()));
         return rooms.stream()
                 .map(
                         room ->
                                 toRoomDto(
                                         room,
                                         latestByRoom.get(room.getId()),
-                                        statusByJob.get(room.getJob().getId())))
+                                        contractStatusForRoom(room, contractByJob.get(room.getJob().getId()))))
                 .toList();
     }
 
@@ -260,10 +264,12 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public ChatRoomDto getRoomByJob(UUID jobId, UUID userId) {
-        ChatRoom room =
-                chatRoomRepository
-                        .findByJobIdAndMemberId(jobId, userId)
-                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        List<ChatRoom> rooms = chatRoomRepository.findByJobIdAndMemberId(jobId, userId);
+        if (rooms.isEmpty()) throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND);
+        if (rooms.size() > 1) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án có nhiều phòng chat; hãy mở bằng roomId.");
+        }
+        ChatRoom room = rooms.getFirst();
         return toRoomDto(room, userId);
     }
 
@@ -274,9 +280,14 @@ public class ChatServiceImpl implements ChatService {
                 contractRepository
                         .findById(contractId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!contract.getClient().getId().equals(userId)
+                && !contract.getFreelancer().getId().equals(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
         ChatRoom room =
                 chatRoomRepository
-                        .findByJobIdAndMemberId(contract.getJob().getId(), userId)
+                        .findByJobIdAndFreelancerId(
+                                contract.getJob().getId(), contract.getFreelancer().getId())
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         return toRoomDto(room, userId);
     }
@@ -296,9 +307,16 @@ public class ChatServiceImpl implements ChatService {
         var contractStatus =
                 contractRepository
                         .findByJobId(room.getJob().getId())
-                        .map(com.sam.be.modules.contract.entity.Contract::getStatus)
+                        .map(contract -> contractStatusForRoom(room, contract))
                         .orElse(null);
         return toRoomDto(room, last, contractStatus);
+    }
+
+    private com.sam.be.common.constant.enums.ContractStatus contractStatusForRoom(
+            ChatRoom room, com.sam.be.modules.contract.entity.Contract contract) {
+        return contract != null && contract.getFreelancer().getId().equals(room.getFreelancer().getId())
+                ? contract.getStatus()
+                : null;
     }
 
     private ChatRoomDto toRoomDto(

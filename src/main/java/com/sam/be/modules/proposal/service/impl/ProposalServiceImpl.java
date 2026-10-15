@@ -9,11 +9,11 @@ import com.sam.be.common.response.PageResponse;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
-import com.sam.be.modules.chat.entity.ChatRoom;
-import com.sam.be.modules.chat.service.ChatService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.job.repository.AiJobRecommendationRepository;
 import com.sam.be.modules.job.repository.JobRepository;
+import com.sam.be.modules.job.entity.JobInvitation;
+import com.sam.be.modules.job.service.JobInvitationService;
 import com.sam.be.modules.notification.service.NotificationService;
 import com.sam.be.modules.proposal.dto.request.ProposalCreateRequest;
 import com.sam.be.modules.proposal.dto.response.AcceptProposalResponse;
@@ -45,7 +45,7 @@ public class ProposalServiceImpl implements ProposalService {
     private final UserRepository userRepository;
     private final FreelancerProfileRepository freelancerProfileRepository;
     private final AiJobRecommendationRepository aiJobRecommendationRepository;
-    private final ChatService chatService;
+    private final JobInvitationService invitationService;
     private final NotificationService notificationService;
     private final RedisCacheService redisCacheService;
     private final CacheInvalidationService cacheInvalidationService;
@@ -55,7 +55,7 @@ public class ProposalServiceImpl implements ProposalService {
     public ProposalResponse submitProposal(UUID freelancerId, ProposalCreateRequest request) {
         Job job =
                 jobRepository
-                        .findById(request.getJobId())
+                        .findByIdForWorkflowUpdate(request.getJobId())
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         // Chỉ nộp khi job còn mở — IN_PROGRESS/CANCELLED... là đã đóng tuyển
@@ -227,6 +227,8 @@ public class ProposalServiceImpl implements ProposalService {
         if (proposal.getStatus() != ProposalStatus.PENDING) {
             throw new ApiException(ErrorCode.REQUEST_FAILED, "Chỉ mời được hồ sơ đang chờ duyệt.");
         }
+        invitationService.invite(clientId, proposal.getJob().getId(),
+                proposal.getFreelancer().getId(), null, JobInvitation.Source.PROPOSAL, proposalId);
         proposal.setStatus(ProposalStatus.INVITED);
         proposalRepository.save(proposal);
         cacheInvalidationService.proposalChanged(
@@ -255,12 +257,12 @@ public class ProposalServiceImpl implements ProposalService {
         if (proposal.getStatus() != ProposalStatus.INVITED) {
             throw new ApiException(ErrorCode.REQUEST_FAILED, "Hồ sơ không ở trạng thái được mời.");
         }
+        var invitation = invitationService.accept(freelancerId,
+                invitationService.findId(proposal.getJob().getId(), freelancerId));
         proposal.setStatus(ProposalStatus.ACCEPTED);
         proposalRepository.save(proposal);
         cacheInvalidationService.proposalChanged(
                 proposal.getJob().getId(), proposal.getFreelancer().getId());
-
-        ChatRoom room = chatService.getOrCreateRoom(proposal.getJob(), proposal.getFreelancer());
 
         notificationService.sendProposalNotification(
                 proposal.getJob().getClient().getId(),
@@ -270,7 +272,7 @@ public class ProposalServiceImpl implements ProposalService {
                 "PROPOSAL_ACCEPTED",
                 proposal.getFreelancer().getFullName() + " đã đồng ý hợp tác, vào chat ngay!");
 
-        return AcceptProposalResponse.builder().roomId(room.getId()).build();
+        return AcceptProposalResponse.builder().roomId(invitation.roomId()).build();
     }
 
     @Override
@@ -293,6 +295,8 @@ public class ProposalServiceImpl implements ProposalService {
         if (isClient && proposal.getStatus() == ProposalStatus.PENDING) {
             proposal.setStatus(ProposalStatus.REJECTED);
         } else if (isFreelancer && proposal.getStatus() == ProposalStatus.INVITED) {
+            invitationService.decline(userId,
+                    invitationService.findId(proposal.getJob().getId(), userId));
             proposal.setStatus(ProposalStatus.REJECTED);
         } else {
             throw new ApiException(

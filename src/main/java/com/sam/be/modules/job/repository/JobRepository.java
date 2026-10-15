@@ -44,7 +44,9 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
             @Param("status") JobStatus status,
             @Param("fiveMinsAgo") java.time.LocalDateTime fiveMinsAgo);
 
-    List<Job> findByStatusAndDeadlineBefore(JobStatus status, java.time.LocalDateTime deadline);
+    @Query("SELECT j.id FROM Job j WHERE j.status = :status AND j.deadline < :deadline ORDER BY j.id")
+    List<UUID> findIdsByStatusAndDeadlineBefore(@Param("status") JobStatus status,
+            @Param("deadline") java.time.LocalDateTime deadline);
 
     @Query(
             "SELECT DISTINCT j FROM Contract c JOIN c.job j "

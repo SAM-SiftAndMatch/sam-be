@@ -10,6 +10,7 @@ public record WorkspaceSummaryDto(
         UUID jobId,
         String jobTitle,
         JobStatus jobStatus,
+        UUID selectedFreelancerId,
         UUID clientId,
         String clientName,
         UUID freelancerId,
