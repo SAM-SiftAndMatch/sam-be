@@ -9,6 +9,10 @@ import lombok.Data;
 @Data
 @Builder
 public class NotificationMessage {
+    private UUID id;
+    private UUID recipientUserId;
+    private UUID actorUserId;
+    private String actorName;
     private String type; // Loại thông báo (VD: 1_TOUCH_INVITE, PAYMENT_ESCROW_HELD)
     private UUID jobId;
     private String jobTitle;
@@ -22,7 +26,9 @@ public class NotificationMessage {
     // 1-touch flow: để FE bấm vào là nhảy đúng job + đúng recommendation
     private UUID recommendationId;
     private UUID roomId;
-    private String actorName;
     // Luồng proposal phổ thông: FE bấm vào mở đúng hồ sơ
     private UUID proposalId;
+    private UUID invitationId;
+    private LocalDateTime readAt;
+    private Integer unreadCount;
 }

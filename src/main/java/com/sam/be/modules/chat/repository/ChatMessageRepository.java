@@ -14,6 +14,16 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> {
+    @Query(value = "SELECT COUNT(*) FROM ("
+            + "SELECT m.id FROM chat_rooms r JOIN chat_messages m ON m.room_id = r.id "
+            + "WHERE r.client_id = :userId AND m.sender_id IS NOT NULL AND m.sender_id <> :userId "
+            + "AND COALESCE(m.is_system, FALSE) = FALSE AND m.created_at > r.client_last_read_at "
+            + "UNION ALL SELECT m.id FROM chat_rooms r JOIN chat_messages m ON m.room_id = r.id "
+            + "WHERE r.freelancer_id = :userId AND m.sender_id IS NOT NULL AND m.sender_id <> :userId "
+            + "AND COALESCE(m.is_system, FALSE) = FALSE AND m.created_at > r.freelancer_last_read_at"
+            + ") unread_messages", nativeQuery = true)
+    long countUnreadMessagesForUser(@Param("userId") UUID userId);
+
     // Lấy tin nhắn theo phòng, sắp xếp cũ nhất lên trước (như Messenger)
     @EntityGraph(attributePaths = "sender")
     List<ChatMessage> findByRoomIdOrderByCreatedAtAsc(UUID roomId);

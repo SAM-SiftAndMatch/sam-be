@@ -21,6 +21,7 @@ public class JobScheduler {
 
     private final JobRepository jobRepository;
     private final CacheInvalidationService cacheInvalidationService;
+    private final JobInvitationService invitationService;
 
     /**
      * Chạy mỗi phút (60,000ms) để kiểm tra các Job đã quá hạn chót (deadline < now) mà vẫn đang ở
@@ -30,16 +31,30 @@ public class JobScheduler {
     @Transactional
     public void cancelExpiredJobs() {
         LocalDateTime now = LocalDateTime.now();
-        List<Job> expiredJobs = jobRepository.findByStatusAndDeadlineBefore(JobStatus.OPEN, now);
+        List<java.util.UUID> expiredJobs = jobRepository.findIdsByStatusAndDeadlineBefore(JobStatus.OPEN, now);
 
         if (!expiredJobs.isEmpty()) {
             log.info("Found {} expired jobs. Cancelling...", expiredJobs.size());
-            expiredJobs.forEach(job -> job.setStatus(JobStatus.CANCELLED));
-            jobRepository.saveAll(expiredJobs);
+            List<Job> cancelled = expiredJobs.stream()
+                    .map(id -> jobRepository.findByIdForWorkflowUpdate(id).orElse(null))
+                    .filter(job -> job != null && job.getStatus() == JobStatus.OPEN
+                            && job.getDeadline() != null && job.getDeadline().isBefore(now))
+                    .toList();
+            cancelled.forEach(job -> {
+                job.setStatus(JobStatus.CANCELLED);
+                invitationService.closeForJob(job.getId());
+            });
+            jobRepository.saveAll(cancelled);
             cacheInvalidationService.jobsChanged(
-                    expiredJobs.stream().map(Job::getId).toList(),
-                    expiredJobs.stream().map(job -> job.getClient().getId()).toList());
-            log.info("Successfully cancelled {} expired jobs.", expiredJobs.size());
+                    cancelled.stream().map(Job::getId).toList(),
+                    cancelled.stream().map(job -> job.getClient().getId()).toList());
+            log.info("Successfully cancelled {} expired jobs.", cancelled.size());
         }
+    }
+
+    @Scheduled(fixedRate = 60000)
+    @Transactional
+    public void expireInvitations() {
+        invitationService.expirePending();
     }
 }

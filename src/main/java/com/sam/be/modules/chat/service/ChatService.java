@@ -23,6 +23,10 @@ public interface ChatService {
 
     ChatMessageDto saveAndBroadcastMessage(UUID roomId, SendMessagePayload payload);
 
+    void markRoomRead(UUID roomId, UUID userId);
+
+    long getUnreadMessageCount(UUID userId);
+
     // Tin hệ thống/AI: không gắn user gửi, FE render bubble riêng (icon + màu khác)
     ChatMessageDto saveSystemMessage(UUID roomId, String content);
 

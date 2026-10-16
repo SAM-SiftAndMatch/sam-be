@@ -27,6 +27,10 @@ public class Job extends AbstractAuditEntity {
     @JoinColumn(name = "client_id", nullable = false)
     private User client;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "selected_freelancer_id")
+    private User selectedFreelancer;
+
     @Column(nullable = false)
     private String title;
 
