@@ -128,10 +128,8 @@ public class JobServiceImpl implements JobService {
                                 request.getIsUrgentHiring() != null
                                         ? request.getIsUrgentHiring()
                                         : false)
-                        .requiresAiQa(
-                                request.getRequiresAiQa() != null
-                                        ? request.getRequiresAiQa()
-                                        : false)
+                        // Paid QA is paused. Manual QA checklists remain available for every delivery.
+                        .requiresAiQa(false)
                         .status(JobStatus.OPEN)
                         .build();
 
