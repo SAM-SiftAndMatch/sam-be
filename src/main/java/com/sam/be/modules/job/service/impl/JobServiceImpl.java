@@ -81,6 +81,11 @@ public class JobServiceImpl implements JobService {
     @Override
     @Transactional
     public JobResponse createJob(UUID clientId, JobCreateRequest request) {
+        if (request.getClientRequestId() != null) {
+            var existing = jobRepository.findByClientIdAndClientRequestId(
+                    clientId, request.getClientRequestId());
+            if (existing.isPresent()) return mapToResponse(existing.get());
+        }
         User client =
                 userRepository
                         .findById(clientId)
@@ -122,12 +127,10 @@ public class JobServiceImpl implements JobService {
                                 request.getDeadline() != null
                                         ? request.getDeadline()
                                         : java.time.LocalDateTime.now().plusDays(30))
-                        .isFeatured(
-                                request.getIsFeatured() != null ? request.getIsFeatured() : false)
-                        .isUrgentHiring(
-                                request.getIsUrgentHiring() != null
-                                        ? request.getIsUrgentHiring()
-                                        : false)
+                        // Add-ons are selected separately and only activated after verified payment.
+                        .isFeatured(false)
+                        .isUrgentHiring(false)
+                        .clientRequestId(request.getClientRequestId())
                         // Paid QA is paused. Manual QA checklists remain available for every delivery.
                         .requiresAiQa(false)
                         .status(JobStatus.OPEN)
@@ -166,10 +169,6 @@ public class JobServiceImpl implements JobService {
         // lần duy nhất
         savedJob.setJobSkills(jobSkills);
         jobRepository.save(savedJob);
-
-        if (savedJob.getIsUrgentHiring()) {
-            processUrgentHiring(savedJob, srsContent, extractedSkills);
-        }
 
         JobResponse response = mapToResponse(savedJob);
         cacheInvalidationService.jobChanged(savedJob.getId(), clientId, null);
@@ -435,6 +434,33 @@ public class JobServiceImpl implements JobService {
             }
         }
         return score;
+    }
+
+    @Override
+    @Transactional
+    public void activateAddons(UUID jobId, boolean featured, boolean urgent) {
+        Job job = jobRepository.findByIdForWorkflowUpdate(jobId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (job.getStatus() != JobStatus.OPEN ||
+                (job.getDeadline() != null && !job.getDeadline().isAfter(LocalDateTime.now()))) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án đã ngừng nhận ứng tuyển");
+        }
+        boolean newlyUrgent = urgent && !Boolean.TRUE.equals(job.getIsUrgentHiring());
+        if (featured) job.setIsFeatured(true);
+        if (urgent) job.setIsUrgentHiring(true);
+        jobRepository.save(job);
+        cacheInvalidationService.jobChanged(jobId, job.getClient().getId(), null);
+        if (newlyUrgent) {
+            Job detailed = jobRepository.findByIdWithDetails(jobId).orElseThrow();
+            List<AiExtractedSkill> skills = detailed.getJobSkills().stream().map(js -> {
+                AiExtractedSkill skill = new AiExtractedSkill();
+                skill.setSkillId(js.getSkill().getId());
+                skill.setYearsOfExperience(js.getRequiredYearsOfExperience());
+                return skill;
+            }).toList();
+            processUrgentHiring(detailed, detailed.getSrsContent(), skills);
+            cacheInvalidationService.recommendationChanged(jobId);
+        }
     }
 
     @Override

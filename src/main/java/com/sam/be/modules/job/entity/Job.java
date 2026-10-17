@@ -53,6 +53,9 @@ public class Job extends AbstractAuditEntity {
 
     private LocalDateTime deadline;
 
+    @Column(name = "client_request_id")
+    private java.util.UUID clientRequestId;
+
     @Column(name = "srs_document_url", length = 500)
     private String srsDocumentUrl;
 

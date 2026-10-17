@@ -39,4 +39,11 @@ public interface UserNotificationRepository extends JpaRepository<UserNotificati
     @Query("UPDATE UserNotification n SET n.readAt = :readAt WHERE n.recipientUserId = :userId AND n.roomId = :roomId AND n.type = 'CHAT_MESSAGE' AND n.readAt IS NULL")
     int markRoomMessagesRead(@Param("userId") UUID userId, @Param("roomId") UUID roomId,
             @Param("readAt") LocalDateTime readAt);
+
+    @Modifying
+    @Query("UPDATE UserNotification n SET n.resolvedAt = :now, n.readAt = COALESCE(n.readAt, :now) "
+            + "WHERE n.recipientUserId = :userId AND n.jobId = :jobId "
+            + "AND n.type = 'PROJECT_ADDON_PAYMENT_PENDING' AND n.resolvedAt IS NULL")
+    int resolveJobAddonReminder(@Param("userId") UUID userId, @Param("jobId") UUID jobId,
+            @Param("now") LocalDateTime now);
 }

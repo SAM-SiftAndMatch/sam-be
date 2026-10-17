@@ -9,6 +9,7 @@ import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
 import com.sam.be.modules.job.service.JobService;
+import com.sam.be.modules.job.service.JobPublishingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 public class JobController {
 
     private final JobService jobService;
+    private final JobPublishingService jobPublishingService;
 
     @PostMapping
     @PreAuthorize("hasRole('CLIENT')")
@@ -33,7 +35,7 @@ public class JobController {
             summary = "Create a new job",
             description = "Client creates a new job post after SRS is generated")
     public ApiResponse<JobResponse> createJob(@Valid @RequestBody JobCreateRequest request) {
-        JobResponse response = jobService.createJob(SecurityUtils.getCurrentUserId(), request);
+        JobResponse response = jobPublishingService.create(SecurityUtils.getCurrentUserId(), request);
         return ApiResponse.<JobResponse>builder().result(response).build();
     }
 

@@ -17,6 +17,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
 
+    Optional<Job> findByClientIdAndClientRequestId(UUID clientId, UUID clientRequestId);
+
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT j FROM Job j WHERE j.id = :id")
     Optional<Job> findByIdForWorkflowUpdate(@Param("id") UUID id);

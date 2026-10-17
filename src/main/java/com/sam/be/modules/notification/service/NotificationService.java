@@ -31,6 +31,9 @@ public interface NotificationService {
     void sendSubscriptionNotification(
             UUID userId, UUID subscriptionId, String type, String message);
 
+    void sendJobAddonNotification(
+            UUID clientId, UUID jobId, String jobTitle, BigDecimal amount, String type, String message);
+
     void sendDevClaimNotification(
             UUID clientId, UUID jobId, String jobTitle, UUID recommendationId, String devName);
     void sendDevClaimNotification(UUID clientId, UUID actorUserId, UUID jobId,

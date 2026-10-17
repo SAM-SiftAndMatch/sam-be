@@ -79,6 +79,9 @@ public class UserNotification {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
+    @Column(name = "resolved_at")
+    private LocalDateTime resolvedAt;
+
     @Builder.Default
     @Column(name = "unread_count", nullable = false)
     private int unreadCount = 1;
