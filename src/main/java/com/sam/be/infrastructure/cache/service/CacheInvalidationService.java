@@ -23,6 +23,7 @@ public class CacheInvalidationService {
                     cache.delete(RedisKeys.openJobs());
                     cache.deleteByPattern(RedisKeys.pagesPattern(RedisKeys.openJobs()));
                     if (clientId != null) cache.delete(RedisKeys.clientJobs(clientId));
+                    if (clientId != null) cache.delete(RedisKeys.clientDashboardOverview(clientId));
                     if (clientId != null)
                         cache.deleteByPattern(
                                 RedisKeys.pagesPattern(RedisKeys.clientJobs(clientId)));
@@ -43,6 +44,7 @@ public class CacheInvalidationService {
                             .forEach(
                                     clientId -> {
                                         cache.delete(RedisKeys.clientJobs(clientId));
+                                        cache.delete(RedisKeys.clientDashboardOverview(clientId));
                                         cache.deleteByPattern(
                                                 RedisKeys.pagesPattern(
                                                         RedisKeys.clientJobs(clientId)));

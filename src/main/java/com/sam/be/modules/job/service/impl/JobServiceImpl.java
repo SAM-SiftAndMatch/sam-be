@@ -91,12 +91,16 @@ public class JobServiceImpl implements JobService {
                         .findById(clientId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        String srsContent = "";
-        try {
-            srsContent =
-                    restClient.get().uri(request.getSrsDocumentUrl()).retrieve().body(String.class);
-        } catch (Exception e) {
-            log.warn("Failed to fetch SRS content from Cloudinary URL", e);
+        String srsContent = request.getSrsContent();
+        if (srsContent == null || srsContent.isBlank()) {
+            srsContent = "";
+            if (request.getSrsDocumentUrl() != null) {
+                try {
+                    srsContent = restClient.get().uri(request.getSrsDocumentUrl()).retrieve().body(String.class);
+                } catch (Exception e) {
+                    log.warn("Failed to fetch SRS content from Cloudinary URL", e);
+                }
+            }
         }
 
         List<Skill> allSkills = skillRepository.findAll();
