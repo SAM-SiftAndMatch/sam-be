@@ -37,4 +37,7 @@ public class JobCreateRequest {
     private Boolean isUrgentHiring;
 
     private Boolean requiresAiQa;
+
+    /** Stable UUID for retrying a create request without publishing a duplicate job. */
+    private java.util.UUID clientRequestId;
 }

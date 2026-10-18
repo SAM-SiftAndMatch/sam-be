@@ -109,6 +109,14 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    public void sendJobAddonNotification(UUID clientId, UUID jobId, String jobTitle,
+            BigDecimal amount, String type, String message) {
+        userNotificationService.persistAndPublish(clientId, NotificationMessage.builder()
+                .type(type).jobId(jobId).jobTitle(jobTitle).amount(amount)
+                .message(message).timestamp(LocalDateTime.now()).build());
+    }
+
+    @Override
     public void sendDevClaimNotification(
             UUID clientId, UUID jobId, String jobTitle, UUID recommendationId, String devName) {
         sendDevClaimNotification(clientId, null, jobId, jobTitle, recommendationId, devName);

@@ -13,6 +13,9 @@ import java.util.UUID;
 public interface JobService {
     JobResponse createJob(UUID clientId, JobCreateRequest request);
 
+    /** Only the server-side add-on entitlement flow may call this method. */
+    void activateAddons(UUID jobId, boolean featured, boolean urgent);
+
     JobResponse cancelJob(UUID clientId, UUID jobId);
 
     JobResponse getJobById(UUID jobId);

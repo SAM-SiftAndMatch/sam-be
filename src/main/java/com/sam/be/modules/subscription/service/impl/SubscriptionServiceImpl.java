@@ -74,6 +74,11 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         if (!Boolean.TRUE.equals(servicePackage.getIsActive())) {
             throw new ApiException(ErrorCode.PACKAGE_NOT_AVAILABLE);
         }
+        if (request.getPackageId().equals(UUID.fromString("f0000000-0000-0000-0000-000000000001"))
+                || request.getPackageId().equals(UUID.fromString("f0000000-0000-0000-0000-000000000002"))) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED,
+                    "Vui lòng mua tính năng Nổi bật hoặc Gợi ý freelancer trong dự án");
+        }
         User user =
                 userRepository
                         .findById(userId)
@@ -217,7 +222,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public UserSubscriptionResponse confirmPayment(UUID userId, UUID subscriptionId) {
         UserSubscription subscription =
                 userSubscriptionRepository
@@ -229,24 +234,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
-        // Only activate if still PENDING
-        if (subscription.getStatus() == SubscriptionStatus.PENDING) {
-            subscription.setStatus(SubscriptionStatus.ACTIVE);
-            if (subscription.getServicePackage() != null
-                    && subscription.getServicePackage().getType() != PackageType.PAY_PER_USE) {
-                subscription.setEndDate(LocalDateTime.now().plusDays(30));
-            }
-            subscription = userSubscriptionRepository.save(subscription);
-
-            notificationService.sendSubscriptionNotification(
-                    subscription.getUser().getId(),
-                    subscription.getId(),
-                    "SUBSCRIPTION_ACTIVE",
-                    "Gói " + subscription.getServicePackage().getName() + " đã được kích hoạt.");
-            cacheInvalidationService.subscriptionChanged(userId);
-            log.info("Subscription activated by FE confirm: {}", subscription.getId());
-        }
-
+        // Return the server-verified state only. A browser redirect is not proof of payment.
         return toResponse(subscription, null);
     }
 

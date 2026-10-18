@@ -9,6 +9,9 @@ import com.sam.be.modules.payment.dto.response.FreelancerEscrowSummaryResponse;
 import com.sam.be.modules.payment.dto.response.FundingStatusResponse;
 import com.sam.be.modules.payment.dto.response.PaymentResponse;
 import com.sam.be.modules.payment.service.PaymentService;
+import com.sam.be.modules.job.service.JobAddonService;
+import com.sam.be.modules.subscription.repository.UserSubscriptionRepository;
+import com.sam.be.modules.subscription.service.SubscriptionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -28,6 +31,9 @@ import org.springframework.web.bind.annotation.*;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final JobAddonService jobAddonService;
+    private final SubscriptionService subscriptionService;
+    private final UserSubscriptionRepository subscriptionRepository;
 
     @PostMapping("/fund")
     @PreAuthorize("hasRole('CLIENT')")
@@ -70,7 +76,7 @@ public class PaymentController {
     @Operation(
             summary = "FE confirms a funding payment after VNPay redirect",
             description =
-                    "Same workaround as subscription confirm-payment: FE reports success, BE cross-checks txnRef/amount then marks HELD. Idempotent with IPN.")
+                    "Legacy escrow confirmation: FE reports success, BE cross-checks txnRef/amount then marks HELD. Idempotent with IPN.")
     public ApiResponse<PaymentResponse> confirmFunding(
             @PathVariable UUID paymentId,
             @RequestBody(required = false) ConfirmFundingRequest request) {
@@ -79,11 +85,20 @@ public class PaymentController {
         return ApiResponse.<PaymentResponse>builder().result(response).build();
     }
 
-    @PostMapping("/vnpay-ipn")
+    @RequestMapping(value = "/vnpay-ipn", method = {RequestMethod.GET, RequestMethod.POST})
     @Operation(
             summary = "VNPay IPN webhook",
             description = "Server-to-server callback from VNPay, checksum verified, no JWT needed")
     public ResponseEntity<Map<String, String>> vnpayIpn(@RequestParam Map<String, String> params) {
+        String txnRef = params.get("vnp_TxnRef");
+        if (txnRef == null || txnRef.isBlank())
+            return ResponseEntity.ok(Map.of("RspCode", "01", "Message", "Order not found"));
+        if (txnRef.startsWith("JA"))
+            return ResponseEntity.ok(jobAddonService.handleVnpayIpn(params));
+        // The configured VNPay callback points here for all payment flows.
+        // Route package transactions too, so monthly plans still activate by verified IPN.
+        if (subscriptionRepository.findByGatewayTxnRef(txnRef).isPresent())
+            return ResponseEntity.ok(subscriptionService.handleVnpayIpn(params));
         return ResponseEntity.ok(paymentService.handleVnpayIpn(params));
     }
 

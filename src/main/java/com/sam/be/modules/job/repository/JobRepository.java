@@ -2,6 +2,7 @@ package com.sam.be.modules.job.repository;
 
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.modules.job.entity.Job;
+import com.sam.be.modules.job.dto.response.ClientDashboardProjectResponse;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -16,6 +17,18 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
+
+    @Query("SELECT j.status, COUNT(j) FROM Job j WHERE j.client.id = :clientId GROUP BY j.status")
+    List<Object[]> countClientJobsByStatus(@Param("clientId") UUID clientId);
+
+    @Query("SELECT new com.sam.be.modules.job.dto.response.ClientDashboardProjectResponse("
+            + "j.id, j.title, j.status, j.budgetMin, j.budgetMax, j.updatedAt, f.fullName) "
+            + "FROM Job j LEFT JOIN j.selectedFreelancer f WHERE j.client.id = :clientId "
+            + "ORDER BY j.updatedAt DESC, j.id DESC")
+    List<ClientDashboardProjectResponse> findRecentClientDashboardProjects(
+            @Param("clientId") UUID clientId, Pageable pageable);
+
+    Optional<Job> findByClientIdAndClientRequestId(UUID clientId, UUID clientRequestId);
 
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT j FROM Job j WHERE j.id = :id")

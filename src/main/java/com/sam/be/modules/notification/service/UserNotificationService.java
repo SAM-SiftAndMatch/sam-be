@@ -88,6 +88,11 @@ public class UserNotificationService {
         repository.markRoomMessagesRead(userId, roomId, readAt);
     }
 
+    @Transactional
+    public void resolveJobAddonReminder(UUID userId, UUID jobId) {
+        repository.resolveJobAddonReminder(userId, jobId, LocalDateTime.now());
+    }
+
     private UserNotification fromPayload(UUID recipientId, NotificationMessage payload) {
         return UserNotification.builder().id(UUID.randomUUID()).recipientUserId(recipientId)
                 .actorUserId(payload.getActorUserId()).actorName(payload.getActorName())
@@ -103,7 +108,7 @@ public class UserNotificationService {
         return new UserNotificationResponse(n.getId(), n.getRecipientUserId(), n.getActorUserId(), n.getActorName(),
                 n.getType(), n.getJobId(), n.getJobTitle(), n.getMatchScore(), n.getInvitationId(), n.getRoomId(), n.getContractId(),
                 n.getPaymentId(), n.getAmount(), n.getSubscriptionId(), n.getProposalId(), n.getRecommendationId(),
-                n.getMessage(), n.getCreatedAt(), n.getReadAt(), n.getUnreadCount());
+                n.getMessage(), n.getCreatedAt(), n.getReadAt(), n.getResolvedAt(), n.getUnreadCount());
     }
 
     private void publishAfterCommit(UUID recipientId, UserNotificationResponse response) {

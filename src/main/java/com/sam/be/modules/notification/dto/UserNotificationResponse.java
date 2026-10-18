@@ -24,4 +24,5 @@ public record UserNotificationResponse(
         String message,
         LocalDateTime createdAt,
         LocalDateTime readAt,
+        LocalDateTime resolvedAt,
         int unreadCount) {}

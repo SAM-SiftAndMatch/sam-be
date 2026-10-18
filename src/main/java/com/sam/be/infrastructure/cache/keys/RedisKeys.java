@@ -98,6 +98,10 @@ public final class RedisKeys {
         return PREFIX_JOB_CLIENT + clientId;
     }
 
+    public static String clientDashboardOverview(UUID clientId) {
+        return clientJobs(clientId) + ":overview";
+    }
+
     public static String jobRecommendations(UUID jobId) {
         return PREFIX_JOB_REC + jobId;
     }
