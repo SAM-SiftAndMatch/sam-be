@@ -27,6 +27,10 @@ public class Job extends AbstractAuditEntity {
     @JoinColumn(name = "client_id", nullable = false)
     private User client;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "selected_freelancer_id")
+    private User selectedFreelancer;
+
     @Column(nullable = false)
     private String title;
 
@@ -48,6 +52,9 @@ public class Job extends AbstractAuditEntity {
     private JobStatus status = JobStatus.OPEN;
 
     private LocalDateTime deadline;
+
+    @Column(name = "client_request_id")
+    private java.util.UUID clientRequestId;
 
     @Column(name = "srs_document_url", length = 500)
     private String srsDocumentUrl;

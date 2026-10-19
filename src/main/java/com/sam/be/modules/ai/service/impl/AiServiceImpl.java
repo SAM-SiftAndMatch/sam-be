@@ -123,11 +123,20 @@ public class AiServiceImpl implements AiService {
     public AiChatResponse chatWithAiBa(AiChatRequest request) {
         String redisKey = BA_REDIS_PREFIX + request.getSessionId();
         List<Map<String, Object>> history = loadHistory(redisKey);
+        boolean firstTurn = history.isEmpty();
         history.add(createMessage("user", request.getUserMessage()));
         String aiResponseJson = geminiClient.generateContent(baSystemPrompt, history);
-        history.add(createMessage("model", aiResponseJson));
+        AiChatResponse response =
+                parseAndUploadSrs(request.getSessionId(), aiResponseJson, true, firstTurn);
+        // Keep the actual response shown to the client in history, including the first-turn guard.
+        history.add(
+                createMessage(
+                        "model",
+                        firstTurn
+                                ? objectMapper.valueToTree(response).toString()
+                                : aiResponseJson));
         saveHistory(redisKey, history);
-        return parseAndUploadSrs(request.getSessionId(), aiResponseJson, true);
+        return response;
     }
 
     @Override
@@ -157,7 +166,7 @@ public class AiServiceImpl implements AiService {
         List<Map<String, Object>> singleTurnHistory = new ArrayList<>();
         singleTurnHistory.add(createMessage("user", userPrompt.toString()));
         String aiResponseJson = geminiClient.generateContent(riskSystemPrompt, singleTurnHistory);
-        return parseAndUploadSrs(request.getSessionId(), aiResponseJson, false);
+        return parseAndUploadSrs(request.getSessionId(), aiResponseJson, false, false);
     }
 
     @Override
@@ -353,7 +362,10 @@ public class AiServiceImpl implements AiService {
     }
 
     private AiChatResponse parseAndUploadSrs(
-            String sessionId, String aiResponseJson, boolean requireCompletedStatus) {
+            String sessionId,
+            String aiResponseJson,
+            boolean requireCompletedStatus,
+            boolean firstBaTurn) {
         try {
             ObjectMapper permissiveMapper =
                     objectMapper
@@ -364,6 +376,38 @@ public class AiServiceImpl implements AiService {
 
             String cleaned = cleanJson(aiResponseJson);
             AiChatResponse response = permissiveMapper.readValue(cleaned, AiChatResponse.class);
+
+            if (firstBaTurn) {
+                // A short initial description may not contain enough information for an SRS,
+                // even when the model incorrectly claims it is finished.
+                boolean missingQuestions =
+                        response.getQuestions() == null || response.getQuestions().isEmpty();
+                if (!"ASKING".equalsIgnoreCase(response.getStatus()) || missingQuestions) {
+                    response.setAiMessage(
+                            "Tôi đã nhận mô tả ban đầu. Bạn giúp tôi làm rõ thêm yêu cầu dự án nhé.");
+                }
+                if (missingQuestions) {
+                    response.setQuestions(
+                            List.of(
+                                    AiQuestion.builder()
+                                            .id("initial_scope")
+                                            .type("TEXT")
+                                            .questionText(
+                                                    "Bạn muốn bàn giao kết quả cụ thể nào và dựa vào đâu để xác nhận công việc đã hoàn thành?")
+                                            .options(List.of())
+                                            .allowCustomInput(true)
+                                            .hint(
+                                                    "Nêu sản phẩm bàn giao và tiêu chí nghiệm thu chính.")
+                                            .build()));
+                }
+                response.setStatus("ASKING");
+                response.setSrsContent(null);
+                response.setCurrentSrsUrl(null);
+                response.setRiskLevel(null);
+                response.setExactBudgetVnd(null);
+                response.setDurationMonths(null);
+                return response;
+            }
 
             if (response.getSrsContent() != null) {
                 // Gemini đôi khi trả về hai ký tự literal "\\n" thay vì newline thật.

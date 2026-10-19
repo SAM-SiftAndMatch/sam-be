@@ -29,12 +29,15 @@ import com.sam.be.modules.contract.repository.ContractRevisionRepository;
 import com.sam.be.modules.contract.service.ContractService;
 import com.sam.be.modules.job.entity.Job;
 import com.sam.be.modules.job.repository.JobRepository;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -49,10 +52,26 @@ public class ContractServiceImpl implements ContractService {
     private final ChatService chatService;
     private final RedisCacheService redisCacheService;
     private final CacheInvalidationService cacheInvalidationService;
+    private final com.sam.be.modules.job.service.JobInvitationService invitationService;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
-    @Transactional
     public ContractDraftResponse createAiDraft(UUID roomId, UUID userId) {
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        DraftContext context = transaction.execute(status -> prepareDraft(roomId, userId));
+        if (context == null) throw new ApiException(ErrorCode.REQUEST_FAILED);
+
+        // Không giữ transaction hoặc khóa dòng jobs trong lúc chờ AI.
+        AiContractDraft aiDraft = aiService.generateContractDraft(
+                context.srsData(), context.budgetMin(), context.budgetMax(),
+                context.clientName(), context.freelancerName());
+
+        ContractDraftResponse result = transaction.execute(status -> persistDraft(context, userId, aiDraft));
+        if (result == null) throw new ApiException(ErrorCode.REQUEST_FAILED);
+        return result;
+    }
+
+    private DraftContext prepareDraft(UUID roomId, UUID userId) {
         ChatRoom room =
                 chatRoomRepository
                         .findById(roomId)
@@ -63,36 +82,58 @@ public class ContractServiceImpl implements ContractService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
-        Job job = room.getJob();
+        Job job = jobRepository.findByIdForWorkflowUpdate(room.getJob().getId())
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // Endpoint cũ vẫn được FE sử dụng: tạo nháp trong một room được xem là thao tác chọn
+        // ứng viên, nhưng chỉ khi lời mời của đúng freelancer trong room đã được chấp nhận.
+        if (job.getStatus() == JobStatus.OPEN) {
+            invitationService.select(userId, job.getId(),
+                    invitationService.findId(job.getId(), room.getFreelancer().getId()));
+        }
+        if (job.getStatus() != JobStatus.NEGOTIATING
+                || job.getSelectedFreelancer() == null
+                || !job.getSelectedFreelancer().getId().equals(room.getFreelancer().getId())) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
 
         if (contractRepository.findByJobId(job.getId()).isPresent()) {
             throw new ApiException(ErrorCode.DUPLICATE_RESOURCE);
         }
 
-        job.setStatus(JobStatus.NEGOTIATING);
-        jobRepository.save(job);
-        cacheInvalidationService.jobChanged(
-                job.getId(), room.getClient().getId(), room.getFreelancer().getId());
+        return new DraftContext(roomId, job.getId(),
+                job.getTitle() + "\n" + job.getDescription(), job.getBudgetMin(), job.getBudgetMax(),
+                room.getClient().getFullName(), room.getFreelancer().getFullName());
+    }
 
-        String srsData = job.getTitle() + "\n" + job.getDescription();
+    private ContractDraftResponse persistDraft(DraftContext context, UUID userId, AiContractDraft aiDraft) {
+        Job job = jobRepository.findByIdForWorkflowUpdate(context.jobId())
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        ChatRoom room = chatRoomRepository.findById(context.roomId())
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!room.getClient().getId().equals(userId)
+                || job.getStatus() != JobStatus.NEGOTIATING
+                || job.getSelectedFreelancer() == null
+                || !job.getSelectedFreelancer().getId().equals(room.getFreelancer().getId())) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        if (contractRepository.findByJobId(job.getId()).isPresent()) {
+            throw new ApiException(ErrorCode.DUPLICATE_RESOURCE);
+        }
 
-        AiContractDraft aiDraft =
-                aiService.generateContractDraft(
-                        srsData,
-                        job.getBudgetMin(),
-                        job.getBudgetMax(),
-                        room.getClient().getFullName(),
-                        room.getFreelancer().getFullName());
+        BigDecimal amount = aiDraft.getSuggestedPrice() != null
+                ? aiDraft.getSuggestedPrice()
+                : job.getBudgetMax() != null ? job.getBudgetMax() : job.getBudgetMin();
+        if (amount == null || amount.signum() <= 0) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án cần mức giá hợp lệ để tạo hợp đồng.");
+        }
 
         Contract contract =
                 Contract.builder()
                         .job(job)
                         .client(room.getClient())
                         .freelancer(room.getFreelancer())
-                        .agreedAmount(
-                                aiDraft.getSuggestedPrice() != null
-                                        ? aiDraft.getSuggestedPrice()
-                                        : job.getBudgetMax())
+                        .agreedAmount(amount)
                         .aiSuggestedAmount(aiDraft.getSuggestedPrice())
                         .termsAndConditions(aiDraft.getTermsAndConditions())
                         .build();
@@ -115,6 +156,9 @@ public class ContractServiceImpl implements ContractService {
                 .build();
     }
 
+    private record DraftContext(UUID roomId, UUID jobId, String srsData,
+            BigDecimal budgetMin, BigDecimal budgetMax, String clientName, String freelancerName) {}
+
     @Override
     @Transactional(readOnly = true)
     public ContractDetailResponse getContractByRoom(UUID roomId, UUID userId) {
@@ -128,16 +172,18 @@ public class ContractServiceImpl implements ContractService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
 
+        Contract contract =
+                contractRepository
+                        .findByJobId(room.getJob().getId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        requireContractRoom(room, contract);
+
         var cached =
                 redisCacheService.get(
                         RedisKeys.completedContractByJob(room.getJob().getId()),
                         ContractDetailResponse.class);
         if (cached.isPresent()) return cached.get();
-
-        Contract contract =
-                contractRepository
-                        .findByJobId(room.getJob().getId())
-                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (contract.getStatus() != com.sam.be.common.constant.enums.ContractStatus.COMPLETED) {
             return toDetail(contract);
@@ -168,6 +214,8 @@ public class ContractServiceImpl implements ContractService {
                         .findByJobId(room.getJob().getId())
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
+        requireContractRoom(room, contract);
+
         return contractRevisionRepository
                 .findByContractIdOrderByCreatedAtDesc(contract.getId())
                 .stream()
@@ -191,6 +239,7 @@ public class ContractServiceImpl implements ContractService {
                 contractRepository
                         .findByJobId(room.getJob().getId())
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        requireContractRoom(room, contract);
         var pageable =
                 PageRequests.of(
                         page,
@@ -223,6 +272,12 @@ public class ContractServiceImpl implements ContractService {
                 .termsAndConditions(rev.getTermsAndConditions())
                 .createdAt(rev.getCreatedAt())
                 .build();
+    }
+
+    private void requireContractRoom(ChatRoom room, Contract contract) {
+        if (!contract.getFreelancer().getId().equals(room.getFreelancer().getId())) {
+            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
     }
 
     // Lưu snapshot sau mỗi lần tạo/sửa. Gộp burst gõ liên tục: cùng người sửa trong

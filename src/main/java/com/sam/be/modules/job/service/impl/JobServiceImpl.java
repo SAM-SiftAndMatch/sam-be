@@ -14,7 +14,6 @@ import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.ai.dto.response.AiCandidateScore;
 import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
 import com.sam.be.modules.ai.service.AiService;
-import com.sam.be.modules.chat.service.ChatService;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
 import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
@@ -22,11 +21,13 @@ import com.sam.be.modules.job.dto.response.JobResponse;
 import com.sam.be.modules.job.dto.response.SkillExperienceDto;
 import com.sam.be.modules.job.entity.AiJobRecommendation;
 import com.sam.be.modules.job.entity.Job;
+import com.sam.be.modules.job.entity.JobInvitation;
 import com.sam.be.modules.job.entity.JobSkill;
 import com.sam.be.modules.job.repository.AiJobRecommendationRepository;
 import com.sam.be.modules.job.repository.JobRepository;
 import com.sam.be.modules.job.repository.JobSkillRepository;
 import com.sam.be.modules.job.service.JobService;
+import com.sam.be.modules.job.service.JobInvitationService;
 import com.sam.be.modules.notification.service.NotificationService;
 import com.sam.be.modules.skill.dto.response.SkillResponse;
 import com.sam.be.modules.skill.entity.Skill;
@@ -73,24 +74,33 @@ public class JobServiceImpl implements JobService {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final NotificationService notificationService;
-    private final ChatService chatService;
+    private final JobInvitationService invitationService;
     private final RedisCacheService redisCacheService;
     private final CacheInvalidationService cacheInvalidationService;
 
     @Override
     @Transactional
     public JobResponse createJob(UUID clientId, JobCreateRequest request) {
+        if (request.getClientRequestId() != null) {
+            var existing = jobRepository.findByClientIdAndClientRequestId(
+                    clientId, request.getClientRequestId());
+            if (existing.isPresent()) return mapToResponse(existing.get());
+        }
         User client =
                 userRepository
                         .findById(clientId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        String srsContent = "";
-        try {
-            srsContent =
-                    restClient.get().uri(request.getSrsDocumentUrl()).retrieve().body(String.class);
-        } catch (Exception e) {
-            log.warn("Failed to fetch SRS content from Cloudinary URL", e);
+        String srsContent = request.getSrsContent();
+        if (srsContent == null || srsContent.isBlank()) {
+            srsContent = "";
+            if (request.getSrsDocumentUrl() != null) {
+                try {
+                    srsContent = restClient.get().uri(request.getSrsDocumentUrl()).retrieve().body(String.class);
+                } catch (Exception e) {
+                    log.warn("Failed to fetch SRS content from Cloudinary URL", e);
+                }
+            }
         }
 
         List<Skill> allSkills = skillRepository.findAll();
@@ -121,16 +131,12 @@ public class JobServiceImpl implements JobService {
                                 request.getDeadline() != null
                                         ? request.getDeadline()
                                         : java.time.LocalDateTime.now().plusDays(30))
-                        .isFeatured(
-                                request.getIsFeatured() != null ? request.getIsFeatured() : false)
-                        .isUrgentHiring(
-                                request.getIsUrgentHiring() != null
-                                        ? request.getIsUrgentHiring()
-                                        : false)
-                        .requiresAiQa(
-                                request.getRequiresAiQa() != null
-                                        ? request.getRequiresAiQa()
-                                        : false)
+                        // Add-ons are selected separately and only activated after verified payment.
+                        .isFeatured(false)
+                        .isUrgentHiring(false)
+                        .clientRequestId(request.getClientRequestId())
+                        // Paid QA is paused. Manual QA checklists remain available for every delivery.
+                        .requiresAiQa(false)
                         .status(JobStatus.OPEN)
                         .build();
 
@@ -167,10 +173,6 @@ public class JobServiceImpl implements JobService {
         // lần duy nhất
         savedJob.setJobSkills(jobSkills);
         jobRepository.save(savedJob);
-
-        if (savedJob.getIsUrgentHiring()) {
-            processUrgentHiring(savedJob, srsContent, extractedSkills);
-        }
 
         JobResponse response = mapToResponse(savedJob);
         cacheInvalidationService.jobChanged(savedJob.getId(), clientId, null);
@@ -400,6 +402,8 @@ public class JobServiceImpl implements JobService {
                         try {
                             notificationService.sendInviteNotification(
                                     rec.getFreelancer().getId(),
+                                    job.getClient().getId(),
+                                    job.getClient().getFullName(),
                                     job.getId(),
                                     job.getTitle(),
                                     rec.getMatchScore(),
@@ -438,10 +442,37 @@ public class JobServiceImpl implements JobService {
 
     @Override
     @Transactional
+    public void activateAddons(UUID jobId, boolean featured, boolean urgent) {
+        Job job = jobRepository.findByIdForWorkflowUpdate(jobId)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (job.getStatus() != JobStatus.OPEN ||
+                (job.getDeadline() != null && !job.getDeadline().isAfter(LocalDateTime.now()))) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án đã ngừng nhận ứng tuyển");
+        }
+        boolean newlyUrgent = urgent && !Boolean.TRUE.equals(job.getIsUrgentHiring());
+        if (featured) job.setIsFeatured(true);
+        if (urgent) job.setIsUrgentHiring(true);
+        jobRepository.save(job);
+        cacheInvalidationService.jobChanged(jobId, job.getClient().getId(), null);
+        if (newlyUrgent) {
+            Job detailed = jobRepository.findByIdWithDetails(jobId).orElseThrow();
+            List<AiExtractedSkill> skills = detailed.getJobSkills().stream().map(js -> {
+                AiExtractedSkill skill = new AiExtractedSkill();
+                skill.setSkillId(js.getSkill().getId());
+                skill.setYearsOfExperience(js.getRequiredYearsOfExperience());
+                return skill;
+            }).toList();
+            processUrgentHiring(detailed, detailed.getSrsContent(), skills);
+            cacheInvalidationService.recommendationChanged(jobId);
+        }
+    }
+
+    @Override
+    @Transactional
     public JobResponse cancelJob(UUID clientId, UUID jobId) {
         Job job =
                 jobRepository
-                        .findById(jobId)
+                        .findByIdForWorkflowUpdate(jobId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         if (!job.getClient().getId().equals(clientId)) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
@@ -451,6 +482,7 @@ public class JobServiceImpl implements JobService {
         }
         job.setStatus(JobStatus.CANCELLED);
         jobRepository.save(job);
+        invitationService.closeForJob(jobId);
 
         JobResponse response = mapToResponse(job);
         cacheInvalidationService.jobChanged(jobId, clientId, null);
@@ -885,11 +917,16 @@ public class JobServiceImpl implements JobService {
             throw new ApiException(ErrorCode.REQUEST_FAILED);
         }
 
+        invitationService.invite(clientId, jobId, recommendation.getFreelancer().getId(),
+                null, JobInvitation.Source.RECOMMENDATION, recommendationId);
+
         recommendation.setStatus(RecommendationStatus.CLIENT_REQUESTED);
         aiJobRecommendationRepository.save(recommendation);
 
         notificationService.sendInviteNotification(
                 recommendation.getFreelancer().getId(),
+                job.getClient().getId(),
+                job.getClient().getFullName(),
                 job.getId(),
                 job.getTitle(),
                 recommendation.getMatchScore(),
@@ -908,14 +945,15 @@ public class JobServiceImpl implements JobService {
                         recommendationId,
                         RecommendationStatus.CLIENT_REQUESTED);
 
+        UUID invitationId = invitationService.findId(jobId, freelancerId);
+        var acceptedInvitation = invitationService.accept(freelancerId, invitationId);
+
         // 1. Cập nhật trạng thái ứng viên (KHÔNG đổi JobStatus, vẫn giữ OPEN)
         recommendation.setStatus(RecommendationStatus.ACCEPTED);
         aiJobRecommendationRepository.save(recommendation);
 
         // 2. Tạo hoặc lấy phòng Chat
-        com.sam.be.modules.chat.entity.ChatRoom room =
-                chatService.getOrCreateRoom(
-                        recommendation.getJob(), recommendation.getFreelancer());
+        UUID roomId = acceptedInvitation.roomId();
 
         // 3. Báo cho Client biết Dev đã đồng ý -> vào chat ngay
         try {
@@ -924,14 +962,14 @@ public class JobServiceImpl implements JobService {
                     recommendation.getJob().getId(),
                     recommendation.getJob().getTitle(),
                     recommendation.getId(),
-                    room.getId());
+                    roomId);
         } catch (Exception e) {
             log.warn("Failed to send CHAT_OPENED to client", e);
         }
         cacheInvalidationService.recommendationChanged(jobId);
 
         // 4. Trả về roomId cho Frontend
-        return AcceptInvitationResponse.builder().roomId(room.getId()).build();
+        return AcceptInvitationResponse.builder().roomId(roomId).build();
     }
 
     @Override
@@ -943,6 +981,8 @@ public class JobServiceImpl implements JobService {
                         jobId,
                         recommendationId,
                         RecommendationStatus.CLIENT_REQUESTED);
+
+        invitationService.decline(freelancerId, invitationService.findId(jobId, freelancerId));
 
         // Đổi trạng thái sang REJECTED
         recommendation.setStatus(RecommendationStatus.REJECTED);
@@ -997,6 +1037,7 @@ public class JobServiceImpl implements JobService {
                             : "Freelancer";
             notificationService.sendDevClaimNotification(
                     recommendation.getJob().getClient().getId(),
+                    freelancerId,
                     recommendation.getJob().getId(),
                     recommendation.getJob().getTitle(),
                     recommendation.getId(),
@@ -1029,12 +1070,15 @@ public class JobServiceImpl implements JobService {
             throw new ApiException(ErrorCode.REQUEST_FAILED);
         }
 
+        var invitation = invitationService.invite(clientId, jobId,
+                recommendation.getFreelancer().getId(), null,
+                JobInvitation.Source.RECOMMENDATION, recommendationId);
+        var acceptedInvitation = invitationService.acceptAsClient(clientId, invitation.id());
+
         recommendation.setStatus(RecommendationStatus.ACCEPTED);
         aiJobRecommendationRepository.save(recommendation);
 
-        com.sam.be.modules.chat.entity.ChatRoom room =
-                chatService.getOrCreateRoom(
-                        recommendation.getJob(), recommendation.getFreelancer());
+        UUID roomId = acceptedInvitation.roomId();
 
         // Báo cho Freelancer biết Client đã đồng ý -> vào chat ngay
         try {
@@ -1043,13 +1087,13 @@ public class JobServiceImpl implements JobService {
                     recommendation.getJob().getId(),
                     recommendation.getJob().getTitle(),
                     recommendation.getId(),
-                    room.getId());
+                    roomId);
         } catch (Exception e) {
             log.warn("Failed to send CHAT_OPENED to freelancer", e);
         }
         cacheInvalidationService.recommendationChanged(jobId);
 
-        return AcceptInvitationResponse.builder().roomId(room.getId()).build();
+        return AcceptInvitationResponse.builder().roomId(roomId).build();
     }
 
     @Override

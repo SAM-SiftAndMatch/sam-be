@@ -46,9 +46,8 @@ public class SubscriptionController {
 
     @PostMapping("/{id}/confirm-payment")
     @Operation(
-            summary = "Confirm subscription payment after VNPay redirect",
-            description =
-                    "FE calls this after VNPay redirects back with success code to activate pending subscription")
+            summary = "Read server-verified subscription state after VNPay redirect",
+            description = "Only the signed VNPay IPN can activate a pending subscription")
     public ApiResponse<UserSubscriptionResponse> confirmPayment(@PathVariable String id) {
         UserSubscriptionResponse response =
                 subscriptionService.confirmPayment(

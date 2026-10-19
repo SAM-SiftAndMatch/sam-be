@@ -29,7 +29,7 @@ RUN java -Djarmode=tools -jar target/app.jar extract --launcher --destination ta
 # Stage 4: Runtime Image tối ưu dung lượng và bảo mật
 FROM eclipse-temurin:21-jre-jammy AS final
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 ARG UID=10001
 

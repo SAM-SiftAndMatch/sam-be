@@ -4,6 +4,10 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 public interface NotificationService {
+    void sendJobInvitationNotification(UUID userId, UUID jobId, String jobTitle,
+            UUID invitationId, String type, String message);
+    void sendJobInvitationNotification(UUID userId, UUID actorUserId, String actorName, UUID jobId,
+            String jobTitle, UUID invitationId, UUID roomId, String type, String message);
     void sendInviteNotification(
             UUID freelancerId, UUID jobId, String jobTitle, BigDecimal matchScore);
 
@@ -13,6 +17,8 @@ public interface NotificationService {
             String jobTitle,
             BigDecimal matchScore,
             UUID recommendationId);
+    void sendInviteNotification(UUID freelancerId, UUID actorUserId, String actorName,
+            UUID jobId, String jobTitle, BigDecimal matchScore, UUID recommendationId);
 
     void sendPaymentNotification(
             UUID userId,
@@ -25,8 +31,13 @@ public interface NotificationService {
     void sendSubscriptionNotification(
             UUID userId, UUID subscriptionId, String type, String message);
 
+    void sendJobAddonNotification(
+            UUID clientId, UUID jobId, String jobTitle, BigDecimal amount, String type, String message);
+
     void sendDevClaimNotification(
             UUID clientId, UUID jobId, String jobTitle, UUID recommendationId, String devName);
+    void sendDevClaimNotification(UUID clientId, UUID actorUserId, UUID jobId,
+            String jobTitle, UUID recommendationId, String devName);
 
     void sendChatOpenedNotification(
             UUID userId, UUID jobId, String jobTitle, UUID recommendationId, UUID roomId);
@@ -34,4 +45,6 @@ public interface NotificationService {
     // Luồng proposal phổ thông: client nhận hồ sơ mới, dev nhận lời mời, client nhận phản hồi
     void sendProposalNotification(
             UUID userId, UUID jobId, String jobTitle, UUID proposalId, String type, String message);
+    void sendProposalNotification(UUID userId, UUID actorUserId, String actorName, UUID jobId,
+            String jobTitle, UUID proposalId, String type, String message);
 }

@@ -2,12 +2,12 @@ package com.sam.be.modules.notification.service.impl;
 
 import com.sam.be.modules.notification.dto.NotificationMessage;
 import com.sam.be.modules.notification.service.NotificationService;
+import com.sam.be.modules.notification.service.UserNotificationService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -15,8 +15,22 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
 
-    // Khẩu pháo bắn dữ liệu Real-time của Spring
-    private final SimpMessagingTemplate messagingTemplate;
+    private final UserNotificationService userNotificationService;
+
+    @Override
+    public void sendJobInvitationNotification(UUID userId, UUID jobId, String jobTitle,
+            UUID invitationId, String type, String message) {
+        sendJobInvitationNotification(userId, null, null, jobId, jobTitle, invitationId, null, type, message);
+    }
+
+    @Override
+    public void sendJobInvitationNotification(UUID userId, UUID actorUserId, String actorName, UUID jobId,
+            String jobTitle, UUID invitationId, UUID roomId, String type, String message) {
+        NotificationMessage payload = NotificationMessage.builder()
+                .type(type).actorUserId(actorUserId).actorName(actorName).jobId(jobId).jobTitle(jobTitle)
+                .invitationId(invitationId).roomId(roomId).message(message).timestamp(LocalDateTime.now()).build();
+        userNotificationService.persistAndPublish(userId, payload);
+    }
 
     @Override
     public void sendInviteNotification(
@@ -31,10 +45,18 @@ public class NotificationServiceImpl implements NotificationService {
             String jobTitle,
             BigDecimal matchScore,
             UUID recommendationId) {
+        sendInviteNotification(freelancerId, null, null, jobId, jobTitle, matchScore, recommendationId);
+    }
+
+    @Override
+    public void sendInviteNotification(UUID freelancerId, UUID actorUserId, String actorName,
+            UUID jobId, String jobTitle, BigDecimal matchScore, UUID recommendationId) {
         // Đóng gói data
         NotificationMessage payload =
                 NotificationMessage.builder()
                         .type("1_TOUCH_INVITE")
+                        .actorUserId(actorUserId)
+                        .actorName(actorName)
                         .jobId(jobId)
                         .jobTitle(jobTitle)
                         .matchScore(matchScore)
@@ -46,7 +68,7 @@ public class NotificationServiceImpl implements NotificationService {
         // Kênh phát thanh dành riêng cho từng Dev (Dựa vào freelancerId)
         String destination = "/topic/users/" + freelancerId + "/notifications";
 
-        messagingTemplate.convertAndSend(destination, payload);
+        userNotificationService.persistAndPublish(freelancerId, payload);
 
         log.info("🔔 [WEBSOCKET] Đã đẩy Noti tới kênh: {}", destination);
     }
@@ -69,11 +91,7 @@ public class NotificationServiceImpl implements NotificationService {
                         .timestamp(LocalDateTime.now())
                         .build();
 
-        String destination = "/topic/users/" + userId + "/notifications";
-
-        messagingTemplate.convertAndSend(destination, payload);
-
-        log.info("🔔 [WEBSOCKET] Đã đẩy Noti thanh toán ({}) tới kênh: {}", type, destination);
+        userNotificationService.persistAndPublish(userId, payload);
     }
 
     @Override
@@ -87,19 +105,30 @@ public class NotificationServiceImpl implements NotificationService {
                         .timestamp(LocalDateTime.now())
                         .build();
 
-        String destination = "/topic/users/" + userId + "/notifications";
+        userNotificationService.persistAndPublish(userId, payload);
+    }
 
-        messagingTemplate.convertAndSend(destination, payload);
-
-        log.info("🔔 [WEBSOCKET] Đã đẩy Noti gói dịch vụ ({}) tới kênh: {}", type, destination);
+    @Override
+    public void sendJobAddonNotification(UUID clientId, UUID jobId, String jobTitle,
+            BigDecimal amount, String type, String message) {
+        userNotificationService.persistAndPublish(clientId, NotificationMessage.builder()
+                .type(type).jobId(jobId).jobTitle(jobTitle).amount(amount)
+                .message(message).timestamp(LocalDateTime.now()).build());
     }
 
     @Override
     public void sendDevClaimNotification(
             UUID clientId, UUID jobId, String jobTitle, UUID recommendationId, String devName) {
+        sendDevClaimNotification(clientId, null, jobId, jobTitle, recommendationId, devName);
+    }
+
+    @Override
+    public void sendDevClaimNotification(UUID clientId, UUID actorUserId, UUID jobId,
+            String jobTitle, UUID recommendationId, String devName) {
         NotificationMessage payload =
                 NotificationMessage.builder()
                         .type("DEV_CLAIM")
+                        .actorUserId(actorUserId)
                         .jobId(jobId)
                         .jobTitle(jobTitle)
                         .recommendationId(recommendationId)
@@ -111,9 +140,7 @@ public class NotificationServiceImpl implements NotificationService {
                         .timestamp(LocalDateTime.now())
                         .build();
 
-        String destination = "/topic/users/" + clientId + "/notifications";
-        messagingTemplate.convertAndSend(destination, payload);
-        log.info("🔔 [WEBSOCKET] Đã đẩy Noti DEV_CLAIM tới kênh: {}", destination);
+        userNotificationService.persistAndPublish(clientId, payload);
     }
 
     @Override
@@ -130,9 +157,7 @@ public class NotificationServiceImpl implements NotificationService {
                         .timestamp(LocalDateTime.now())
                         .build();
 
-        String destination = "/topic/users/" + userId + "/notifications";
-        messagingTemplate.convertAndSend(destination, payload);
-        log.info("🔔 [WEBSOCKET] Đã đẩy Noti CHAT_OPENED tới kênh: {}", destination);
+        userNotificationService.persistAndPublish(userId, payload);
     }
 
     @Override
@@ -143,9 +168,17 @@ public class NotificationServiceImpl implements NotificationService {
             UUID proposalId,
             String type,
             String message) {
+        sendProposalNotification(userId, null, null, jobId, jobTitle, proposalId, type, message);
+    }
+
+    @Override
+    public void sendProposalNotification(UUID userId, UUID actorUserId, String actorName, UUID jobId,
+            String jobTitle, UUID proposalId, String type, String message) {
         NotificationMessage payload =
                 NotificationMessage.builder()
                         .type(type)
+                        .actorUserId(actorUserId)
+                        .actorName(actorName)
                         .jobId(jobId)
                         .jobTitle(jobTitle)
                         .proposalId(proposalId)
@@ -153,8 +186,6 @@ public class NotificationServiceImpl implements NotificationService {
                         .timestamp(LocalDateTime.now())
                         .build();
 
-        String destination = "/topic/users/" + userId + "/notifications";
-        messagingTemplate.convertAndSend(destination, payload);
-        log.info("🔔 [WEBSOCKET] Đã đẩy Noti proposal ({}) tới kênh: {}", type, destination);
+        userNotificationService.persistAndPublish(userId, payload);
     }
 }

@@ -53,6 +53,7 @@ class CacheInvalidationServiceTest {
         assertTrue(cache.deleted.contains(RedisKeys.openJobs()));
         assertTrue(cache.deleted.contains(RedisKeys.pagesPattern(RedisKeys.openJobs())));
         assertTrue(cache.deleted.contains(RedisKeys.clientJobs(clientId)));
+        assertTrue(cache.deleted.contains(RedisKeys.clientDashboardOverview(clientId)));
         assertTrue(cache.deleted.contains(RedisKeys.pagesPattern(RedisKeys.clientJobs(clientId))));
         assertTrue(cache.deleted.contains(RedisKeys.freelancerProjects(freelancerId)));
         assertTrue(cache.deleted.contains(RedisKeys.freelancerProjectsPagesPattern(freelancerId)));
