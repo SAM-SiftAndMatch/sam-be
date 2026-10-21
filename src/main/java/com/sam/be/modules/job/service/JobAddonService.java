@@ -28,10 +28,12 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class JobAddonService {
     private static final UUID FEATURED_ID = UUID.fromString("f0000000-0000-0000-0000-000000000001");
@@ -140,6 +142,29 @@ public class JobAddonService {
     }
 
     @Transactional
+    public JobAddonSummaryResponse confirmReturn(UUID clientId, UUID jobId, Map<String, String> params) {
+        ownedJob(clientId, jobId);
+        if (params == null || !vnpaySigner.verify(params, vnpayProperties.getHashSecret())
+                || !vnpayProperties.getTmnCode().equals(params.get("vnp_TmnCode"))
+                || !"00".equals(params.get("vnp_ResponseCode"))
+                || !"00".equals(params.get("vnp_TransactionStatus"))) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Không xác minh được kết quả thanh toán VNPay");
+        }
+        JobAddonPaymentAttempt attempt = attemptRepository.findByTxnRefForUpdate(
+                params.get("vnp_TxnRef")).orElseThrow(() -> new ApiException(
+                        ErrorCode.RESOURCE_NOT_FOUND, "Không tìm thấy giao dịch tính năng"));
+        if (!attempt.getOrder().getJob().getId().equals(jobId)
+                || !attempt.getOrder().getClient().getId().equals(clientId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        String resultCode = handleVnpayIpn(params).get("RspCode");
+        if (!"00".equals(resultCode) && !"02".equals(resultCode)) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Giao dịch chưa được xác nhận: " + resultCode);
+        }
+        return summary(clientId, jobId);
+    }
+
+    @Transactional
     public Map<String, String> handleVnpayIpn(Map<String, String> params) {
         if (!vnpaySigner.verify(params, vnpayProperties.getHashSecret())
                 || !vnpayProperties.getTmnCode().equals(params.get("vnp_TmnCode")))
@@ -179,6 +204,8 @@ public class JobAddonService {
         if (job.getStatus() != JobStatus.OPEN ||
                 (job.getDeadline() != null && !job.getDeadline().isAfter(LocalDateTime.now()))) {
             order.setStatus(JobAddonOrder.Status.PAID_UNAPPLIED);
+            log.warn("Paid add-on order {} for job {} requires manual review because the job is closed",
+                    order.getId(), job.getId());
             notificationService.sendJobAddonNotification(order.getClient().getId(), job.getId(),
                     job.getTitle(), order.getTotalFee(), "PROJECT_ADDON_PAYMENT_REVIEW",
                     "Đã ghi nhận thanh toán nhưng dự án không còn tuyển. Vui lòng liên hệ hỗ trợ để xử lý khoản tiền.");
@@ -186,6 +213,8 @@ public class JobAddonService {
         }
         jobService.activateAddons(job.getId(), order.isFeatured(), order.isUrgent());
         order.setStatus(JobAddonOrder.Status.PAID);
+        log.info("Activated paid add-on order {} for job {} (featured={}, urgent={})",
+                order.getId(), job.getId(), order.isFeatured(), order.isUrgent());
         createPurchaseHistory(order, attempt.getTxnRef());
         userNotificationService.resolveJobAddonReminder(order.getClient().getId(), job.getId());
         notificationService.sendJobAddonNotification(order.getClient().getId(), job.getId(),

@@ -94,7 +94,7 @@ public class JobServiceImpl implements JobService {
         String srsContent = request.getSrsContent();
         if (srsContent == null || srsContent.isBlank()) {
             srsContent = "";
-            if (request.getSrsDocumentUrl() != null) {
+            if (request.getSrsDocumentUrl() != null && !request.getSrsDocumentUrl().isBlank()) {
                 try {
                     srsContent = restClient.get().uri(request.getSrsDocumentUrl()).retrieve().body(String.class);
                 } catch (Exception e) {
@@ -115,7 +115,9 @@ public class JobServiceImpl implements JobService {
         }
 
         List<AiExtractedSkill> extractedSkills =
-                aiService.extractSkillsForJob(srsContent, availableSkillsJson);
+                aiService.extractSkillsForJob(
+                        srsContent.isBlank() ? request.getDescription() : srsContent,
+                        availableSkillsJson);
 
         Job job =
                 Job.builder()
