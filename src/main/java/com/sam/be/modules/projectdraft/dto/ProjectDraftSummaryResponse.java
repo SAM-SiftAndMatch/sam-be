@@ -7,6 +7,8 @@ public record ProjectDraftSummaryResponse(
         UUID id,
         String flowType,
         String phase,
+        int progressStep,
+        int progressPercent,
         String title,
         String brief,
         LocalDateTime updatedAt) {}

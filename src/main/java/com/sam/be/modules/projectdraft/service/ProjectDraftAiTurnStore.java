@@ -61,6 +61,9 @@ public class ProjectDraftAiTurnStore {
             draft.setSrsDocumentUrl(null);
             draft.setExactBudgetVnd(null);
             draft.setDurationMonths(null);
+            draft.setProgressStep(1);
+        } else {
+            draft.setProgressStep(3);
         }
         draft.setPhase("BA".equals(request.phase()) ? "ba-chat" : "risk-chat");
         return turns.saveAndFlush(turn);
@@ -87,10 +90,14 @@ public class ProjectDraftAiTurnStore {
         if (response.getCurrentSrsUrl() != null) draft.setSrsDocumentUrl(response.getCurrentSrsUrl());
         if (response.getExactBudgetVnd() != null) draft.setExactBudgetVnd(response.getExactBudgetVnd());
         if (response.getDurationMonths() != null) draft.setDurationMonths(response.getDurationMonths());
-        if ("BA".equals(turn.getPhase()) && "COMPLETED".equals(response.getStatus())) {
+        if ("BA".equals(turn.getPhase()) && "COMPLETED".equals(response.getStatus())
+                && draft.getSrsContent() != null && !draft.getSrsContent().isBlank()) {
             draft.setPhase("srs-review");
-        } else if ("RISK".equals(turn.getPhase()) && "FINALIZED".equals(response.getStatus())) {
+            draft.setProgressStep(2);
+        } else if ("RISK".equals(turn.getPhase()) && "FINALIZED".equals(response.getStatus())
+                && draft.getSrsContent() != null && !draft.getSrsContent().isBlank()) {
             draft.setPhase("completed");
+            draft.setProgressStep(4);
         }
     }
 

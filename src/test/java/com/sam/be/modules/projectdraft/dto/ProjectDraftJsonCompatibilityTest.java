@@ -29,7 +29,7 @@ class ProjectDraftJsonCompatibilityTest {
     @Test
     void springJacksonMapperWritesDraftStateAsJsonObject() {
         ProjectDraftResponse response = new ProjectDraftResponse(
-                UUID.randomUUID(), "MANUAL", "info", "EDITING", null, null,
+                UUID.randomUUID(), "MANUAL", "info", "EDITING", 0, 0, null, null,
                 Map.of("projectName", "Ứng dụng bán hàng"), null, null,
                 null, null, null, 0, 0, null, List.of());
 

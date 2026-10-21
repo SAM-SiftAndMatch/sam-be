@@ -54,6 +54,7 @@ class ProjectDraftServiceTest {
         assertEquals("https://example.test/srs.pdf", request.getSrsDocumentUrl());
         assertEquals(jobId, draft.getPublishedJobId());
         assertEquals("PUBLISHED", draft.getStatus());
+        assertEquals(5, draft.getProgressStep());
     }
 
     @Test
@@ -95,6 +96,48 @@ class ProjectDraftServiceTest {
         assertThrows(ApiException.class, () -> service.update(clientId, draftId,
                 new UpdateProjectDraftRequest(2L, "stale title", null, null, null, null)));
         assertNull(draft.getTitle());
+    }
+
+    @Test
+    void manualProgressSurvivesBackNavigationAndOnlyFinishesAfterPublish() {
+        UUID clientId = UUID.randomUUID();
+        UUID draftId = UUID.randomUUID();
+        ProjectDraft draft = editingDraft(draftId, "MANUAL", "info");
+        when(drafts.findOwnedForUpdate(draftId, clientId)).thenReturn(Optional.of(draft));
+        var state = java.util.Map.<String, Object>of(
+                "category", "Web", "budgetAmount", 1_000_000, "deadline", "2026-12-01");
+        service.update(clientId, draftId,
+                new UpdateProjectDraftRequest(0L, "Website", "Mô tả dự án", "budget", state, null));
+        assertEquals(1, draft.getProgressStep());
+        service.update(clientId, draftId,
+                new UpdateProjectDraftRequest(1L, null, null, "addons", null, null));
+        assertEquals(2, draft.getProgressStep());
+        service.update(clientId, draftId,
+                new UpdateProjectDraftRequest(2L, null, null, "review", null, null));
+        assertEquals(3, draft.getProgressStep());
+        service.update(clientId, draftId,
+                new UpdateProjectDraftRequest(3L, null, null, "info", null, null));
+        assertEquals(3, draft.getProgressStep());
+        service.update(clientId, draftId,
+                new UpdateProjectDraftRequest(4L, null, null, "confirm", null, null));
+        assertEquals(4, draft.getProgressStep());
+    }
+
+    @Test
+    void changingManualBudgetInvalidatesLaterMilestones() {
+        UUID clientId = UUID.randomUUID();
+        UUID draftId = UUID.randomUUID();
+        ProjectDraft draft = editingDraft(draftId, "MANUAL", "review");
+        draft.setTitle("Website");
+        draft.setBrief("Mô tả dự án");
+        draft.setStateJson("{\"category\":\"Web\",\"budgetAmount\":1000000,\"deadline\":\"2026-12-01\"}");
+        draft.setProgressStep(3);
+        when(drafts.findOwnedForUpdate(draftId, clientId)).thenReturn(Optional.of(draft));
+
+        service.update(clientId, draftId, new UpdateProjectDraftRequest(0L, null, null, "budget",
+                java.util.Map.of("category", "Web", "budgetAmount", 2_000_000, "deadline", "2026-12-01"), null));
+
+        assertEquals(2, draft.getProgressStep());
     }
 
     private ProjectDraft editingDraft(UUID id, String flow, String phase) {

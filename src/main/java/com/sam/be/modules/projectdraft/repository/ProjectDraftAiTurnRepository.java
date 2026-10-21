@@ -26,6 +26,10 @@ public interface ProjectDraftAiTurnRepository extends JpaRepository<ProjectDraft
             + "AND t.phase = 'RISK' AND t.active = true")
     int deactivateRiskTurns(@Param("draftId") UUID draftId);
 
+    @Modifying
+    @Query("UPDATE ProjectDraftAiTurn t SET t.active = false WHERE t.draft.id = :draftId AND t.active = true")
+    int deactivateAllTurns(@Param("draftId") UUID draftId);
+
     @Query("SELECT t.id FROM ProjectDraftAiTurn t WHERE t.status = 'PENDING' ORDER BY t.createdAt ASC")
     List<UUID> findPendingIds(Pageable pageable);
 

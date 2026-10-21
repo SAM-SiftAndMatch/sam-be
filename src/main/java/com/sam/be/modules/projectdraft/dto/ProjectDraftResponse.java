@@ -11,6 +11,8 @@ public record ProjectDraftResponse(
         String flowType,
         String phase,
         String status,
+        int progressStep,
+        int progressPercent,
         String title,
         String brief,
         Map<String, Object> state,

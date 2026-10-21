@@ -30,6 +30,9 @@ public class ProjectDraft extends AbstractAuditEntity {
     @Column(nullable = false, length = 16)
     private String status = "EDITING";
 
+    @Column(name = "progress_step", nullable = false)
+    private int progressStep;
+
     private String title;
 
     @Column(columnDefinition = "TEXT")
