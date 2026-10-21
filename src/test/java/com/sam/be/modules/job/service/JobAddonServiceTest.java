@@ -3,6 +3,7 @@ package com.sam.be.modules.job.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sam.be.common.constant.enums.JobStatus;
+import com.sam.be.common.exception.ApiException;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
@@ -138,6 +140,51 @@ class JobAddonServiceTest {
         when(signer.verify(any(), eq("secret"))).thenReturn(false);
 
         assertEquals("97", service.handleVnpayIpn(Map.of("vnp_TxnRef", "JA123")).get("RspCode"));
+        verify(jobService, never()).activateAddons(any(), anyBoolean(), anyBoolean());
+    }
+
+    @Test
+    void signedReturnActivatesPendingOrderEvenWhenIpnDidNotArrive() {
+        UUID clientId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        User client = User.builder().id(clientId).build();
+        Job job = Job.builder().id(jobId).client(client).title("Test project")
+                .status(JobStatus.OPEN).deadline(LocalDateTime.now().plusDays(7)).build();
+        JobAddonOrder order = JobAddonOrder.builder().id(UUID.randomUUID()).job(job).client(client)
+                .featured(true).featuredFee(BigDecimal.valueOf(59000))
+                .urgentFee(BigDecimal.ZERO).totalFee(BigDecimal.valueOf(59000))
+                .status(JobAddonOrder.Status.PENDING).build();
+        JobAddonPaymentAttempt attempt = JobAddonPaymentAttempt.builder().id(UUID.randomUUID())
+                .order(order).txnRef("JAreturn").status(JobAddonPaymentAttempt.Status.PENDING).build();
+        when(jobs.findById(jobId)).thenReturn(Optional.of(job));
+        when(properties.getHashSecret()).thenReturn("secret");
+        when(properties.getTmnCode()).thenReturn("merchant");
+        when(signer.verify(any(), eq("secret"))).thenReturn(true);
+        when(attempts.findByTxnRefForUpdate("JAreturn")).thenReturn(Optional.of(attempt));
+        when(orders.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(orders.findFirstByJobIdOrderByCreatedAtDesc(jobId)).thenReturn(Optional.of(order));
+        when(packages.findById(FEATURED_ID)).thenReturn(Optional.of(
+                ServicePackage.builder().id(FEATURED_ID).isActive(true)
+                        .price(BigDecimal.valueOf(59000)).build()));
+        Map<String, String> params = Map.of("vnp_TxnRef", "JAreturn", "vnp_Amount", "5900000",
+                "vnp_TmnCode", "merchant", "vnp_ResponseCode", "00", "vnp_TransactionStatus", "00",
+                "vnp_SecureHash", "signed");
+
+        assertEquals("PAID", service.confirmReturn(clientId, jobId, params).orderStatus());
+        assertEquals("PAID", service.confirmReturn(clientId, jobId, params).orderStatus());
+        verify(jobService).activateAddons(jobId, true, false);
+    }
+
+    @Test
+    void unsignedReturnCannotActivateAddons() {
+        UUID clientId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        when(jobs.findById(jobId)).thenReturn(Optional.of(Job.builder()
+                .id(jobId).client(User.builder().id(clientId).build()).build()));
+        when(properties.getHashSecret()).thenReturn("secret");
+
+        assertThrows(ApiException.class, () -> service.confirmReturn(clientId, jobId,
+                Map.of("vnp_ResponseCode", "00")));
         verify(jobService, never()).activateAddons(any(), anyBoolean(), anyBoolean());
     }
 }
