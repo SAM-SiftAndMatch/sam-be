@@ -1,8 +1,8 @@
 package com.sam.be.modules.projectdraft.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.response.PageRequests;
@@ -18,6 +18,7 @@ import com.sam.be.modules.projectdraft.repository.ProjectDraftAiTurnRepository;
 import com.sam.be.modules.projectdraft.repository.ProjectDraftRepository;
 import com.sam.be.modules.user.repository.UserRepository;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
@@ -143,13 +144,12 @@ public class ProjectDraftService {
                 history.stream().map(this::turnResponse).toList());
     }
 
-    private JsonNode parseState(String json) {
-        try { return mapper.readTree(json); }
+    private Map<String, Object> parseState(String json) {
+        try { return mapper.readValue(json, new TypeReference<Map<String, Object>>() {}); }
         catch (JsonProcessingException e) { throw new IllegalStateException("Invalid draft state", e); }
     }
 
-    private String json(JsonNode state) {
-        if (!state.isObject()) throw new ApiException(ErrorCode.VALIDATION_ERROR, "state phải là object");
+    private String json(Map<String, Object> state) {
         try {
             String value = mapper.writeValueAsString(state);
             if (value.length() > 100_000) throw new ApiException(ErrorCode.VALIDATION_ERROR, "Bản nháp quá lớn");

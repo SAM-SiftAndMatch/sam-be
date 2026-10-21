@@ -1,9 +1,9 @@
 package com.sam.be.modules.projectdraft.dto;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record ProjectDraftResponse(
@@ -13,7 +13,7 @@ public record ProjectDraftResponse(
         String status,
         String title,
         String brief,
-        JsonNode state,
+        Map<String, Object> state,
         String srsContent,
         String srsDocumentUrl,
         BigDecimal exactBudgetVnd,
