@@ -140,6 +140,16 @@ public class AiServiceImpl implements AiService {
     }
 
     @Override
+    public AiChatResponse chatWithAiBaFromHistory(
+            AiChatRequest request, List<Map<String, Object>> previousHistory) {
+        List<Map<String, Object>> history = new ArrayList<>(previousHistory);
+        boolean firstTurn = history.isEmpty();
+        history.add(createMessage("user", request.getUserMessage()));
+        String aiResponseJson = geminiClient.generateContent(baSystemPrompt, history);
+        return parseAndUploadSrs(request.getSessionId(), aiResponseJson, true, firstTurn);
+    }
+
+    @Override
     public AiChatResponse chatWithAiRisk(AiChatRequest request) {
         StringBuilder userPrompt = new StringBuilder();
 

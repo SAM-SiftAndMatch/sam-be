@@ -8,6 +8,7 @@ import com.sam.be.modules.job.dto.response.JobAddonCheckoutResponse;
 import com.sam.be.modules.job.dto.response.JobAddonPriceResponse;
 import com.sam.be.modules.job.dto.response.JobAddonSummaryResponse;
 import com.sam.be.modules.job.service.JobAddonService;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -46,5 +47,13 @@ public class JobAddonController {
         return ApiResponse.<JobAddonCheckoutResponse>builder()
                 .result(addonService.checkout(SecurityUtils.getCurrentUserId(), jobId,
                         request.returnUrl())).build();
+    }
+
+    @PostMapping("/{jobId}/addons/confirm-return")
+    public ApiResponse<JobAddonSummaryResponse> confirmReturn(@PathVariable UUID jobId,
+            @RequestBody Map<String, String> vnpayParams) {
+        return ApiResponse.<JobAddonSummaryResponse>builder()
+                .result(addonService.confirmReturn(SecurityUtils.getCurrentUserId(), jobId, vnpayParams))
+                .build();
     }
 }
