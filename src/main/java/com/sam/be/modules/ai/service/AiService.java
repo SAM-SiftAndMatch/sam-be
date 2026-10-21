@@ -4,11 +4,14 @@ import com.sam.be.modules.ai.dto.request.AiChatRequest;
 import com.sam.be.modules.ai.dto.response.*;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 public interface AiService {
     List<AiQuestion> getBaseQuestions();
 
     AiChatResponse chatWithAiBa(AiChatRequest request);
+
+    AiChatResponse chatWithAiBaFromHistory(AiChatRequest request, List<Map<String, Object>> history);
 
     AiChatResponse chatWithAiRisk(AiChatRequest request);
 

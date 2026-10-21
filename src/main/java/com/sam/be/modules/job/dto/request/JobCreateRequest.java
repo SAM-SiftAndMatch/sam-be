@@ -27,7 +27,8 @@ public class JobCreateRequest {
 
     private LocalDateTime deadline;
 
-    @NotBlank private String srsDocumentUrl;
+    // Manual posting can be created without an AI-generated SRS document.
+    private String srsDocumentUrl;
 
     /** Nội dung SRS Markdown (lưu vào DB để render đẹp trong app) */
     private String srsContent;
