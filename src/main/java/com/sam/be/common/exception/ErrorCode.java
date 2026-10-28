@@ -35,6 +35,9 @@ public enum ErrorCode {
     INVALID_PAYMENT_SIGNATURE(1020, "Invalid payment gateway signature", HttpStatus.BAD_REQUEST),
     PACKAGE_NOT_AVAILABLE(1021, "Service package is not available", HttpStatus.BAD_REQUEST),
     INVALID_RETURN_URL(1022, "Return URL is not in allowed whitelist", HttpStatus.BAD_REQUEST),
+    GOOGLE_AUTH_FAILED(1023, "Google authentication failed", HttpStatus.UNAUTHORIZED),
+    GOOGLE_AUTH_NOT_CONFIGURED(1024, "Google authentication is not configured", HttpStatus.SERVICE_UNAVAILABLE),
+    GOOGLE_LINK_REQUIRED(1025, "Sign in to your SAM account to link Google", HttpStatus.CONFLICT),
     UNEXPECTED_ERROR(9999, "Internal server error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final int code;
