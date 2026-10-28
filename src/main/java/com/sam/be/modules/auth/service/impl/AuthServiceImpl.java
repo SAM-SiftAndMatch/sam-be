@@ -55,7 +55,8 @@ public class AuthServiceImpl implements AuthService {
                         .findByEmail(email)
                         .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        if (user.getPasswordHash() == null
+                || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
         }
 
@@ -187,6 +188,19 @@ public class AuthServiceImpl implements AuthService {
         sessionCacheService.markRevoked(sessionId, maxTtl);
         sessionCacheService.clearActive(sessionId);
         sessionCacheService.clearAuthz(sessionId);
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse createSession(UUID userId, HttpServletRequest httpRequest) {
+        User user =
+                userRepository
+                        .findById(userId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHENTICATED));
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            throw new ApiException(ErrorCode.ACCOUNT_DISABLED);
+        }
+        return createSessionAndGenerateTokens(user, httpRequest);
     }
 
     private AuthResponse createSessionAndGenerateTokens(User user, HttpServletRequest httpRequest) {

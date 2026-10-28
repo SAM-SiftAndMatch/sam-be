@@ -36,6 +36,7 @@ public class SecurityConfig {
     CustomJwtDecoder customJwtDecoder;
     JwtAuthenticationConverter jwtAuthenticationConverter;
     ObjectMapper objectMapper;
+    CorsProperties corsProperties;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -49,7 +50,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        configuration.setAllowedOrigins(corsProperties.getAllowedOrigins());
         configuration.setAllowedMethods(
                 List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
@@ -73,6 +74,9 @@ public class SecurityConfig {
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
                         "/api/v1/auth/refresh",
+                        "/api/v1/auth/google/start",
+                        "/api/v1/auth/google/callback",
+                        "/api/v1/auth/google/complete",
                         "/api/v1/auth/forgot-password/**",
                         "/api/v1/auth/reset-password/**",
                         "/api/v1/internal/healthz",
