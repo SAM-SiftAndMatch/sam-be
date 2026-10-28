@@ -2,6 +2,7 @@ name: sam-be-prod
 
 services:
   backend:
+    container_name: sam-backend
     image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME in .env}/sam-backend:${IMAGE_TAG:-latest}
     env_file:
       - .env
