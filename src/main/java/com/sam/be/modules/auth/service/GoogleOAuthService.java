@@ -104,6 +104,7 @@ public class GoogleOAuthService {
                         .queryParam("client_id", properties.getClientId())
                         .queryParam("redirect_uri", properties.getRedirectUri())
                         .queryParam("scope", "openid email profile")
+                        .queryParam("prompt", "select_account")
                         .queryParam("state", state)
                         .queryParam("nonce", nonce)
                         .queryParam("code_challenge", challenge)

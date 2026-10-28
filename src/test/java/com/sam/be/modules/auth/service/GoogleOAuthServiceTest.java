@@ -71,6 +71,7 @@ class GoogleOAuthServiceTest {
         assertFalse(saved.getValue().verifier().isBlank());
         assertFalse(start.url().contains(saved.getValue().verifier()));
         assertFalse(start.url().contains("test-secret"));
+        org.junit.jupiter.api.Assertions.assertTrue(start.url().contains("prompt=select_account"));
         org.junit.jupiter.api.Assertions.assertTrue(start.url().contains("code_challenge_method=S256"));
     }
 
