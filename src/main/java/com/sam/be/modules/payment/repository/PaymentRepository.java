@@ -28,6 +28,11 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     Optional<Payment> findByPaymentGatewayId(String paymentGatewayId);
 
+    @org.springframework.data.jpa.repository.Lock(
+            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.id=:id")
+    Optional<Payment> findByIdForFunding(@Param("id") UUID id);
+
     interface EscrowTotals {
         BigDecimal getHeldFunds();
 

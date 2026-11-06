@@ -1,0 +1,152 @@
+package com.sam.be.modules.finance;
+
+import static com.sam.be.modules.finance.FinanceStore.*;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sam.be.common.security.util.SecurityUtils;
+import java.util.*;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class BankAccountService {
+    private final FinanceStore store;
+    private final BankDataCipher cipher;
+    private final ObjectMapper json;
+
+    public record Details(String accountNumber, String accountHolder) {
+        @Override
+        public String toString() {
+            return "BankDetails[REDACTED]";
+        }
+    }
+
+    private static final String PUBLIC =
+            "id,owner_id,bank_code,last_four,status,verification_note,created_at,verified_at";
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> list(UUID owner) {
+        return store.rows(
+                "SELECT "
+                        + PUBLIC
+                        + " FROM finance_bank_accounts WHERE owner_id=? ORDER BY created_at DESC,id DESC",
+                owner);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> adminList(int page) {
+        return store.rows(
+                "SELECT b."
+                        + PUBLIC.replace(",", ",b.")
+                        + ",u.full_name AS owner_name FROM finance_bank_accounts b JOIN users u ON u.id=b.owner_id ORDER BY b.created_at DESC,b.id DESC LIMIT 25 OFFSET ?",
+                Math.max(page, 0) * 25L);
+    }
+
+    @Transactional
+    public Map<String, Object> add(UUID owner, String code, String account, String holder) {
+        store.lockOwner(owner);
+        String normalizedCode = code.trim().toUpperCase(Locale.ROOT);
+        String number = account.replace(" ", "");
+        String name = holder.trim().replaceAll("\\s+", " ");
+        if (!normalizedCode.matches("[A-Z0-9]{2,20}")
+                || !number.matches("[A-Za-z0-9]{4,40}")
+                || name.length() < 2
+                || name.length() > 150
+                || name.chars().anyMatch(Character::isISOControl))
+            throw invalid("Thông tin tài khoản nhận tiền không hợp lệ");
+        String fingerprint = cipher.fingerprint(owner + ":" + normalizedCode + ":" + number);
+        var existing =
+                store.rows(
+                        "SELECT "
+                                + PUBLIC
+                                + " FROM finance_bank_accounts WHERE owner_id=? AND fingerprint=? AND status IN ('PENDING','VERIFIED')",
+                        owner,
+                        fingerprint);
+        if (!existing.isEmpty()) return existing.getFirst();
+        UUID id = UUID.randomUUID();
+        String encoded = encode(new Details(number, name));
+        store.db.update(
+                "INSERT INTO finance_bank_accounts(id,owner_id,bank_code,details_encrypted,last_four,fingerprint,created_at) VALUES (?,?,?,?,?,?,?)",
+                id,
+                owner,
+                normalizedCode,
+                cipher.encrypt(encoded, "bank:" + owner + ":" + id),
+                number.substring(number.length() - 4),
+                fingerprint,
+                store.time(store.now()));
+        store.audit(owner, owner, id, "BANK_ADDED", "Tài khoản chờ xác minh");
+        return store.one("SELECT " + PUBLIC + " FROM finance_bank_accounts WHERE id=?", id);
+    }
+
+    @Transactional
+    public void disable(UUID owner, UUID id) {
+        store.lockOwner(owner);
+        if (store.db.update(
+                        "UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=? AND owner_id=?",
+                        id,
+                        owner)
+                != 1) throw missing();
+        store.audit(owner, owner, id, "BANK_DISABLED", "Ngừng sử dụng; lịch sử giữ nguyên");
+    }
+
+    @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public void verify(UUID actor, UUID id, boolean approved, String note) {
+        var bank = store.one("SELECT owner_id,status FROM finance_bank_accounts WHERE id=?", id);
+        UUID owner = id(bank, "ownerId");
+        store.lockOwner(owner);
+        bank =
+                store.one(
+                        "SELECT owner_id,status FROM finance_bank_accounts WHERE id=? FOR UPDATE",
+                        id);
+        if (!"PENDING".equals(bank.get("status")))
+            throw invalid("Tài khoản không còn chờ xác minh");
+        if (actor.equals(owner)) throw forbidden();
+        store.db.update(
+                "UPDATE finance_bank_accounts SET status=?,verification_note=?,verified_by=?,verified_at=? WHERE id=?",
+                approved ? "VERIFIED" : "REJECTED",
+                note,
+                actor,
+                store.time(store.now()),
+                id);
+        store.audit(actor, owner, id, approved ? "BANK_VERIFIED" : "BANK_REJECTED", note);
+    }
+
+    @Transactional
+    public Map<String, Object> reveal(UUID actor, UUID id) {
+        if (!SecurityUtils.isAdmin()) throw forbidden();
+        var bank = store.one("SELECT * FROM finance_bank_accounts WHERE id=?", id);
+        UUID owner = id(bank, "ownerId");
+        store.audit(actor, owner, id, "BANK_DETAILS_VIEWED", "Hiển thị để xác minh người nhận");
+        Details details =
+                decode(
+                        cipher.decrypt(
+                                bank.get("detailsEncrypted").toString(),
+                                "bank:" + owner + ":" + id));
+        return Map.of(
+                "bankCode",
+                bank.get("bankCode"),
+                "accountNumber",
+                details.accountNumber(),
+                "accountHolder",
+                details.accountHolder());
+    }
+
+    String encode(Details details) {
+        try {
+            return json.writeValueAsString(details);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Cannot encode bank details");
+        }
+    }
+
+    Details decode(String text) {
+        try {
+            return json.readValue(text, Details.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Cannot decode bank details");
+        }
+    }
+}

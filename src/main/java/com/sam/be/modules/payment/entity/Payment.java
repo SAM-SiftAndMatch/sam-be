@@ -22,6 +22,26 @@ public class Payment {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "maintenance_order_id")
+    private UUID maintenanceOrderId;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String provider = "VNPAY";
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String environment = "SANDBOX";
+
+    @Column(name = "verified_at")
+    private java.time.Instant verifiedAt;
+
+    @Column(name = "checkout_url", columnDefinition = "TEXT")
+    private String checkoutUrl;
+
+    @Column(name = "provider_transaction_id")
+    private String providerTransactionId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "contract_id", nullable = false)
     private Contract contract;

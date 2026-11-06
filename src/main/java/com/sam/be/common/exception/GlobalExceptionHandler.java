@@ -24,6 +24,18 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Object>> handleFinanceStatus(
+            org.springframework.web.server.ResponseStatusException ex, HttpServletRequest request) {
+        return ResponseEntity.status(ex.getStatusCode())
+                .body(
+                        buildError(
+                                ErrorCode.REQUEST_FAILED.getCode(),
+                                ex.getReason(),
+                                request.getRequestURI(),
+                                null));
+    }
+
     // Handle lỗi nghiệp vụ do hệ thống chủ động throw (ApiException), trả đúng
     // status + code/message theo ErrorCode.
     @ExceptionHandler(ApiException.class)
@@ -106,7 +118,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Object>> handleDataIntegrity(
             DataIntegrityViolationException ex, HttpServletRequest request) {
-        log.warn("DataIntegrityViolation: {}", ex.getMessage());
+        log.warn("Data integrity constraint violation ({})", ex.getClass().getSimpleName());
         ErrorCode ec = ErrorCode.DUPLICATE_RESOURCE;
         return ResponseEntity.status(ec.getStatus())
                 .body(

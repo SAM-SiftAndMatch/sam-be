@@ -12,6 +12,10 @@ import java.util.Map;
 import java.util.UUID;
 
 public interface PaymentService {
+    PaymentResponse createMaintenanceFunding(UUID userId, UUID orderId);
+
+    java.util.Map<String, Boolean> handlePay2sIpn(com.fasterxml.jackson.databind.JsonNode payload);
+
     // Client nạp 100% giá trị hợp đồng (1 lần duy nhất cho mỗi hợp đồng)
     PaymentResponse createContractFund(UUID userId, CreateEscrowRequest request);
 

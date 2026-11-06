@@ -96,11 +96,39 @@ public class ChatController {
         return ApiResponse.<ChatRoomDto>builder().result(response).build();
     }
 
+    public record RestChatInput(
+            @jakarta.validation.constraints.NotBlank
+                    @jakarta.validation.constraints.Size(max = 8000)
+                    String content) {}
+
+    @org.springframework.web.bind.annotation.PostMapping("/rooms/{roomId}/messages")
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "chat_send",
+            limit = 30,
+            duration = 60)
+    public ApiResponse<ChatMessageDto> sendRest(
+            @PathVariable UUID roomId,
+            @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+                    RestChatInput input) {
+        SendMessagePayload payload = new SendMessagePayload();
+        payload.setSenderId(SecurityUtils.getCurrentUserId());
+        payload.setContent(input.content());
+        ChatMessageDto result = chatService.saveAndBroadcastMessage(roomId, payload);
+        messagingTemplate.convertAndSend("/topic/chat/" + roomId, result);
+        return ApiResponse.<ChatMessageDto>builder().result(result).build();
+    }
+
     // WEBSOCKET ENDPOINT: FE bắn tin nhắn vào đây
     // URL phía FE sẽ gọi: /app/chat/{roomId}/send
     @MessageMapping("/chat/{roomId}/send")
     public void sendMessage(@DestinationVariable UUID roomId, @Payload SendMessagePayload payload) {
-        // Lưu tin nhắn vào DB
+        payload.setSenderId(SecurityUtils.getCurrentUserId());
+        if (payload.getContent() == null
+                || payload.getContent().isBlank()
+                || payload.getContent().length() > 8000)
+            throw new com.sam.be.common.exception.ApiException(
+                    com.sam.be.common.exception.ErrorCode.VALIDATION_ERROR);
         ChatMessageDto savedMessage = chatService.saveAndBroadcastMessage(roomId, payload);
 
         // Phát thanh tin nhắn vừa lưu xuống kênh của phòng này

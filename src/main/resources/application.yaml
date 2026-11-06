@@ -100,3 +100,25 @@ vnpay:
   allowed-return-urls: ${VNPAY_ALLOWED_RETURN_URLS}
   ipn-url: ${VNPAY_IPN_URL}
   default-client-ip: ${VNPAY_DEFAULT_CLIENT_IP}
+
+payments:
+  return-url: ${PAYMENTS_RETURN_URL:}
+  allowed-return-origins: ${PAYMENTS_ALLOWED_RETURN_ORIGINS:}
+  provider: ${PAYMENTS_PROVIDER:vnpay}
+  environment: ${PAYMENTS_ENVIRONMENT:SANDBOX}
+pay2s:
+  base-url: ${PAY2S_BASE_URL:https://sandbox-payment.pay2s.vn}
+  access-key: ${PAY2S_ACCESS_KEY:}
+  secret-key: ${PAY2S_SECRET_KEY:}
+  partner-code: ${PAY2S_PARTNER_CODE:}
+  bank-code: ${PAY2S_BANK_CODE:}
+  bank-account: ${PAY2S_BANK_ACCOUNT:}
+  ipn-url: ${PAY2S_IPN_URL:}
+finance:
+  bank-active-key: ${FINANCE_BANK_ACTIVE_KEY:v1}
+  bank-keys: ${FINANCE_BANK_KEYS:}
+  bank-fingerprint-key: ${FINANCE_BANK_FINGERPRINT_KEY:}
+  live-payouts-enabled: ${FINANCE_LIVE_PAYOUTS_ENABLED:false}
+  dual-control: ${FINANCE_DUAL_CONTROL:true}
+  minimum-withdrawal: ${FINANCE_MINIMUM_WITHDRAWAL:50000}
+  daily-withdrawal-limit: ${FINANCE_DAILY_WITHDRAWAL_LIMIT:100000000}

@@ -4,7 +4,7 @@ import com.sam.be.modules.wallet.dto.response.ProjectSettlementResponse;
 import com.sam.be.modules.workflow.entity.ProjectDelivery;
 import java.util.UUID;
 
-public interface SandboxSettlementService {
+public interface ProjectSettlementService {
     ProjectSettlementResponse settle(UUID contractId, ProjectDelivery delivery);
 
     ProjectSettlementResponse getByContract(UUID requesterId, UUID contractId);

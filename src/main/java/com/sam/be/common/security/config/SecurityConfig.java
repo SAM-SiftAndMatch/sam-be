@@ -83,6 +83,7 @@ public class SecurityConfig {
                         "/api/v1/skills",
                         "/api/v1/skills/**",
                         "/api/v1/payments/vnpay-ipn",
+                        "/api/v1/payments/pay2s-ipn",
                         "/api/v1/subscriptions/vnpay-ipn",
                         "/actuator/**",
                         "/v3/api-docs",
