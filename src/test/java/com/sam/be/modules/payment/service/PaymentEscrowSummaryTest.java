@@ -62,8 +62,6 @@ class PaymentEscrowSummaryTest {
                         null,
                         null,
                         null,
-                        null,
-                        null,
                         cache,
                         null);
 
@@ -98,8 +96,6 @@ class PaymentEscrowSummaryTest {
         var service =
                 new PaymentServiceImpl(
                         repository,
-                        null,
-                        null,
                         null,
                         null,
                         null,

@@ -48,7 +48,14 @@ public class UserSubscription extends AbstractAuditEntity {
     @Column(nullable = false)
     private SubscriptionStatus status;
 
-    // Mã tham chiếu VNPay (vnp_TxnRef) để đối soát IPN.
+    // Provider reference for reconciliation; historical values are retained.
     @Column(name = "gateway_txn_ref")
     private String gatewayTxnRef;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String environment = "LEGACY";
+
+    @Column(name = "amount_paid")
+    private java.math.BigDecimal amountPaid;
 }

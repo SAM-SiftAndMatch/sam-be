@@ -27,7 +27,7 @@ public class Payment {
 
     @Column(nullable = false)
     @Builder.Default
-    private String provider = "VNPAY";
+    private String provider = "PAY2S";
 
     @Column(nullable = false)
     @Builder.Default

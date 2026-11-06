@@ -8,7 +8,6 @@ import com.sam.be.modules.payment.dto.response.FreelancerEscrowSummaryResponse;
 import com.sam.be.modules.payment.dto.response.FundingStatusResponse;
 import com.sam.be.modules.payment.dto.response.PaymentResponse;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public interface PaymentService {
@@ -28,11 +27,11 @@ public interface PaymentService {
     // Bảng tiền nạp khởi động cho cả 2 bên cùng thấy
     FundingStatusResponse getFundingStatus(UUID userId, UUID contractId);
 
-    // FE tự báo đã chuyển sau redirect VNPay (giống confirm-payment của mua gói).
-    // Chỉ ghi nhận khi đúng người trả + đúng txnRef/amount + đang PENDING.
+    // Read-only state; only provider IPN confirms money.
     PaymentResponse confirmFunding(UUID userId, UUID paymentId, ConfirmFundingRequest request);
 
-    Map<String, String> handleVnpayIpn(Map<String, String> params);
+    String applyVerifiedPay2sPayment(
+            UUID paymentId, String order, String transaction, java.math.BigDecimal amount);
 
     PaymentResponse releaseEscrow(UUID userId, UUID paymentId);
 

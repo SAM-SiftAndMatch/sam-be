@@ -26,6 +26,7 @@ public class UserSubscriptionResponse {
 
     private UUID targetProjectId;
 
-    // URL VNPay, chỉ có khi vừa tạo đơn PENDING (FE redirect sang đó).
-    private String vnpayUrl;
+    private com.sam.be.modules.payment.service.CheckoutService.Checkout checkout;
+    private String environment;
+    private boolean entitled;
 }

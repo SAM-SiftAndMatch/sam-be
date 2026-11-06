@@ -3,22 +3,17 @@ package com.sam.be.modules.payment.controller;
 import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.ai.dto.response.AiAmountVerification;
-import com.sam.be.modules.job.service.JobAddonService;
 import com.sam.be.modules.payment.dto.request.ConfirmFundingRequest;
 import com.sam.be.modules.payment.dto.request.CreateEscrowRequest;
 import com.sam.be.modules.payment.dto.response.FreelancerEscrowSummaryResponse;
 import com.sam.be.modules.payment.dto.response.FundingStatusResponse;
 import com.sam.be.modules.payment.dto.response.PaymentResponse;
 import com.sam.be.modules.payment.service.PaymentService;
-import com.sam.be.modules.subscription.repository.UserSubscriptionRepository;
-import com.sam.be.modules.subscription.service.SubscriptionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,17 +22,20 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @Tag(
         name = "Payment",
-        description =
-                "Verified funding via Pay2S or VNPay; settlement and seven-day maintenance hold")
+        description = "Verified funding via Pay2S; settlement and seven-day maintenance hold")
 public class PaymentController {
 
     private final PaymentService paymentService;
     private final com.fasterxml.jackson.databind.ObjectMapper json;
-    private final JobAddonService jobAddonService;
-    private final SubscriptionService subscriptionService;
-    private final UserSubscriptionRepository subscriptionRepository;
+    private final com.sam.be.modules.payment.service.Pay2sIpnService ipn;
 
     @PostMapping("/fund")
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "contract_fund",
+            limit = 5,
+            duration = 60,
+            failClosed = true)
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(
             summary = "Client funds 100% of contract value",
@@ -51,6 +49,12 @@ public class PaymentController {
     }
 
     @PostMapping("/deposit")
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "contract_deposit",
+            limit = 5,
+            duration = 60,
+            failClosed = true)
     @PreAuthorize("hasRole('FREELANCER')")
     @Operation(
             summary = "Freelancer deposits 2% commitment bond",
@@ -87,27 +91,11 @@ public class PaymentController {
         return ApiResponse.<PaymentResponse>builder().result(response).build();
     }
 
-    @RequestMapping(
-            value = "/vnpay-ipn",
-            method = {RequestMethod.GET, RequestMethod.POST})
-    @Operation(
-            summary = "VNPay IPN webhook",
-            description = "Server-to-server callback from VNPay, checksum verified, no JWT needed")
-    public ResponseEntity<Map<String, String>> vnpayIpn(@RequestParam Map<String, String> params) {
-        String txnRef = params.get("vnp_TxnRef");
-        if (txnRef == null || txnRef.isBlank())
-            return ResponseEntity.ok(Map.of("RspCode", "01", "Message", "Order not found"));
-        if (txnRef.startsWith("JA"))
-            return ResponseEntity.ok(jobAddonService.handleVnpayIpn(params));
-        // The configured VNPay callback points here for all payment flows.
-        // Route package transactions too, so monthly plans still activate by verified IPN.
-        if (subscriptionRepository.findByGatewayTxnRef(txnRef).isPresent())
-            return ResponseEntity.ok(subscriptionService.handleVnpayIpn(params));
-        return ResponseEntity.ok(paymentService.handleVnpayIpn(params));
-    }
-
     @PostMapping("/pay2s-ipn")
     public java.util.Map<String, Boolean> pay2sIpn(@RequestBody String payload) {
+        if (payload.length() > 65536)
+            throw new com.sam.be.common.exception.ApiException(
+                    com.sam.be.common.exception.ErrorCode.MALFORMED_JSON);
         try {
             // Parse explicitly: Boot 4 may select Jackson 3 for MVC while this module uses Jackson
             // 2.
@@ -116,7 +104,7 @@ public class PaymentController {
                             .with(
                                     com.fasterxml.jackson.core.JsonParser.Feature
                                             .STRICT_DUPLICATE_DETECTION);
-            return paymentService.handlePay2sIpn(parser.readTree(payload));
+            return ipn.accept(parser.readTree(payload));
         } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
             throw new com.sam.be.common.exception.ApiException(
                     com.sam.be.common.exception.ErrorCode.MALFORMED_JSON);

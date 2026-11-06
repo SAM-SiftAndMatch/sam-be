@@ -62,6 +62,12 @@ class FinancePostgresTest {
             assertNotNull(stream);
             db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
+        db.execute("CREATE TABLE user_subscriptions(id UUID PRIMARY KEY)");
+        try (var stream =
+                getClass().getResourceAsStream("/db/migration/V39__Unified_Pay2s_Checkouts.sql")) {
+            assertNotNull(stream);
+            db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
         db.update("INSERT INTO users VALUES (?),(?)", owner, client);
         db.update("INSERT INTO jobs VALUES (?,'Finance test')", job);
         db.update("INSERT INTO contracts VALUES (?)", contract);
@@ -336,5 +342,117 @@ class FinancePostgresTest {
         var january = (Map<?, ?>) ((List<?>) nextYear.get("months")).getFirst();
         assertEquals(new BigDecimal("450000.00"), january.get("sandboxNetIncome"));
         assertEquals(0L, income.entries(owner, 2027, 0).get("totalElements"));
+    }
+
+    private UUID checkout() {
+        UUID id = UUID.randomUUID();
+        db.update(
+                "INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at) VALUES (?,'SUBSCRIPTION',?,?,149000,'SANDBOX','PENDING',?,?)",
+                id,
+                UUID.randomUUID(),
+                owner,
+                "SAMGOI" + id.toString().replace("-", "").substring(0, 16),
+                store().time(now.plusSeconds(900)));
+        return id;
+    }
+
+    @Test
+    void unifiedCheckoutConcurrentCallbacksCommitOneReceiptAndOneFulfillment() throws Exception {
+        UUID id = checkout();
+        var provider = org.mockito.Mockito.mock(Pay2sClient.class);
+        org.mockito.Mockito.when(provider.verify(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+        org.mockito.Mockito.when(provider.environment()).thenReturn("SANDBOX");
+        var ipn =
+                new com.sam.be.modules.payment.service.Pay2sIpnService(
+                        provider,
+                        store(),
+                        org.mockito.Mockito.mock(
+                                com.sam.be.modules.payment.service.PaymentService.class));
+        var payload =
+                new com.fasterxml.jackson.databind.ObjectMapper()
+                        .createObjectNode()
+                        .put("orderId", id.toString().replace("-", ""))
+                        .put("amount", 149000)
+                        .put("transId", "PAY2S_CONCURRENT")
+                        .put("resultCode", 0);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var start = new CountDownLatch(1);
+            var a =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return tx.execute(t -> ipn.accept(payload));
+                            });
+            var b =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                return tx.execute(t -> ipn.accept(payload));
+                            });
+            start.countDown();
+            assertTrue(a.get(15, TimeUnit.SECONDS).get("success"));
+            assertTrue(b.get(15, TimeUnit.SECONDS).get("success"));
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(
+                1,
+                db.queryForObject(
+                        "SELECT count(*) FROM payment_checkout_receipts WHERE checkout_id=?",
+                        Integer.class,
+                        id));
+        assertEquals(
+                "PENDING",
+                db.queryForObject(
+                        "SELECT fulfillment_status FROM payment_checkouts WHERE id=?",
+                        String.class,
+                        id));
+        assertEquals(1, db.queryForObject("SELECT count(*) FROM finance_journals", Integer.class));
+    }
+
+    @Test
+    void checkoutIdentityAndReceiptsCannotBeRewrittenAndPaidCannotRegress() {
+        UUID id = checkout();
+        assertThrows(
+                org.springframework.dao.DataAccessException.class,
+                () -> db.update("UPDATE payment_checkouts SET amount=1 WHERE id=?", id));
+        db.update("UPDATE payment_checkouts SET status='PAID' WHERE id=?", id);
+        assertThrows(
+                org.springframework.dao.DataAccessException.class,
+                () -> db.update("UPDATE payment_checkouts SET status='CANCELLED' WHERE id=?", id));
+        db.update(
+                "INSERT INTO payment_checkout_receipts(id,checkout_id,environment,provider_reference,amount,disposition) VALUES (?,?,'SANDBOX','IMMUTABLE',149000,'ACCEPTED')",
+                UUID.randomUUID(),
+                id);
+        assertThrows(
+                org.springframework.dao.DataAccessException.class,
+                () -> db.update("DELETE FROM payment_checkout_receipts WHERE checkout_id=?", id));
+    }
+
+    @Test
+    void fulfillmentBackoffAndSkipLockedSqlExecuteOnPostgres() {
+        UUID id = checkout();
+        db.update(
+                "UPDATE payment_checkouts SET status='PAID',fulfillment_status='PENDING' WHERE id=?",
+                id);
+        tx.executeWithoutResult(
+                t -> {
+                    assertEquals(
+                            1,
+                            db.queryForList(
+                                            "SELECT id FROM payment_checkouts WHERE status='PAID' AND fulfillment_status IN ('PENDING','RETRY') AND next_attempt_at<=now() ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED")
+                                    .size());
+                    db.update(
+                            "UPDATE payment_checkouts SET fulfillment_status='RETRY',attempt_count=attempt_count+1,next_attempt_at=now()+make_interval(secs => LEAST(3600, 10 * power(2,LEAST(attempt_count,8)))::int) WHERE id=?",
+                            id);
+                });
+        assertEquals(
+                1,
+                db.queryForObject(
+                        "SELECT attempt_count FROM payment_checkouts WHERE id=?",
+                        Integer.class,
+                        id));
     }
 }

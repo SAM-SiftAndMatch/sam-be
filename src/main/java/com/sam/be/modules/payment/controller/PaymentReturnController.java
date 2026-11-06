@@ -18,9 +18,16 @@ public class PaymentReturnController {
     private final PaymentReturnPolicy returns;
 
     @GetMapping("/api/v1/payments/pay2s-return")
-    public ResponseEntity<Void> pay2sReturn() {
+    public ResponseEntity<Void> pay2sReturn(
+            @org.springframework.web.bind.annotation.RequestParam(required = false)
+                    String orderId) {
         return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                .location(URI.create(returns.resolve(null)))
+                .location(
+                        URI.create(
+                                returns.resolve(null)
+                                        + (orderId != null && orderId.matches("[A-Fa-f0-9]{32}")
+                                                ? "?orderId=" + orderId
+                                                : "")))
                 .cacheControl(CacheControl.noStore())
                 .header("Referrer-Policy", "no-referrer")
                 .build();

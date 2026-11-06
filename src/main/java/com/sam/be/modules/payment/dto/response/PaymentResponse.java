@@ -29,7 +29,7 @@ public class PaymentResponse {
 
     private PaymentStatus status;
 
-    private String vnpayUrl;
+    private String orderId;
     private String checkoutUrl;
     private String provider;
     private String environment;

@@ -91,20 +91,10 @@ swagger:
   username: ${SWAGGER_USERNAME}
   password: ${SWAGGER_PASSWORD}
 
-# VNPay Sandbox Configuration (thanh toán ký quỹ Escrow)
-vnpay:
-  tmn-code: ${VNPAY_TMN_CODE}
-  hash-secret: ${VNPAY_HASH_SECRET}
-  api-url: ${VNPAY_API_URL}
-  api-query-url: ${VNPAY_API_QUERY_URL}
-  allowed-return-urls: ${VNPAY_ALLOWED_RETURN_URLS}
-  ipn-url: ${VNPAY_IPN_URL}
-  default-client-ip: ${VNPAY_DEFAULT_CLIENT_IP}
-
 payments:
   return-url: ${PAYMENTS_RETURN_URL:}
   allowed-return-origins: ${PAYMENTS_ALLOWED_RETURN_ORIGINS:}
-  provider: ${PAYMENTS_PROVIDER:vnpay}
+  provider: ${PAYMENTS_PROVIDER:pay2s}
   environment: ${PAYMENTS_ENVIRONMENT:SANDBOX}
 pay2s:
   base-url: ${PAY2S_BASE_URL:https://payment.pay2s.vn}

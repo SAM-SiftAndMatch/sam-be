@@ -47,8 +47,6 @@ class PaymentFundingTrustTest {
                         null,
                         null,
                         null,
-                        null,
-                        null,
                         null);
         var result = service.confirmFunding(actor, paymentId, null);
         assertEquals(PaymentStatus.PENDING, result.getStatus());
@@ -79,8 +77,6 @@ class PaymentFundingTrustTest {
         var service =
                 new PaymentServiceImpl(
                         repository,
-                        null,
-                        null,
                         null,
                         null,
                         null,

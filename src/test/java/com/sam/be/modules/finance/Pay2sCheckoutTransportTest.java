@@ -103,7 +103,7 @@ class Pay2sCheckoutTransportTest {
                 client.create(
                         order,
                         250000,
-                        "http://localhost:5173/client/payment/vnpay-return",
+                        "http://localhost:5173/payment/return",
                         PaymentType.CONTRACT_FUND);
         assertTrue(checkout.demo());
         assertEquals("https://sandbox-payment.pay2s.vn/pay/test", checkout.url());

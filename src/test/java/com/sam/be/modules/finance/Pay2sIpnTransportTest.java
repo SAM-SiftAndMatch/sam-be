@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.be.modules.payment.controller.PaymentController;
-import com.sam.be.modules.payment.service.PaymentService;
+import com.sam.be.modules.payment.service.Pay2sIpnService;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -16,8 +16,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class Pay2sIpnTransportTest {
     @Test
     void realMvcConvertersDeliverNumericIpnWithoutCrossJacksonBinding() throws Exception {
-        var payments = mock(PaymentService.class);
-        when(payments.handlePay2sIpn(any()))
+        var payments = mock(Pay2sIpnService.class);
+        when(payments.accept(any()))
                 .thenAnswer(
                         invocation -> {
                             com.fasterxml.jackson.databind.JsonNode body =
@@ -26,20 +26,20 @@ class Pay2sIpnTransportTest {
                             assertEquals("tx1", body.get("transId").textValue());
                             return Map.of("success", true);
                         });
-        var controller = new PaymentController(payments, new ObjectMapper(), null, null, null);
+        var controller = new PaymentController(null, new ObjectMapper(), payments);
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
         mvc.perform(
                         post("/api/v1/payments/pay2s-ipn")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"amount\":250000,\"transId\":\"tx1\"}"))
                 .andExpect(status().isOk());
-        verify(payments).handlePay2sIpn(any());
+        verify(payments).accept(any());
     }
 
     @Test
     void duplicateFieldsAreRejectedBeforeSignatureOrFinancialProcessing() {
-        var payments = mock(PaymentService.class);
-        var controller = new PaymentController(payments, new ObjectMapper(), null, null, null);
+        var payments = mock(Pay2sIpnService.class);
+        var controller = new PaymentController(null, new ObjectMapper(), payments);
         assertThrows(
                 com.sam.be.common.exception.ApiException.class,
                 () -> controller.pay2sIpn("{\"amount\":250000,\"amount\":1}"));

@@ -86,22 +86,6 @@ class Pay2sClientTest {
     }
 
     @Test
-    void disabledProviderDoesNotAcceptIpn() {
-        var c =
-                new Pay2sClient(
-                        "vnpay",
-                        "SANDBOX",
-                        "https://sandbox-payment.pay2s.vn",
-                        "access",
-                        "secret",
-                        "partner",
-                        "ACB",
-                        "001",
-                        "https://example.com");
-        assertFalse(c.verify(payload()));
-    }
-
-    @Test
     void productionDoesNotAllowSandboxOriginOrHttpIpn() {
         assertThrows(
                 IllegalStateException.class,

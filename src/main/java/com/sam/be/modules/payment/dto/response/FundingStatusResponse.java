@@ -19,7 +19,7 @@ public class FundingStatusResponse {
     private String jobStatus;
     private BigDecimal agreedAmount;
 
-    // Số tiền mỗi bên phải chuyển (hiển thị cho 2 bên cùng thấy trước khi bấm VNPay)
+    // Số tiền mỗi bên phải chuyển (hiển thị cho 2 bên cùng thấy trước khi mở Pay2S)
     private BigDecimal clientAmount;
     private BigDecimal depositAmount;
 

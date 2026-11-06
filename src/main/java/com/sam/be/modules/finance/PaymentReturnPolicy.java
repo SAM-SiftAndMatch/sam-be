@@ -1,6 +1,5 @@
 package com.sam.be.modules.finance;
 
-import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
 import java.net.URI;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,21 +12,14 @@ public class PaymentReturnPolicy {
     private final boolean live;
 
     public PaymentReturnPolicy(
-            VnpayProperties legacy,
             @Value("${payments.return-url:}") String fallback,
             @Value("${payments.allowed-return-origins:}") String configured,
             @Value("${payments.environment:SANDBOX}") String environment) {
         this.live = "LIVE".equalsIgnoreCase(environment);
-        this.fallback = fallback.isBlank() ? legacy.getDefaultReturnUrl() : fallback;
-        if (legacy.getAllowedReturnUrls() != null)
-            for (String url : legacy.getAllowedReturnUrls()) {
-                var parsed = parse(url);
-                if (configured.isBlank()) origins.add(origin(parsed));
-                paths.add(parsed.getRawPath());
-            }
+        this.fallback = fallback;
         for (String url : configured.split(","))
             if (!url.isBlank()) origins.add(origin(parse(url.trim())));
-        if (this.fallback != null) {
+        if (this.fallback != null && !this.fallback.isBlank()) {
             var parsed = parse(this.fallback);
             if (configured.isBlank()) origins.add(origin(parsed));
             paths.add(parsed.getRawPath());
@@ -62,7 +54,7 @@ public class PaymentReturnPolicy {
 
     public String resolve(String requested) {
         String target = requested == null || requested.isBlank() ? fallback : requested.trim();
-        if (target == null)
+        if (target == null || target.isBlank())
             throw FinanceStore.invalid("Chưa cấu hình trang quay lại sau thanh toán");
         URI uri = parse(target);
         boolean pathAllowed =

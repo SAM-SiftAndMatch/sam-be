@@ -36,7 +36,7 @@ public class Pay2sClient {
             new com.fasterxml.jackson.databind.ObjectMapper();
 
     public Pay2sClient(
-            @Value("${payments.provider:vnpay}") String provider,
+            @Value("${payments.provider:pay2s}") String provider,
             @Value("${payments.environment:SANDBOX}") String environment,
             @Value("${pay2s.base-url:https://payment.pay2s.vn}") String baseUrl,
             @Value("${pay2s.access-key:}") String accessKey,
@@ -54,8 +54,7 @@ public class Pay2sClient {
         this.bankCode = bankCode;
         this.bankAccount = bankAccount;
         this.ipnUrl = ipnUrl;
-        if (!Set.of("vnpay", "pay2s").contains(provider)
-                || !Set.of("LIVE", "SANDBOX").contains(this.environment))
+        if (!"pay2s".equals(provider) || !Set.of("LIVE", "SANDBOX").contains(this.environment))
             throw new IllegalStateException("Invalid payment provider/environment");
         if ("pay2s".equals(provider)) {
             if (List.of(accessKey, secretKey, partnerCode, bankCode, bankAccount, ipnUrl).stream()
@@ -91,12 +90,19 @@ public class Pay2sClient {
     public record Checkout(String url, boolean demo) {}
 
     /** Provider memo: ASCII letters/digits, 10–32 chars, without user or project data. */
-    static String transferMemo(String order, PaymentType paymentType) {
+    public static String transferMemo(String order, PaymentType paymentType) {
+        return transferMemo(order, paymentType.name());
+    }
+
+    public static String transferMemo(String order, String paymentType) {
         String prefix =
                 switch (paymentType) {
-                    case CONTRACT_FUND -> "SAMNAP";
-                    case SECURITY_DEPOSIT -> "SAMCOC";
-                    case MAINTENANCE_FUND -> "SAMBAOTRI";
+                    case "CONTRACT_FUND" -> "SAMNAP";
+                    case "SECURITY_DEPOSIT" -> "SAMCOC";
+                    case "MAINTENANCE_FUND" -> "SAMBAOTRI";
+                    case "SUBSCRIPTION" -> "SAMGOI";
+                    case "JOB_ADDON" -> "SAMTINHNANG";
+                    default -> throw new IllegalArgumentException("Unsupported payment purpose");
                 };
         try {
             byte[] digest =
@@ -109,6 +115,10 @@ public class Pay2sClient {
     }
 
     public Checkout create(String order, long amount, String returnUrl, PaymentType paymentType) {
+        return create(order, amount, returnUrl, paymentType.name());
+    }
+
+    public Checkout create(String order, long amount, String returnUrl, String paymentType) {
         if (!enabled()) throw FinanceStore.invalid("Pay2S chưa được bật");
         if ("LIVE".equals(environment) && (returnUrl == null || !returnUrl.startsWith("https://")))
             throw FinanceStore.invalid("Thanh toán thật yêu cầu return URL HTTPS");

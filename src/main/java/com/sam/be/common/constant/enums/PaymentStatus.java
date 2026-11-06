@@ -6,6 +6,6 @@ public enum PaymentStatus {
     RELEASED,
     SETTLED,
     REFUNDED,
-    // Đơn dở bị thay bằng đơn mới (VNPay không cho dùng lại mã cũ)
+    // Đơn thanh toán đã hết hạn
     EXPIRED
 }

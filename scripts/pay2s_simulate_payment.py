@@ -42,7 +42,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Mô phỏng một đơn demo Pay2S, đọc khóa từ sam-be/.env."
     )
-    parser.add_argument("payment_id", nargs="?", help="paymentId UUID từ response SAM")
+    parser.add_argument("order_id", nargs="?", help="orderId UUID từ response checkout SAM")
     parser.add_argument(
         "--resend-ipn", action="store_true", help="Yêu cầu Pay2S gửi lại IPN của đơn"
     )
@@ -54,11 +54,11 @@ def main():
     if not secret or re.search(r"\s", secret) or "${" in secret:
         sys.exit("PAY2S_SECRET_KEY thiếu hoặc không hợp lệ; kiểm tra cấu hình local.")
 
-    payment_id = args.payment_id or input("Dán paymentId của khách hàng hoặc freelancer: ")
-    payment_id = payment_id.strip()
-    if not re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", payment_id):
-        sys.exit("paymentId phải là UUID của SAM, không phải mã PAY2SJSC hoặc link QR.")
-    order_id = uuid.UUID(payment_id).hex
+    order_id = args.order_id or input("Dán orderId của đơn cần mô phỏng: ")
+    order_id = order_id.strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", order_id):
+        sys.exit("orderId phải là UUID của SAM, không phải mã PAY2SJSC hoặc link QR.")
+    order_id = uuid.UUID(order_id).hex
     body = json.dumps({"orderId": order_id, "resendIpn": args.resend_ipn}).encode()
     req = request.Request(
         ENDPOINT,

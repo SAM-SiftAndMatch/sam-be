@@ -816,3 +816,107 @@ Homepage freelancer web/mobile hiển thị tóm tắt thu nhập và nhắc b�
 Cập nhật ngân hàng dùng `PUT /api/v1/finance/bank-accounts/{id}`, tạo phiên bản mã hóa mới để xác minh, giữ bản cũ và snapshot lệnh chi. Khi có lệnh chi chưa kết thúc thì yêu cầu thêm tài khoản mới thay vì thay bản đang dùng. Migration V38 bổ sung liên kết phiên bản và index thu nhập; không sửa V37 đã áp dụng.
 
 Chi tiết payload, trường dữ liệu và các bước test: [FREELANCER_INCOME_BANK_API.md](FREELANCER_INCOME_BANK_API.md).
+
+## 19. Định hướng chuyển toàn bộ thu tiền sang Pay2S
+
+Rà soát ngày 06/11/2026. **Mục này ghi phương án đã được chấp thuận; trạng thái triển khai xem mục 20**, bổ sung cho hiện trạng ở các mục trước. Phạm vi thay đổi chỉ gồm `sam-be`, `sam-fe`, `sam-mobile`.
+
+### 19.1. Những luồng đã tìm thấy
+
+| Luồng | Hiện trạng | Đích triển khai |
+| --- | --- | --- |
+| Khách hàng nạp hợp đồng | Đã hỗ trợ Pay2S và IPN; còn nhánh VNPay | Thu bằng Pay2S qua cơ chế checkout chung |
+| Freelancer cọc cam kết 2% | Đã hỗ trợ Pay2S và IPN | Giữ điều kiện đủ tiền hai bên trước khi bắt đầu |
+| Thanh toán bảo trì có phí | Đã hỗ trợ Pay2S và IPN | Dùng checkout chung, giữ nguồn tiền/đơn bảo trì riêng |
+| BUSINESS của khách hàng, PRO DEV của freelancer và gói còn được phép bán | `SubscriptionServiceImpl` gọi trực tiếp VNPay | Pay2S, nhận tiền rồi tự kích hoạt đúng quyền lợi |
+| Nổi bật/Gợi ý freelancer khi tạo dự án hoặc mua sau | `JobAddonService` gọi trực tiếp VNPay | Pay2S cho cả trả ngay và trả sau |
+| Mua gói trên mobile | API adapter trả danh sách rỗng và chặn mua; màn hình còn dùng thông điệp gói mẫu | API thật, checkout Pay2S, trạng thái và quyền lợi từ backend |
+| Nâng cấp dự án trên mobile | Form có lựa chọn nhưng API tạo dự án chưa gửi các lựa chọn đó | Đồng bộ lựa chọn, giá và đơn addon với backend |
+
+Các vấn đề đi kèm cần sửa:
+
+- Trang kết quả chung hiện chỉ cho quay về workspace, chưa theo dõi giao dịch gói dịch vụ; mã `SAM_PENDING_SUBSCRIPTION` được lưu nhưng chưa có luồng kết quả tương ứng.
+- Web vẫn dùng nhiều trường `vnpayUrl`, tham số `vnp_*` và nội dung VNPay. TypeScript của subscription còn thiếu trạng thái `PENDING` dù backend đã trả trạng thái này.
+- Giá subscription đang được đọc lại từ bảng gói khi nhận IPN, thay vì giữ giá chốt khi tạo đơn. Thay đổi bảng giá có thể làm giao dịch hợp lệ không khớp.
+- `payments.contract_id` bắt buộc: không gán hợp đồng giả cho giao dịch mua gói; cần lớp checkout dùng được cho cả nghiệp vụ không có hợp đồng.
+- Kích hoạt addon tuyển gấp hiện gọi xử lý gợi ý/AI trong luồng nghiệp vụ. Tác vụ này phải được tách khỏi đường ACK IPN để không kéo dài callback.
+- Gói AI QA có migration tạm ngừng bán; mobile còn lựa chọn “Gói bảo hành” chưa có nghiệp vụ backend tương ứng. Khóa/ẩn lựa chọn chưa hỗ trợ, không tự đặt phí hoặc tự mở bán lại trong lần chuyển cổng.
+
+### 19.2. Checkout và ghi nhận giao dịch dùng chung
+
+Đề xuất thêm lớp checkout chung với các bảng đơn/attempt và receipt hoặc sự kiện nhận tiền có ràng buộc duy nhất. Các bản ghi nghiệp vụ hợp đồng, subscription và addon liên kết tới đơn này; dữ liệu lịch sử hiện tại vẫn được giữ.
+
+Thông tin cần chốt tại thời điểm tạo đơn: người trả, mục đích, đối tượng áp dụng, số tiền VND nguyên, giá và quyền lợi đã chốt, provider, môi trường, mã đơn, nội dung chuyển khoản, thời hạn và thời điểm xác minh. Một lần thử thanh toán có mã provider riêng và chỉ được dùng cho đúng đơn của đúng người sở hữu.
+
+Mục đích thu tiền: `CONTRACT_FUND`, `SECURITY_DEPOSIT`, `MAINTENANCE_FUND`, `SUBSCRIPTION`, `JOB_ADDON`. Tiền mua gói/addon là phí dịch vụ của SAM, không đi vào thu nhập/công nợ freelancer. Tiền hợp đồng/cọc/bảo trì tiếp tục theo sổ cái và điều kiện bảo trì hiện có.
+
+Tách trạng thái thanh toán khỏi trạng thái cấp quyền lợi. Ví dụ một đơn có `paymentStatus=PAID` nhưng `fulfillmentStatus=PENDING` phải hiển thị “Đã thanh toán, đang kích hoạt”, không yêu cầu người dùng trả tiền lại. Đơn tiền vào cần rà soát có trạng thái xử lý riêng; không hạ một đơn đã thanh toán chỉ vì callback cũ hoặc lỗi gửi thông báo.
+
+Tạo/tiếp tục checkout phải có chống lặp theo người trả và đơn nghiệp vụ. Bấm nhiều lần hoặc timeout khi tạo link không mặc nhiên tạo nhiều khoản phải trả. Kết quả tạo link chưa rõ phải được giữ để đối soát, không tự retry POST bằng mã đơn mới. API chung dự kiến cung cấp tạo/tiếp tục checkout, đọc trạng thái đơn và lịch sử có kiểm tra quyền sở hữu; tên endpoint chốt khi triển khai.
+
+### 19.3. Tự động xác nhận và cấp quyền lợi
+
+Sơ đồ dùng văn bản thuần để đọc được khi trình xem Markdown không hỗ trợ sơ đồ:
+
+```text
+Chọn gói / chọn tính năng / nạp hợp đồng
+  -> backend kiểm tra quyền và chốt giá
+  -> tạo hoặc tiếp tục đơn Pay2S
+  -> người dùng thanh toán
+  -> Pay2S gửi IPN tới backend, kể cả khi người dùng đóng trang
+  -> kiểm tra chữ ký + merchant + mã đơn + số tiền + môi trường
+  -> lưu nhận tiền và cập nhật nghiệp vụ đúng một lần
+  -> commit database rồi ACK Pay2S
+  -> gửi sự kiện / xử lý tác vụ hậu kỳ có retry
+  -> web/mobile đọc trạng thái mới từ backend
+```
+
+Giữ endpoint IPN Pay2S chung, định tuyến theo đơn đã lưu thay vì tin mục đích do trình duyệt hoặc query truyền vào. Theo [tài liệu IPN Pay2S](https://developer.pay2s.vn/docs/api/instant-payment-notification/), xác minh `m2signature`, tra theo `orderId`, đối chiếu số tiền và chỉ ACK `{ "success": true }` sau khi lưu bền vững. Callback lặp phải ACK nhưng không kích hoạt hoặc hạch toán lần hai. Không dùng `requestId` nội bộ của provider thay cho `orderId`.
+
+- BUSINESS/PRO DEV: chỉ kích hoạt cho đúng tài khoản/vai trò sau xác nhận; thời hạn tính từ lúc kích hoạt theo chính sách gói, không tính từ lúc mở checkout. Chống mua lặp ngoài ý muốn; chính sách gia hạn phải rõ trước khi mở chức năng gia hạn.
+- Addon dự án: sau IPN hợp lệ, bật đúng tính năng đã mua, giải quyết nhắc thanh toán, cập nhật lịch sử và thông báo. Tác vụ gợi ý freelancer/AI dùng hàng đợi hoặc outbox bền vững với chống chạy lặp, không chặn ACK.
+- Khách hàng chọn trả sau: dự án vẫn được đăng, addon giữ trạng thái chờ và có nút thanh toán tiếp ở chi tiết dự án/thông báo. Thanh toán xong tự kích hoạt mà không cần admin xác nhận.
+- BUSINESS đã bao gồm quyền lợi: backend xác định miễn phí, không tạo giao dịch thu tiền cho quyền lợi đã bao gồm. Nếu đã có link cũ và tiền tới sau khi quyền lợi thay đổi, ghi nhận khoản tiền để rà soát, không thu/kích hoạt trùng.
+- Hợp đồng/cọc: đủ tiền cả hai bên mới bắt đầu dự án. Bảo trì có phí chỉ chuyển sang đã nạp khi có xác nhận tiền hợp lệ.
+
+Tiền đến muộn, sai số tiền, trả dư, trả lặp bằng giao dịch khác hoặc thanh toán cho dự án đã đóng phải được ghi nhận để đối soát, không mở quyền lợi sai và không bỏ mất dấu vết tiền. Đóng trang thanh toán không đồng nghĩa provider đã hủy đơn. Trạng thái đã thanh toán không bị callback hủy cũ ghi đè.
+
+### 19.4. Trạng thái trên web và mobile
+
+- Thống nhất response `checkoutUrl`, `orderId`, `provider`, `environment`, số tiền, thời hạn, trạng thái thanh toán và trạng thái cấp quyền lợi. Trường `vnpayUrl` chỉ giữ làm alias trong thời gian chuyển phiên bản nếu cần.
+- Trang kết quả dùng chung có ngữ cảnh đã lưu: loại giao dịch, mã đơn và đích quay lại. Không giới hạn vào workspace; mua BUSINESS về màn gói của khách hàng, PRO DEV về màn gói freelancer, addon về đúng dự án, hợp đồng/bảo trì về đúng workspace.
+- Nội dung hiển thị phải phân biệt chờ xác nhận, đã thanh toán/đang kích hoạt, thành công, hết hạn/hủy/thất bại và cần hỗ trợ. Không suy ra thành công từ query URL hoặc chỉ vì API không trả link.
+- Sự kiện sau commit làm mới cache/danh sách gói, huy hiệu quyền lợi, dự án, addon và thông báo. Bổ sung polling có giới hạn khi chờ và đọc lại khi quay về/focus để không phụ thuộc duy nhất WebSocket.
+- Refresh cookie web vẫn chỉ khởi tạo một lần, giữ hỗ trợ cả CLIENT/FREELANCER. Ngữ cảnh điều hướng không chứa token hoặc khóa và không dùng làm bằng chứng thanh toán.
+- Mobile gọi API thật, mở checkout ngoài ứng dụng, đọc lại trạng thái khi quay lại hoặc mở lại app. Luồng quay về cần liên kết an toàn về app hoặc web và vẫn hoạt động khi người dùng phải mở app thủ công; không tự đặt `isPremium=true` chỉ vì đã tạo đơn.
+- Mobile lấy giá/quyền lợi từ backend; không cộng phí nâng cấp vào tiền ngân sách trả freelancer. Chỉ hiển thị tính năng có nghiệp vụ hỗ trợ và được phép bán.
+
+### 19.5. Chuyển đổi dữ liệu và cấu hình VNPay
+
+Ngừng tạo link VNPay mới khi triển khai chuyển cổng. Dữ liệu cũ vẫn giữ provider và lịch sử gốc; không đổi nhãn giao dịch VNPay thành Pay2S hoặc mặc nhiên xem giao dịch cũ là LIVE.
+
+Các link VNPay đang chờ cần chờ kết thúc/hủy hoặc đối soát trước khi ngừng hoàn toàn nhận callback. Nếu cần giai đoạn chuyển tiếp, chỉ bật adapter callback cũ bằng cấu hình riêng, không để nó thành nguồn checkout mới. Khi đã xử lý hết giao dịch cũ, có thể gỡ khóa và endpoint callback VNPay. Backend Pay2S phải khởi động được mà không cần các biến `VNPAY_*`; `PaymentReturnPolicy` cũng phải bỏ phụ thuộc cấu hình VNPay. Giữ redirect tương thích cho URL web cũ trong thời gian chuyển phiên bản.
+
+Migration bổ sung bảng/cột/index/ràng buộc mới, không sửa migration đã chạy. Tách LIVE/SANDBOX cho toàn bộ checkout và quyền lợi để thanh toán demo không cấp quyền sử dụng thật. Giá động hoặc giá chưa được định nghĩa không được coi là giao dịch 0 đồng.
+
+### 19.6. Thứ tự triển khai và tiêu chí nghiệm thu
+
+1. `sam-be`: checkout/receipt chung, chống lặp, snapshot giá và IPN router; nối nghiệp vụ subscription và addon, giữ các điều kiện escrow và tách tác vụ hậu kỳ.
+2. `sam-fe`: tích hợp API, thay nội dung VNPay, trang kết quả theo ngữ cảnh, tự cập nhật gói/addon và tiếp tục các đơn trả sau.
+3. `sam-mobile`: API gói thật, lựa chọn addon khi tạo dự án, các điểm thanh toán hợp đồng/cọc còn thiếu và khôi phục trạng thái khi quay về ứng dụng.
+4. Cập nhật env/docs/script demo; chuyển đổi có kiểm soát các giao dịch VNPay còn chờ rồi gỡ phụ thuộc khóa.
+
+Kiểm thử bắt buộc gồm: từng loại thanh toán; đúng vai trò/chủ đơn; đóng trình duyệt trước IPN; IPN lặp/đồng thời/đến sai thứ tự; giá thay đổi sau tạo đơn; timeout tạo checkout; số tiền sai; link cũ trả tiền sau khi đổi lựa chọn hoặc dự án đóng; kích hoạt thất bại rồi retry; LIVE/SANDBOX không cấp chéo quyền lợi; mất WebSocket; app bị đóng/mở lại; không mất phiên khi quay về; khởi động backend không có `VNPAY_*`. Giữ kiểm thử giữ tiền 168 giờ và ticket chặn giải ngân.
+
+Sau triển khai, tất cả khoản thu đã hỗ trợ đều dùng Pay2S và tự cập nhật khi backend nhận được IPN hợp lệ. Khi provider/tunnel/mạng không gửi được IPN, UI giữ trạng thái chờ/cần kiểm tra và vận hành đối soát; không tự đánh dấu đã trả. Việc tự động thu/xác nhận này không biến giải ngân freelancer thành chuyển khoản ngân hàng tự động.
+
+
+## 20. Triển khai thu tiền Pay2S thống nhất
+
+Đã thay các luồng thu tiền ở backend/web/mobile và gỡ adapter, endpoint, biến môi trường bắt buộc của cổng cũ. Các phần trên mô tả lịch sử khảo sát hoặc phương án; hướng dẫn API/env hiện hành nằm ở [PAY2S_FINANCE_SETUP.md](PAY2S_FINANCE_SETUP.md).
+
+V39 bổ sung checkout chung, receipt bất biến, khóa chống xử lý trùng, snapshot giá và hàng chờ cấp quyền lợi bền vững. Receipt hợp lệ được commit trước ACK; worker thử lại khi lỗi. Gói và addon ghi phí dịch vụ vào sổ cái SAM, không tạo thu nhập freelancer; các khoản escrow giữ điều kiện 168 giờ và ticket.
+
+Web dùng `/payment/return`, có lịch sử và trang đối soát admin. Mobile nối gói thật, addon thật và điểm nạp hợp đồng/cọc; trạng thái và huy hiệu từ backend. Không còn tự bật Premium chỉ vì mở checkout. Tính năng chưa có nghiệp vụ không được mở bán lại.
+
+Lịch sử cũ được giữ với nguồn gốc gốc; subscription cũ dùng LEGACY và cần đối soát trước khi công nhận quyền lợi LIVE. Các link cũ còn chờ phải hoàn tất/hủy/đối soát trước khi cắt sang phiên bản mới; endpoint cổng cũ đã bị gỡ. Chưa có hoàn tiền provider tự động hoặc công cụ tự phân bổ lại receipt REVIEW. Mô phỏng dùng orderId của checkout, không suy ra từ paymentId.
