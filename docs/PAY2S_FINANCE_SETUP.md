@@ -392,3 +392,21 @@ python3 scripts/pay2s_simulate_payment.py --resend-ipn
 ```
 
 Không dùng cờ này cho mọi lần thử thông thường. HTTP 401: kiểm tra Secret Key; 403: tài khoản/đơn không phải demo; 404: ID không thuộc phạm vi khóa; 409: kiểm tra điều kiện đơn, ngân hàng demo, IPN URL. Không đưa khóa vào frontend hoặc gửi khóa qua chat.
+
+### Nội dung chuyển khoản và phiên đăng nhập khi quay về
+
+Nội dung chuyển khoản của đơn Pay2S mới dùng tiền tố theo mục đích và mã tham chiếu 16 ký tự, ví dụ:
+
+| Loại thanh toán | Ví dụ nội dung chuyển khoản |
+| --- | --- |
+| Khách hàng nạp tiền hợp đồng | `SAMNAP3EB1BD439947EB76` |
+| Freelancer đặt cọc | `SAMCOC3EB1BD439947EB76` |
+| Khách hàng thanh toán bảo trì | `SAMBAOTRI3EB1BD439947EB76` |
+
+Mã tham chiếu được lấy từ SHA-256 của mã đơn, không chứa tên người dùng/tên dự án hoặc chuỗi paymentId gốc. Nội dung chỉ chứa chữ và số, dài 22–25 ký tự, nằm trong [giới hạn orderInfo của Pay2S](https://developer.pay2s.vn/docs/api/collection-link/). `orderId` và `requestId` vẫn giữ mã đơn đầy đủ để xác minh IPN, tra soát và dùng script mô phỏng như trước. Chữ ký tạo đơn bao gồm nội dung chuyển khoản thực gửi; người chuyển tiền giữ nguyên nội dung QR do Pay2S cung cấp.
+
+Link/QR đã tạo trước khi cập nhật vẫn dùng nội dung cũ đã lưu ở Pay2S; thay đổi áp dụng cho đơn mới, không cần migration hay sửa `.env`.
+
+Frontend khôi phục phiên bằng cookie HttpOnly trước khi kiểm tra quyền, dùng chung một request refresh nếu quá trình mount gọi khởi tạo đồng thời. URL kết quả cũ `/client/payment/vnpay-return` dùng được cho cả khách hàng và freelancer, chờ khôi phục phiên rồi mới hiển thị; không còn bị giới hạn vai trò khách hàng. Không lưu access token vào localStorage/sessionStorage để giữ phiên qua thanh toán. Phiên hết hạn thật vẫn cần đăng nhập lại, và kết quả thanh toán vẫn chỉ được ghi nhận từ IPN hợp lệ.
+
+Kiểm thử thủ công: đăng nhập khách hàng → mở hợp đồng → thanh toán demo → quay về → kiểm tra còn đăng nhập và nút quay lại đúng workspace. Thực hiện tương tự bằng phiên trình duyệt khác cho freelancer để không ghi đè cookie tài khoản khách hàng. Tải lại trang để kiểm tra bước khôi phục phiên. Nếu test bằng Compose, rebuild backend; frontend Vite nhận mã mới khi tải lại trang.

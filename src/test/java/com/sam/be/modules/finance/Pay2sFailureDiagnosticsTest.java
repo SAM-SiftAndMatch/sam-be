@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.sam.be.common.constant.enums.PaymentType;
 import com.sam.be.common.exception.GlobalExceptionHandler;
 import com.sam.be.common.exception.PaymentGatewayException;
 import java.net.SocketTimeoutException;
@@ -53,7 +54,12 @@ class Pay2sFailureDiagnosticsTest {
         var exception =
                 assertThrows(
                         PaymentGatewayException.class,
-                        () -> client.create(ORDER, 250000, "https://example.com/return"));
+                        () ->
+                                client.create(
+                                        ORDER,
+                                        250000,
+                                        "https://example.com/return",
+                                        PaymentType.CONTRACT_FUND));
         assertEquals(reason, exception.diagnostics().get("reason"));
         assertDoesNotThrow(
                 () -> java.util.UUID.fromString(exception.diagnostics().get("reference")));

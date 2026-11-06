@@ -1,6 +1,7 @@
 package com.sam.be.modules.finance;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.sam.be.common.constant.enums.PaymentType;
 import com.sam.be.common.exception.PaymentGatewayException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -89,7 +90,25 @@ public class Pay2sClient {
 
     public record Checkout(String url, boolean demo) {}
 
-    public Checkout create(String order, long amount, String returnUrl) {
+    /** Provider memo: ASCII letters/digits, 10–32 chars, without user or project data. */
+    static String transferMemo(String order, PaymentType paymentType) {
+        String prefix =
+                switch (paymentType) {
+                    case CONTRACT_FUND -> "SAMNAP";
+                    case SECURITY_DEPOSIT -> "SAMCOC";
+                    case MAINTENANCE_FUND -> "SAMBAOTRI";
+                };
+        try {
+            byte[] digest =
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(order.getBytes(StandardCharsets.UTF_8));
+            return prefix + HexFormat.of().withUpperCase().formatHex(digest, 0, 8);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+    }
+
+    public Checkout create(String order, long amount, String returnUrl, PaymentType paymentType) {
         if (!enabled()) throw FinanceStore.invalid("Pay2S chưa được bật");
         if ("LIVE".equals(environment) && (returnUrl == null || !returnUrl.startsWith("https://")))
             throw FinanceStore.invalid("Thanh toán thật yêu cầu return URL HTTPS");
@@ -136,7 +155,7 @@ public class Pay2sClient {
                 List.of(Map.of("account_number", bankAccount, "bank_id", bankCode)));
         body.put("ipnUrl", ipnUrl);
         body.put("orderId", order);
-        body.put("orderInfo", "SAM" + order.substring(0, 25));
+        body.put("orderInfo", transferMemo(order, paymentType));
         body.put("partnerCode", partnerCode);
         body.put("redirectUrl", returnUrl);
         body.put("requestId", order);

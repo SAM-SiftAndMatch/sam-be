@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.sam.be.common.constant.enums.PaymentType;
 import com.sam.be.common.exception.GlobalExceptionHandler;
 import com.sam.be.common.exception.PaymentGatewayException;
 import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
@@ -76,7 +77,8 @@ class Pay2sReturnRelayTest {
                                 client.create(
                                         "0123456789abcdef0123456789abcdef",
                                         250000,
-                                        "http://localhost:5173/workspace/00000000-0000-0000-0000-000000000001/contract"));
+                                        "http://localhost:5173/workspace/00000000-0000-0000-0000-000000000001/contract",
+                                        PaymentType.CONTRACT_FUND));
         assertEquals("IPN_URL_INVALID", exception.diagnostics().get("reason"));
         assertEquals("http://localhost:8080", exception.diagnostics().get("ipnOrigin"));
         assertEquals("http://localhost:5173", exception.diagnostics().get("redirectOrigin"));
@@ -103,7 +105,8 @@ class Pay2sReturnRelayTest {
                                 client.create(
                                         "0123456789abcdef0123456789abcdef",
                                         250000,
-                                        "http://localhost:5173/client/payment/vnpay-return"));
+                                        "http://localhost:5173/client/payment/vnpay-return",
+                                        PaymentType.CONTRACT_FUND));
         assertEquals("IPN_URL_INVALID", exception.diagnostics().get("reason"));
         assertEquals("https://hooks.example", exception.diagnostics().get("ipnOrigin"));
         assertFalse(exception.diagnostics().toString().contains("PRIVATE_"));

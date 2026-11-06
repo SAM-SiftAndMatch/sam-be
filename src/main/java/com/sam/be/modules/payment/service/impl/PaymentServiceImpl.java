@@ -365,7 +365,7 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setEnvironment(pay2s.environment());
         String vnpayUrl;
         if (pay2s.enabled()) {
-            var checkout = pay2s.create(txnRef, amount.longValueExact(), returnUrl);
+            var checkout = pay2s.create(txnRef, amount.longValueExact(), returnUrl, type);
             payment.setProvider("PAY2S");
             payment.setEnvironment(checkout.demo() ? "SANDBOX" : "LIVE");
             vnpayUrl = checkout.url();
