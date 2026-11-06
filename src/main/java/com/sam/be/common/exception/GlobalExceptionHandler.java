@@ -33,7 +33,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                                 ErrorCode.REQUEST_FAILED.getCode(),
                                 ex.getReason(),
                                 request.getRequestURI(),
-                                null));
+                                ex instanceof PaymentGatewayException gateway
+                                        ? gateway.diagnostics()
+                                        : null));
     }
 
     // Handle lỗi nghiệp vụ do hệ thống chủ động throw (ApiException), trả đúng

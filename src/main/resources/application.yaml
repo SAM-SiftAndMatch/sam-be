@@ -107,7 +107,7 @@ payments:
   provider: ${PAYMENTS_PROVIDER:vnpay}
   environment: ${PAYMENTS_ENVIRONMENT:SANDBOX}
 pay2s:
-  base-url: ${PAY2S_BASE_URL:https://sandbox-payment.pay2s.vn}
+  base-url: ${PAY2S_BASE_URL:https://payment.pay2s.vn}
   access-key: ${PAY2S_ACCESS_KEY:}
   secret-key: ${PAY2S_SECRET_KEY:}
   partner-code: ${PAY2S_PARTNER_CODE:}

@@ -49,4 +49,57 @@ class Pay2sCheckoutTransportTest {
         assertTrue(checkout.demo());
         server.verify();
     }
+
+    @Test
+    void demoAccountCanUseCanonicalCreateApiAndReturnSandboxCheckout() {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        var client =
+                new Pay2sClient(
+                        "pay2s",
+                        "SANDBOX",
+                        "https://payment.pay2s.vn",
+                        "access",
+                        "secret",
+                        "partner",
+                        "ACB",
+                        "P2S99999999",
+                        "https://backend-tunnel.example/api/v1/payments/pay2s-ipn");
+        ReflectionTestUtils.setField(client, "http", builder.build());
+        String order = "0123456789abcdef0123456789abcdef";
+        server.expect(requestTo("https://payment.pay2s.vn/v1/gateway/api/create"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Accept", "application/json"))
+                .andExpect(jsonPath("$.bankAccounts[0].account_number").value("P2S99999999"))
+                .andExpect(
+                        jsonPath("$.redirectUrl")
+                                .value(
+                                        "https://backend-tunnel.example/api/v1/payments/pay2s-return"))
+                .andExpect(
+                        jsonPath("$.signature")
+                                .value(
+                                        Pay2sClient.sign(
+                                                "secret",
+                                                "accessKey=access&amount=250000&bankAccounts=Array&ipnUrl=https://backend-tunnel.example/api/v1/payments/pay2s-ipn&orderId="
+                                                        + order
+                                                        + "&orderInfo=SAM"
+                                                        + order.substring(0, 25)
+                                                        + "&partnerCode=partner&redirectUrl=https://backend-tunnel.example/api/v1/payments/pay2s-return&requestId="
+                                                        + order
+                                                        + "&requestType=pay2s")))
+                .andExpect(
+                        jsonPath("$.ipnUrl")
+                                .value("https://backend-tunnel.example/api/v1/payments/pay2s-ipn"))
+                .andRespond(
+                        withSuccess(
+                                "{\"resultCode\":0,\"orderId\":\""
+                                        + order
+                                        + "\",\"amount\":250000,\"isDemo\":true,\"environment\":\"demo\",\"payUrl\":\"https://sandbox-payment.pay2s.vn/pay/test\"}",
+                                MediaType.APPLICATION_JSON));
+        var checkout =
+                client.create(order, 250000, "http://localhost:5173/client/payment/vnpay-return");
+        assertTrue(checkout.demo());
+        assertEquals("https://sandbox-payment.pay2s.vn/pay/test", checkout.url());
+        server.verify();
+    }
 }
