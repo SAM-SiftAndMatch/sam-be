@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 @PreAuthorize("isAuthenticated()")
 public class FinanceController {
     private final FinanceLedgerService ledger;
+    private final FinanceIncomeService income;
     private final BankAccountService banks;
     private final WithdrawalService withdrawals;
     private final MaintenanceService maintenance;
@@ -108,6 +109,46 @@ public class FinanceController {
         result.put("minimumWithdrawal", withdrawals.minimum());
         result.put("dailyWithdrawalLimit", withdrawals.dailyLimit());
         return ok(result);
+    }
+
+    @GetMapping("/income")
+    @PreAuthorize("hasRole('FREELANCER')")
+    public ApiResponse<?> income(
+            @RequestParam(required = false) @Min(2000) @Max(2100) Integer year) {
+        return ok(income.summary(user(), year));
+    }
+
+    @GetMapping("/income/entries")
+    @PreAuthorize("hasRole('FREELANCER')")
+    public ApiResponse<?> incomeEntries(
+            @RequestParam(required = false) @Min(2000) @Max(2100) Integer year,
+            @RequestParam(defaultValue = "0") @Min(0) @Max(100000) int page) {
+        return ok(income.entries(user(), year, page));
+    }
+
+    @GetMapping("/bank-accounts/setup-status")
+    @PreAuthorize("hasRole('FREELANCER')")
+    public ApiResponse<?> bankSetup() {
+        return ok(banks.setupStatus(user()));
+    }
+
+    @PutMapping("/bank-accounts/{id}")
+    @PreAuthorize("hasRole('FREELANCER')")
+    @RateLimit(
+            type = RateLimit.Type.USER_ID,
+            action = "finance_sensitive",
+            limit = 5,
+            duration = 300,
+            failClosed = true)
+    public ApiResponse<?> updateBank(@PathVariable UUID id, @Valid @RequestBody BankInput input) {
+        reauthenticate(input.password());
+        return ok(
+                banks.replace(
+                        user(),
+                        id,
+                        input.bankCode(),
+                        input.accountNumber(),
+                        input.accountHolder()));
     }
 
     @GetMapping("/transactions")

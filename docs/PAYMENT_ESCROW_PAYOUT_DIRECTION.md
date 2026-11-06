@@ -805,3 +805,14 @@ Không dùng các endpoint dự kiến trong mục 10 để tích hợp mà bỏ
 Chưa có adapter chuyển tiền tự động, hoàn tiền provider tự động, công cụ xử lý hạch toán receipt REVIEW, job tái mã hóa dữ liệu cũ hay backfill tự động công nợ trước V37. Xử lý hoàn tiền/điều chỉnh bồi thường phải theo quy trình đối soát có bằng chứng, không sửa trực tiếp lịch sử bất biến. Mobile còn cần kiểm thử thiết bị và hoàn thiện phân trang dữ liệu ngoài phạm vi tài chính mới.
 
 Thiết kế bảo vệ nhiều lớp không đồng nghĩa bảo mật tuyệt đối: production cần bảo vệ runtime/secret, kiểm soát quyền admin, sao lưu khóa, theo dõi đối soát và rà soát bảo mật độc lập. Không để khóa hoặc dữ liệu đầy đủ xuất hiện trong bundle, log hay chat.
+
+
+## 18. Bổ sung thu nhập và nhắc cập nhật ngân hàng
+
+Đã có API thu nhập riêng `/api/v1/finance/income` và `/income/entries`: thống kê thù lao sau phí từ nghiệm thu, loại tiền hoàn cọc, không giảm khi rút tiền; báo cáo tháng/năm theo giờ Việt Nam và tách số liệu sandbox.
+
+Homepage freelancer web/mobile hiển thị tóm tắt thu nhập và nhắc bổ sung ngân hàng dựa trên API `/api/v1/finance/bank-accounts/setup-status`. Đã gửi thông tin thì hiển thị chờ xác minh; đã có tài khoản xác minh thì ẩn nhắc bổ sung. Lỗi tải không bị hiểu thành chưa khai báo.
+
+Cập nhật ngân hàng dùng `PUT /api/v1/finance/bank-accounts/{id}`, tạo phiên bản mã hóa mới để xác minh, giữ bản cũ và snapshot lệnh chi. Khi có lệnh chi chưa kết thúc thì yêu cầu thêm tài khoản mới thay vì thay bản đang dùng. Migration V38 bổ sung liên kết phiên bản và index thu nhập; không sửa V37 đã áp dụng.
+
+Chi tiết payload, trường dữ liệu và các bước test: [FREELANCER_INCOME_BANK_API.md](FREELANCER_INCOME_BANK_API.md).

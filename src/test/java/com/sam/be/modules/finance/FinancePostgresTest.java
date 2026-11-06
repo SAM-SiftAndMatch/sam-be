@@ -47,7 +47,7 @@ class FinancePostgresTest {
         db = new JdbcTemplate(source);
         tx = new TransactionTemplate(new DataSourceTransactionManager(source));
         db.execute(
-                "CREATE TABLE users(id UUID PRIMARY KEY); CREATE TABLE jobs(id UUID PRIMARY KEY,title TEXT); CREATE TABLE contracts(id UUID PRIMARY KEY); CREATE TABLE project_settlements(id UUID PRIMARY KEY); CREATE TABLE payments(id UUID PRIMARY KEY,payment_gateway_id TEXT,status TEXT)");
+                "CREATE TABLE users(id UUID PRIMARY KEY); CREATE TABLE jobs(id UUID PRIMARY KEY,title TEXT); CREATE TABLE contracts(id UUID PRIMARY KEY); CREATE TABLE project_settlements(id UUID PRIMARY KEY,gross_amount NUMERIC(38,2) NOT NULL DEFAULT 100000); CREATE TABLE payments(id UUID PRIMARY KEY,payment_gateway_id TEXT,status TEXT)");
         try (var stream =
                 getClass()
                         .getResourceAsStream(
@@ -55,10 +55,17 @@ class FinancePostgresTest {
             assertNotNull(stream);
             db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
+        try (var stream =
+                getClass()
+                        .getResourceAsStream(
+                                "/db/migration/V38__Freelancer_Income_And_Bank_Account_Revisions.sql")) {
+            assertNotNull(stream);
+            db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
         db.update("INSERT INTO users VALUES (?),(?)", owner, client);
         db.update("INSERT INTO jobs VALUES (?,'Finance test')", job);
         db.update("INSERT INTO contracts VALUES (?)", contract);
-        db.update("INSERT INTO project_settlements VALUES (?)", settlement);
+        db.update("INSERT INTO project_settlements(id) VALUES (?)", settlement);
     }
 
     @AfterEach
@@ -229,5 +236,105 @@ class FinancePostgresTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void incomeExcludesDepositsAndDoesNotDecreaseAfterBankPayout() {
+        UUID payable = payable();
+        var income = new FinanceIncomeService(store());
+        var before = income.summary(owner, 2026);
+        assertEquals(new BigDecimal("90000.00"), before.get("totalNetIncome"));
+        assertEquals(new BigDecimal("100000.00"), before.get("totalGrossIncome"));
+        assertEquals(new BigDecimal("10000.00"), before.get("totalPlatformFees"));
+        UUID bank = UUID.randomUUID(), withdrawal = UUID.randomUUID();
+        db.update(
+                "INSERT INTO finance_bank_accounts(id,owner_id,bank_code,details_encrypted,last_four,fingerprint,status,created_at) VALUES (?,?,'VCB','cipher','1234','fingerprint','VERIFIED',now())",
+                bank,
+                owner);
+        tx.executeWithoutResult(
+                status -> {
+                    db.update(
+                            "INSERT INTO finance_withdrawals(id,owner_id,request_key,bank_account_id,beneficiary_encrypted,bank_code,last_four,amount,status,created_at,updated_at) VALUES (?,?,?,?,'cipher','VCB','1234',100000,'PAID',now(),now())",
+                            withdrawal,
+                            owner,
+                            UUID.randomUUID(),
+                            bank);
+                    db.update(
+                            "INSERT INTO finance_withdrawal_allocations VALUES (?,?,100000)",
+                            withdrawal,
+                            payable);
+                    db.update("UPDATE finance_payables SET paid=100000 WHERE id=?", payable);
+                });
+        assertEquals(
+                before.get("totalNetIncome"), income.summary(owner, 2026).get("totalNetIncome"));
+        assertEquals(1L, income.entries(owner, 2026, 0).get("totalElements"));
+        assertEquals(0L, income.summary(client, 2026).get("completedCount"));
+    }
+
+    @Test
+    void updatingSameAccountHolderPreservesCiphertextAndResetsVerification() {
+        var store = store();
+        var cipher = BankDataCipherTest.cipher();
+        var banks =
+                new BankAccountService(
+                        store, cipher, new com.fasterxml.jackson.databind.ObjectMapper());
+        var old = tx.execute(status -> banks.add(owner, "VCB", "00123456789", "USER A"));
+        UUID oldId = id(old, "id");
+        db.update("UPDATE finance_bank_accounts SET status='VERIFIED' WHERE id=?", oldId);
+        String original =
+                db.queryForObject(
+                        "SELECT details_encrypted FROM finance_bank_accounts WHERE id=?",
+                        String.class,
+                        oldId);
+        var replacement =
+                tx.execute(status -> banks.replace(owner, oldId, "VCB", "00123456789", "USER B"));
+        assertNotEquals(oldId, id(replacement, "id"));
+        assertEquals("PENDING", replacement.get("status"));
+        assertEquals(
+                original,
+                db.queryForObject(
+                        "SELECT details_encrypted FROM finance_bank_accounts WHERE id=?",
+                        String.class,
+                        oldId));
+        assertEquals(
+                "DISABLED",
+                db.queryForObject(
+                        "SELECT status FROM finance_bank_accounts WHERE id=?",
+                        String.class,
+                        oldId));
+        assertEquals("PENDING", banks.setupStatus(owner).get("status"));
+        assertEquals(
+                replacement.get("id"),
+                tx.execute(status -> banks.replace(owner, oldId, "VCB", "00123456789", "USER B"))
+                        .get("id"));
+    }
+
+    @Test
+    void sandboxRevenueStaysSeparateAndDecemberUtcCanBelongToJanuaryInVietnam() {
+        payable();
+        UUID sandboxContract = UUID.randomUUID(), sandboxSettlement = UUID.randomUUID();
+        db.update("INSERT INTO contracts VALUES (?)", sandboxContract);
+        db.update(
+                "INSERT INTO project_settlements(id,gross_amount) VALUES (?,500000)",
+                sandboxSettlement);
+        Instant accepted = Instant.parse("2026-12-31T18:00:00Z");
+        db.update(
+                "INSERT INTO finance_payables(id,settlement_id,contract_id,job_id,owner_id,client_id,amount,earnings,deposit_refund,sandbox,accepted_at,available_at) VALUES (?,?,?,?,?,?,450000,450000,0,true,?,?)",
+                UUID.randomUUID(),
+                sandboxSettlement,
+                sandboxContract,
+                job,
+                owner,
+                client,
+                store().time(accepted),
+                store().time(accepted.plus(FinancePolicy.WARRANTY)));
+        var income = new FinanceIncomeService(store());
+        var nextYear = income.summary(owner, 2027);
+        assertEquals(new BigDecimal("90000.00"), nextYear.get("totalNetIncome"));
+        assertEquals(0, ((BigDecimal) nextYear.get("yearNetIncome")).signum());
+        assertEquals(new BigDecimal("450000.00"), nextYear.get("yearSandboxNetIncome"));
+        var january = (Map<?, ?>) ((List<?>) nextYear.get("months")).getFirst();
+        assertEquals(new BigDecimal("450000.00"), january.get("sandboxNetIncome"));
+        assertEquals(0L, income.entries(owner, 2027, 0).get("totalElements"));
     }
 }

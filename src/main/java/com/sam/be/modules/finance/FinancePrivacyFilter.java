@@ -20,7 +20,7 @@ public class FinancePrivacyFilter extends OncePerRequestFilter {
             response.setHeader("Pragma", "no-cache");
         }
         if (path.equals("/api/v1/payments/pay2s-ipn")
-                || ("POST".equals(request.getMethod())
+                || (java.util.Set.of("POST", "PUT").contains(request.getMethod())
                         && (path.startsWith("/api/v1/finance") || path.contains("maintenance")))) {
             byte[] body = request.getInputStream().readNBytes(32769);
             if (body.length > 32768) {

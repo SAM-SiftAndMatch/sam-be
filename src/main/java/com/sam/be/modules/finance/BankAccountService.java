@@ -24,7 +24,7 @@ public class BankAccountService {
     }
 
     private static final String PUBLIC =
-            "id,owner_id,bank_code,last_four,status,verification_note,created_at,verified_at";
+            "id,owner_id,bank_code,last_four,status,verification_note,created_at,verified_at,replaced_by";
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> list(UUID owner) {
@@ -33,6 +33,27 @@ public class BankAccountService {
                         + PUBLIC
                         + " FROM finance_bank_accounts WHERE owner_id=? ORDER BY created_at DESC,id DESC",
                 owner);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> setupStatus(UUID owner) {
+        var counts =
+                store.one(
+                        "SELECT COUNT(*) FILTER(WHERE status='VERIFIED') AS verified,COUNT(*) FILTER(WHERE status='PENDING') AS pending FROM finance_bank_accounts WHERE owner_id=?",
+                        owner);
+        boolean verified = ((Number) counts.get("verified")).longValue() > 0;
+        long pending = ((Number) counts.get("pending")).longValue();
+        return Map.of(
+                "status",
+                verified ? "READY" : pending > 0 ? "PENDING" : "ACTION_REQUIRED",
+                "hasVerifiedAccount",
+                verified,
+                "hasBankAccount",
+                verified || pending > 0,
+                "needsBankAccount",
+                !verified && pending == 0,
+                "pendingCount",
+                pending);
     }
 
     @Transactional(readOnly = true)
@@ -47,15 +68,8 @@ public class BankAccountService {
     @Transactional
     public Map<String, Object> add(UUID owner, String code, String account, String holder) {
         store.lockOwner(owner);
-        String normalizedCode = code.trim().toUpperCase(Locale.ROOT);
-        String number = account.replace(" ", "");
-        String name = holder.trim().replaceAll("\\s+", " ");
-        if (!normalizedCode.matches("[A-Z0-9]{2,20}")
-                || !number.matches("[A-Za-z0-9]{4,40}")
-                || name.length() < 2
-                || name.length() > 150
-                || name.chars().anyMatch(Character::isISOControl))
-            throw invalid("Thông tin tài khoản nhận tiền không hợp lệ");
+        var normalized = normalize(code, account, holder);
+        String normalizedCode = normalized[0], number = normalized[1], name = normalized[2];
         String fingerprint = cipher.fingerprint(owner + ":" + normalizedCode + ":" + number);
         var existing =
                 store.rows(
@@ -64,7 +78,13 @@ public class BankAccountService {
                                 + " FROM finance_bank_accounts WHERE owner_id=? AND fingerprint=? AND status IN ('PENDING','VERIFIED')",
                         owner,
                         fingerprint);
-        if (!existing.isEmpty()) return existing.getFirst();
+        if (!existing.isEmpty()) {
+            var row = existing.getFirst();
+            if (!sameDetails(owner, id(row, "id"), normalizedCode, number, name))
+                throw invalid(
+                        "Tài khoản đã tồn tại với thông tin khác; hãy dùng chức năng Cập nhật");
+            return row;
+        }
         UUID id = UUID.randomUUID();
         String encoded = encode(new Details(number, name));
         store.db.update(
@@ -78,6 +98,88 @@ public class BankAccountService {
                 store.time(store.now()));
         store.audit(owner, owner, id, "BANK_ADDED", "Tài khoản chờ xác minh");
         return store.one("SELECT " + PUBLIC + " FROM finance_bank_accounts WHERE id=?", id);
+    }
+
+    private String[] normalize(String code, String account, String holder) {
+        String normalizedCode = code.trim().toUpperCase(Locale.ROOT);
+        String number = account.replace(" ", "");
+        String name = holder.trim().replaceAll("\\s+", " ");
+        if (!normalizedCode.matches("[A-Z0-9]{2,20}")
+                || !number.matches("[A-Za-z0-9]{4,40}")
+                || name.length() < 2
+                || name.length() > 150
+                || name.chars().anyMatch(Character::isISOControl))
+            throw invalid("Thông tin tài khoản nhận tiền không hợp lệ");
+        return new String[] {normalizedCode, number, name};
+    }
+
+    private boolean sameDetails(
+            UUID owner, UUID record, String code, String account, String holder) {
+        var row =
+                store.one(
+                        "SELECT bank_code,details_encrypted FROM finance_bank_accounts WHERE id=? AND owner_id=?",
+                        record,
+                        owner);
+        var details =
+                decode(
+                        cipher.decrypt(
+                                row.get("detailsEncrypted").toString(),
+                                "bank:" + owner + ":" + record));
+        return code.equals(row.get("bankCode"))
+                && account.equals(details.accountNumber())
+                && holder.equals(details.accountHolder());
+    }
+
+    @Transactional
+    public Map<String, Object> replace(
+            UUID owner, UUID previous, String code, String account, String holder) {
+        store.lockOwner(owner);
+        var bank =
+                store.one(
+                        "SELECT * FROM finance_bank_accounts WHERE id=? AND owner_id=? FOR UPDATE",
+                        previous,
+                        owner);
+        var normalized = normalize(code, account, holder);
+        if (bank.get("replacedBy") != null) {
+            UUID replacement = id(bank, "replacedBy");
+            if (!sameDetails(owner, replacement, normalized[0], normalized[1], normalized[2]))
+                throw invalid("Tài khoản đã được cập nhật; tải lại danh sách trước khi sửa tiếp");
+            return store.one(
+                    "SELECT " + PUBLIC + " FROM finance_bank_accounts WHERE id=? AND owner_id=?",
+                    replacement,
+                    owner);
+        }
+        if ("DISABLED".equals(bank.get("status")))
+            throw invalid("Tài khoản đã ngừng sử dụng; hãy thêm tài khoản mới");
+        if (!"REJECTED".equals(bank.get("status"))
+                && sameDetails(owner, previous, normalized[0], normalized[1], normalized[2]))
+            return store.one(
+                    "SELECT " + PUBLIC + " FROM finance_bank_accounts WHERE id=? AND owner_id=?",
+                    previous,
+                    owner);
+        Long active =
+                store.db.queryForObject(
+                        "SELECT COUNT(*) FROM finance_withdrawals WHERE bank_account_id=? AND status IN ('REQUESTED','APPROVED','PROCESSING','RECONCILIATION_REQUIRED')",
+                        Long.class,
+                        previous);
+        if (active != null && active > 0)
+            throw invalid(
+                    "Tài khoản đang gắn với lệnh chi chưa kết thúc. Hãy thêm tài khoản mới hoặc chờ lệnh chi được xử lý");
+        store.db.update("UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=?", previous);
+        var replacement = add(owner, normalized[0], normalized[1], normalized[2]);
+        store.db.update(
+                "UPDATE finance_bank_accounts SET replaced_by=? WHERE id=?",
+                id(replacement, "id"),
+                previous);
+        store.audit(
+                owner,
+                owner,
+                previous,
+                "BANK_UPDATED",
+                "Thay bằng bản thông tin mới "
+                        + replacement.get("id")
+                        + "; giữ lịch sử người nhận");
+        return replacement;
     }
 
     @Transactional

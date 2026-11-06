@@ -176,7 +176,7 @@ Mua gói dịch vụ/subscription cũ vẫn dùng VNPay. `PAYMENTS_PROVIDER` áp
 
 ## 9. Migration và kiểm thử trước khi bật LIVE
 
-Migration mới: `V37__Finance_Maintenance_And_Encrypted_Bank_Accounts.sql`. Flyway chạy khi khởi động theo cấu hình hiện có; giữ `HIBERNATE_DDL_AUTO=validate`. Sao lưu trước khi migrate, kiểm tra phiên bản schema thực tế và không tự sửa checksum migration đã chạy.
+Migration tài chính: `V37__Finance_Maintenance_And_Encrypted_Bank_Accounts.sql`; thống kê thu nhập và cập nhật ngân hàng bổ sung `V38__Freelancer_Income_And_Bank_Account_Revisions.sql`. API mới và kịch bản test xem [FREELANCER_INCOME_BANK_API.md](FREELANCER_INCOME_BANK_API.md). Flyway chạy khi khởi động theo cấu hình hiện có; giữ `HIBERNATE_DDL_AUTO=validate`. Sao lưu trước khi migrate, kiểm tra phiên bản schema thực tế và không tự sửa checksum migration đã chạy.
 
 Dữ liệu thanh toán cũ thiếu dấu xác minh không tự trở thành tiền thật. Công nợ sandbox không được rút. Chưa có migration tự hạch toán lại mọi hợp đồng lịch sử đã quyết toán trước V37; phải kiểm kê và có kế hoạch backfill/đối soát riêng trước khi áp dụng cho hệ thống đang có công nợ thật.
 
