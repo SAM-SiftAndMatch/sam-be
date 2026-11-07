@@ -174,3 +174,37 @@ Dùng mã `reference` trong response/log `PAY2S_CHECKOUT_FAILED`. Log chỉ có 
 Backend có kiểm thử chữ ký, callback lặp/tiền sai/đến muộn/môi trường, snapshot giá, kích hoạt và retry. PostgreSQL tests chạy trong schema tạm khi có `FINANCE_TEST_DATABASE_URL`, `FINANCE_TEST_DATABASE_USER`, `FINANCE_TEST_DATABASE_PASSWORD`; chỉ trỏ tới DB test. CI bật bộ kiểm thử này trên PostgreSQL service riêng. Môi trường local của agent chưa xác minh migration trên PostgreSQL hoặc giao dịch Pay2S live.
 
 Trước khi production, thử từng loại thanh toán trên staging, đóng trình duyệt trước callback, quay về bằng cả vai trò, kiểm tra chế độ app background/mở lại, callback lặp và điều kiện 7 ngày. Kiểm tra nhận tiền thực tế ở ngân hàng khi thử LIVE; không chỉ nhìn màn hình thành công.
+## Bổ sung: checkout bền vững và đối soát V40
+
+API tạo thanh toán hiện lưu đơn và tác vụ trước, sau đó worker gọi Pay2S. Response có `orderId` và có thể chưa có `checkoutUrl`; web/mobile đã hỗ trợ chờ và tiếp tục khi link sẵn sàng. Không coi response CREATING là đã thanh toán.
+
+Không cần đổi bộ khóa Pay2S hiện có cho phần này. Các biến điều khiển mới, tùy chọn, đã có giá trị mặc định:
+
+```dotenv
+PAYMENTS_CREATION_ENABLED=true
+PAYMENTS_CREATION_DELAY_MS=1000
+PAYMENTS_IPN_RETRY_DELAY_MS=2000
+PAYMENTS_MONITOR_DELAY_MS=30000
+```
+
+Đặt `PAYMENTS_CREATION_ENABLED=false` để ngừng gọi tạo đơn mới; vẫn nhận IPN, khôi phục lease và xử lý các khoản đã trả. Không dùng việc tắt worker để kết luận đơn đã hủy. Lease hiện cố định 60 giây; không tự gọi lại HTTP khi hết lease sau dispatch.
+
+Các API vận hành mới, chỉ ADMIN:
+
+- `GET /api/v1/checkouts/admin/cases?page=0`
+- `GET /api/v1/checkouts/admin/cases/{id}/events`
+- `POST /api/v1/checkouts/admin/cases/{id}/actions`
+
+Body thao tác gồm `action`, `password`, `evidenceReference` (tối đa 500 ký tự). Không nhập khóa, mật khẩu khác hoặc tài khoản ngân hàng đầy đủ vào bằng chứng. Action hỗ trợ `CLAIM`, `NOTE`, `RETRY_EVENT`, `PROPOSE_PROVIDER_CLOSED`, `APPROVE_PROVIDER_CLOSED`, `PROPOSE_LATE_ALLOCATION`, `APPROVE_LATE_ALLOCATION`. Hai action APPROVE yêu cầu một admin khác người đề nghị. Chỉ xác nhận provider đã đóng sau khi đối chiếu đúng merchant, mã đơn và ngân hàng; bản thân API này không gọi tra cứu/hủy Pay2S.
+
+Màn web: **Tài chính & bảo trì → Hồ sơ sự cố thanh toán**. Sau duyệt thay thế, người dùng bắt đầu lại từ nghiệp vụ gốc; key cũ vẫn trả checkout cũ. Phân bổ muộn chỉ áp dụng một khoản đúng giá, chưa có checkout thay thế hoạt động. Thiếu/thừa hoặc cần hoàn tiền tiếp tục theo hồ sơ vận hành, chưa tự động hoàn tiền ngân hàng.
+
+Metrics mới: `sam.payments.reconciliation.open`, `sam.payments.reconciliation.overdue`, `sam.payments.inbox.pending`, `sam.payments.ipn.rejected`. Việc xuất metrics tùy cấu hình Actuator/registry hiện có; không công khai endpoint quản trị. Log `PAYMENT_RECONCILIATION_OPENED` chỉ chứa mã case và lý do. Cần cấu hình bên giám sát nhận cảnh báo; code chưa gửi email/Slack/SMS. Hạn case mặc định 4 giờ trôi qua, chưa tính lịch làm việc.
+
+V40 giữ nguyên ID, receipt và bút toán cũ; tạo case cho CREATING/UNKNOWN/REVIEW cũ và không đưa chúng vào creation queue. Unique index cho gói định kỳ chỉ áp dụng PENDING trong LIVE/SANDBOX; các bản ghi LEGACY trùng được giữ nguyên và không tự cấp quyền lợi. Trước migration cần kiểm tra các dòng PENDING trùng ở LIVE/SANDBOX và nghĩa vụ thanh toán Pay2S. Khi chuyển phiên bản, dừng/drain đường tạo đơn cũ; không để phiên bản cũ tiếp tục gọi create trong transaction. Khi rollback, giữ nhận IPN/inbox và không rollback schema/xóa task đã có.
+
+Nếu bản V40 chưa áp dụng bị lỗi `uq_pending_recurring_subscription` trên environment LEGACY và log xác nhận `Changes successfully rolled back`, rebuild backend với bản sửa rồi chạy lại. Không cần xóa subscription, đổi LEGACY thành LIVE, tắt Flyway hoặc chạy repair cho lỗi rollback này. Bản sửa V40 dành cho migration chưa được áp dụng thành công; nếu môi trường khác đã áp dụng bản V40 trước đó thì giữ checksum migration đã chạy và xử lý bằng migration bổ sung riêng.
+
+Nếu gặp `CheckoutMonitor.tick` báo `this.store.db is null`, đây là lỗi truy cập field của repository được Spring bọc CGLIB proxy. Bản sửa đóng field JDBC của `FinanceStore` và chuyển toàn bộ bên gọi sang phương thức `store.jdbc()`, giữ nguyên `@Repository` và transaction. Rebuild/restart backend với code mới; lỗi này không yêu cầu đổi env hoặc sửa database. `FinanceStoreProxyTest` khởi tạo Spring context với cả proxy repository và transaction để kiểm tra đường chạy monitor; test này không cần PostgreSQL.
+
+Chạy test database trên PostgreSQL test riêng bằng các biến `FINANCE_TEST_DATABASE_URL`, `FINANCE_TEST_DATABASE_USER`, `FINANCE_TEST_DATABASE_PASSWORD` rồi chạy `./mvnw test`. Thiếu biến URL thì integration test sẽ skip, không được tính là đã kiểm chứng đồng thời. Xem mục 22 trong [PAYMENT_ESCROW_PAYOUT_DIRECTION.md](PAYMENT_ESCROW_PAYOUT_DIRECTION.md) để biết phạm vi và giới hạn hiện tại.

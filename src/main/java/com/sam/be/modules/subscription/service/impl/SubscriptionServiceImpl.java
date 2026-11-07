@@ -57,6 +57,14 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
     public UserSubscriptionResponse purchase(UUID userId, PurchaseSubscriptionRequest request) {
         if (request.getPackageId() == null) throw new ApiException(ErrorCode.VALIDATION_ERROR);
+        var replay =
+                checkouts.replay(
+                        userId,
+                        "SUBSCRIPTION",
+                        request.getPackageId() + ":" + request.getProjectId());
+        if (replay != null)
+            return toResponse(
+                    userSubscriptionRepository.findById(replay.objectId()).orElseThrow(), replay);
         store.lockOwner(userId);
         ServicePackage plan =
                 servicePackageRepository

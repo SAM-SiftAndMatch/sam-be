@@ -8,7 +8,6 @@ import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 class BankAccountRevisionTest {
     final UUID owner = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
@@ -20,7 +19,7 @@ class BankAccountRevisionTest {
 
     @BeforeEach
     void prepare() {
-        ReflectionTestUtils.setField(store, "db", db);
+        when(store.jdbc()).thenReturn(db);
         service = spy(new BankAccountService(store, cipher, new ObjectMapper()));
         old =
                 new HashMap<>(

@@ -87,7 +87,16 @@ public class Pay2sClient {
         return environment;
     }
 
-    public record Checkout(String url, boolean demo) {}
+    public String merchantScope() {
+        return com.sam.be.modules.payment.service.ProviderIdentity.hash(
+                partnerCode + ":" + accessKey);
+    }
+
+    public record Checkout(String url, boolean demo, String transferContent) {
+        public Checkout(String url, boolean demo) {
+            this(url, demo, null);
+        }
+    }
 
     /** Provider memo: ASCII letters/digits, 10–32 chars, without user or project data. */
     public static String transferMemo(String order, PaymentType paymentType) {
@@ -307,7 +316,13 @@ public class Pay2sClient {
                                             code,
                                             null);
                                 return new Checkout(
-                                        url, providerDemo || !"LIVE".equals(environment));
+                                        url,
+                                        providerDemo || !"LIVE".equals(environment),
+                                        result.path("orderInfo")
+                                                        .asText("")
+                                                        .matches("[A-Za-z0-9]{10,32}")
+                                                ? result.path("orderInfo").asText()
+                                                : null);
                             });
         } catch (PaymentGatewayException ex) {
             throw ex;

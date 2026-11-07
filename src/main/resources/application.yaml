@@ -92,6 +92,10 @@ swagger:
   password: ${SWAGGER_PASSWORD}
 
 payments:
+  creation-enabled: ${PAYMENTS_CREATION_ENABLED:true}
+  creation-delay-ms: ${PAYMENTS_CREATION_DELAY_MS:1000}
+  ipn-retry-delay-ms: ${PAYMENTS_IPN_RETRY_DELAY_MS:2000}
+  monitor-delay-ms: ${PAYMENTS_MONITOR_DELAY_MS:30000}
   return-url: ${PAYMENTS_RETURN_URL:}
   allowed-return-origins: ${PAYMENTS_ALLOWED_RETURN_ORIGINS:}
   provider: ${PAYMENTS_PROVIDER:pay2s}

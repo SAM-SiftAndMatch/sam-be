@@ -101,7 +101,7 @@ public class WithdrawalService {
                         bankId,
                         owner);
         BigDecimal today =
-                store.db.queryForObject(
+                store.jdbc().queryForObject(
                         "SELECT COALESCE(SUM(amount),0) FROM finance_withdrawals WHERE owner_id=? AND created_at>=? AND status NOT IN ('FAILED','REJECTED','CANCELLED')",
                         BigDecimal.class,
                         owner,
@@ -126,7 +126,7 @@ public class WithdrawalService {
         String snapshot =
                 cipher.decrypt(
                         bank.get("detailsEncrypted").toString(), "bank:" + owner + ":" + bankId);
-        store.db.update(
+        store.jdbc().update(
                 """
             INSERT INTO finance_withdrawals(id,owner_id,request_key,bank_account_id,beneficiary_encrypted,bank_code,last_four,amount,status,created_at,updated_at)
             VALUES (?,?,?,?,?,?,?,?,'REQUESTED',?,?)
@@ -147,9 +147,9 @@ public class WithdrawalService {
             BigDecimal part = store.remaining(p).min(remaining);
             if (part.signum() <= 0) continue;
             UUID payable = id(p, "id");
-            store.db.update(
+            store.jdbc().update(
                     "UPDATE finance_payables SET reserved=reserved+? WHERE id=?", part, payable);
-            store.db.update(
+            store.jdbc().update(
                     "INSERT INTO finance_withdrawal_allocations VALUES (?,?,?)",
                     withdrawal,
                     payable,
@@ -183,7 +183,7 @@ public class WithdrawalService {
     }
 
     private void status(UUID actor, Map<String, Object> row, String target, String note) {
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE finance_withdrawals SET status=?,updated_at=? WHERE id=?",
                 target,
                 store.time(store.now()),
@@ -196,7 +196,7 @@ public class WithdrawalService {
                 store.rows(
                         "SELECT * FROM finance_withdrawal_allocations WHERE withdrawal_id=?",
                         withdrawal))
-            store.db.update(
+            store.jdbc().update(
                     "UPDATE finance_payables SET reserved=reserved-? WHERE id=?",
                     money(allocation, "amount"),
                     id(allocation, "payableId"));
@@ -222,7 +222,7 @@ public class WithdrawalService {
         store.one(
                 "SELECT id FROM finance_bank_accounts WHERE id=? AND status='VERIFIED'",
                 id(row, "bankAccountId"));
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE finance_withdrawals SET approved_by=? WHERE id=?", actor, withdrawal);
         status(actor, row, "APPROVED", "Đã duyệt, chưa chuyển tiền ngân hàng");
     }
@@ -249,7 +249,7 @@ public class WithdrawalService {
                                 row.get("beneficiaryEncrypted").toString(),
                                 "withdrawal:" + id(row, "ownerId") + ":" + withdrawal));
         if ("APPROVED".equals(current)) {
-            store.db.update(
+            store.jdbc().update(
                     "UPDATE finance_withdrawals SET operator_id=? WHERE id=?", actor, withdrawal);
             status(
                     actor,
@@ -292,7 +292,7 @@ public class WithdrawalService {
         if (!actor.equals(row.get("operatorId"))) throw forbidden();
         eligibleAllocations(withdrawal);
         UUID owner = id(row, "ownerId");
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE finance_withdrawals SET bank_reference=?,evidence_reference=? WHERE id=?",
                 bankReference,
                 evidence,
@@ -301,7 +301,7 @@ public class WithdrawalService {
                 store.rows(
                         "SELECT * FROM finance_withdrawal_allocations WHERE withdrawal_id=?",
                         withdrawal))
-            store.db.update(
+            store.jdbc().update(
                     "UPDATE finance_payables SET reserved=reserved-?,paid=paid+? WHERE id=?",
                     money(a, "amount"),
                     money(a, "amount"),

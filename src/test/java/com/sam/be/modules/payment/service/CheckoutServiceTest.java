@@ -10,7 +10,6 @@ import java.time.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 class CheckoutServiceTest {
     FinanceStore store = mock(FinanceStore.class);
@@ -23,11 +22,12 @@ class CheckoutServiceTest {
 
     @BeforeEach
     void setup() {
-        ReflectionTestUtils.setField(store, "db", db);
+        when(store.jdbc()).thenReturn(db);
         service = new CheckoutService(store, provider, returns);
         when(provider.environment()).thenReturn("LIVE");
         when(returns.resolve(any())).thenReturn("https://sam.example/payment/return");
-        when(store.now()).thenReturn(Instant.parse("2026-11-06T12:00:00Z"));
+        when(db.queryForObject("SELECT clock_timestamp()", OffsetDateTime.class))
+                .thenReturn(OffsetDateTime.parse("2026-11-06T12:00:00Z"));
         row =
                 new HashMap<>(
                         Map.of(
@@ -76,15 +76,15 @@ class CheckoutServiceTest {
     @Test
     void uncertainCreateDoesNotCreateSecondProviderOrder() {
         row.put("status", "UNKNOWN");
-        assertThrows(
-                org.springframework.web.server.ResponseStatusException.class,
-                () ->
-                        service.create(
+        assertEquals(
+                "UNKNOWN",
+                service.create(
                                 "SUBSCRIPTION",
                                 object,
                                 owner,
                                 new BigDecimal("149000"),
-                                "https://sam.example/payment/return"));
+                                "https://sam.example/payment/return")
+                        .paymentStatus());
         verify(provider, never()).create(anyString(), anyLong(), anyString(), anyString());
     }
 

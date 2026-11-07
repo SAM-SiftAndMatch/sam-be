@@ -1,6 +1,5 @@
 package com.sam.be.modules.payment.service;
 
-import com.sam.be.common.exception.PaymentGatewayException;
 import com.sam.be.modules.finance.*;
 import java.math.BigDecimal;
 import java.time.*;
@@ -30,48 +29,42 @@ public class CheckoutService {
             String transferContent,
             String expiresAt,
             String createdAt,
-            String paidAt) {}
+            String paidAt,
+            String supportCode,
+            boolean reviewRequired) {}
 
-    @Transactional(noRollbackFor = PaymentGatewayException.class)
+    @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
     public Checkout create(
             String purpose, UUID objectId, UUID owner, BigDecimal amount, String returnUrl) {
-        // Serialize requests for the same business order without locking another user's account.
-        store.db.queryForList(
+        store.jdbc().queryForList(
                 "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", purpose + ":" + objectId);
         String target = returns.resolve(returnUrl);
         var previous =
                 store.rows(
-                        "SELECT * FROM payment_checkouts WHERE purpose=? AND object_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
+                        "SELECT * FROM payment_checkouts WHERE purpose=? AND object_id=? ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE",
                         purpose,
                         objectId);
         if (!previous.isEmpty()) {
             var old = previous.getFirst();
             if (!owner.equals(FinanceStore.id(old, "ownerId"))
                     || !pay2s.environment().equals(old.get("environment")))
-                throw FinanceStore.invalid(
-                        "Đơn thanh toán thuộc môi trường khác; tạo đơn nghiệp vụ mới");
-            String state = old.get("status").toString();
-            if (Set.of("PAID", "REVIEW", "UNKNOWN", "CREATING").contains(state)) {
-                if (Set.of("UNKNOWN", "CREATING").contains(state))
-                    throw FinanceStore.invalid(
-                            "Đang kiểm tra lần tạo thanh toán trước. Không tạo thêm đơn để tránh trả tiền lặp.");
+                throw FinanceStore.invalid("Đơn thanh toán thuộc người dùng hoặc môi trường khác");
+            // An expired link is not proof that the provider order is closed. Never silently
+            // replace it.
+            if (!("CANCELLED".equals(old.get("status"))
+                    && Boolean.TRUE.equals(old.get("replacementAllowed")))) {
+                bind(owner, purpose, FinanceStore.id(old, "id"));
                 return view(old);
             }
-            if ("PENDING".equals(state)
-                    && FinanceStore.instant(old, "expiresAt").isAfter(store.now()))
-                return view(old);
-            store.db.update(
-                    "UPDATE payment_checkouts SET status='EXPIRED' WHERE id=? AND status='PENDING'",
-                    FinanceStore.id(old, "id"));
-            amount = FinanceStore.money(old, "amount"); // price snapshot survives retries
+            amount = FinanceStore.money(old, "amount");
         }
         if (amount == null || amount.signum() <= 0 || amount.stripTrailingZeros().scale() > 0)
             throw FinanceStore.invalid("Giá thanh toán phải là số nguyên VND dương");
+        if (!pay2s.enabled()) throw FinanceStore.invalid("Thanh toán Pay2S chưa được cấu hình");
         UUID id = UUID.randomUUID();
-        String order = id.toString().replace("-", "");
-        String memo = Pay2sClient.transferMemo(order, purpose);
-        store.db.update(
-                "INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at) VALUES (?,?,?,?,?,?,'CREATING',?,?)",
+        String memo = Pay2sClient.transferMemo(id.toString().replace("-", ""), purpose);
+        store.jdbc().update(
+                "INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at,support_code,merchant_scope) VALUES (?,?,?,?,?,?,'CREATING',?,clock_timestamp()+INTERVAL '15 minutes',?,?)",
                 id,
                 purpose,
                 objectId,
@@ -79,28 +72,48 @@ public class CheckoutService {
                 amount,
                 pay2s.environment(),
                 memo,
-                store.time(store.now().plus(Duration.ofMinutes(15))));
-        try {
-            var result = pay2s.create(order, amount.longValueExact(), target, purpose);
-            store.db.update(
-                    "UPDATE payment_checkouts SET checkout_url=?,status='PENDING' WHERE id=?",
-                    result.url(),
-                    id);
-        } catch (PaymentGatewayException ex) {
-            // A timed-out create may already exist at the provider. Preserve the reference for
-            // IPN/review.
-            String http = ex.diagnostics().get("upstreamHttpStatus");
-            boolean rejected =
-                    http != null && http.matches("4[0-9]{2}") && !http.equals("408")
-                            || Set.of("IPN_URL_INVALID", "REDIRECT_URL_INVALID")
-                                    .contains(ex.diagnostics().get("reason"));
-            store.db.update(
-                    "UPDATE payment_checkouts SET status=? WHERE id=?",
-                    rejected ? "CANCELLED" : "UNKNOWN",
-                    id);
-            throw ex;
-        }
+                memo,
+                pay2s.merchantScope());
+        store.jdbc().update(
+                "INSERT INTO payment_creation_tasks(checkout_id,return_url,state) VALUES (?,?,'READY')",
+                id,
+                target);
+        bind(owner, purpose, id);
+        // Both business order and task commit in the caller's transaction. HTTP is worker-only.
         return view(load(id));
+    }
+
+    @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public Checkout replay(UUID owner, String purpose, String businessPayload) {
+        var context = PaymentRequestKey.prepare(owner, purpose, businessPayload);
+        if (context == null) return null;
+        store.jdbc().queryForList(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
+                owner + ":" + pay2s.environment() + ":" + purpose + ":" + context.keyHash());
+        var rows =
+                store.rows(
+                        "SELECT checkout_id,payload_hash FROM payment_idempotency_keys WHERE owner_id=? AND environment=? AND purpose=? AND key_hash=?",
+                        owner,
+                        pay2s.environment(),
+                        purpose,
+                        context.keyHash());
+        if (rows.isEmpty()) return null;
+        if (!context.payloadHash().equals(rows.getFirst().get("payloadHash")))
+            throw FinanceStore.invalid("Idempotency-Key đã dùng cho nội dung mua khác");
+        return get(owner, FinanceStore.id(rows.getFirst(), "checkoutId"));
+    }
+
+    private void bind(UUID owner, String purpose, UUID checkout) {
+        var c = PaymentRequestKey.current(owner, purpose);
+        if (c != null)
+            store.jdbc().update(
+                    "INSERT INTO payment_idempotency_keys(owner_id,environment,purpose,key_hash,payload_hash,checkout_id) VALUES (?,?,?,?,?,?)",
+                    owner,
+                    pay2s.environment(),
+                    purpose,
+                    c.keyHash(),
+                    c.payloadHash(),
+                    checkout);
     }
 
     public Map<String, Object> load(UUID id) {
@@ -139,10 +152,17 @@ public class CheckoutService {
         return rows.isEmpty() ? null : view(rows.getFirst());
     }
 
+    public Instant databaseNow() {
+        return store.jdbc()
+                .queryForObject("SELECT clock_timestamp()", java.time.OffsetDateTime.class)
+                .toInstant();
+    }
+
     private Checkout view(Map<String, Object> row) {
         String status = row.get("status").toString();
         if ("PENDING".equals(status)
-                && !FinanceStore.instant(row, "expiresAt").isAfter(store.now())) status = "EXPIRED";
+                && !FinanceStore.instant(row, "expiresAt").isAfter(databaseNow()))
+            status = "EXPIRED";
         return new Checkout(
                 FinanceStore.id(row, "id"),
                 row.get("purpose").toString(),
@@ -154,9 +174,16 @@ public class CheckoutService {
                 status,
                 row.get("fulfillmentStatus").toString(),
                 "PENDING".equals(status) ? (String) row.get("checkoutUrl") : null,
-                row.get("transferContent").toString(),
+                Objects.toString(
+                        row.get("providerTransferContent"),
+                        Objects.toString(row.get("transferContent"), "")),
                 row.get("expiresAt").toString(),
                 row.get("createdAt") == null ? null : row.get("createdAt").toString(),
-                row.get("paidAt") == null ? null : row.get("paidAt").toString());
+                row.get("paidAt") == null ? null : row.get("paidAt").toString(),
+                Objects.toString(
+                        row.get("supportCode"),
+                        "SAM" + row.get("id").toString().replace("-", "").toUpperCase(Locale.ROOT)),
+                Set.of("UNKNOWN", "REVIEW", "EXPIRED", "CANCELLED").contains(status)
+                        || "REVIEW".equals(row.get("fulfillmentStatus")));
     }
 }

@@ -66,6 +66,8 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
     public PaymentResponse createMaintenanceFunding(UUID actor, UUID orderId) {
+        var replay = checkouts.replay(actor, "MAINTENANCE_FUND", orderId.toString());
+        if (replay != null) return replayResponse(replay);
         var order = financeStore.one("SELECT * FROM paid_maintenance_orders WHERE id=?", orderId);
         if (!actor.equals(com.sam.be.modules.finance.FinanceStore.id(order, "clientId")))
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
@@ -92,7 +94,7 @@ public class PaymentServiceImpl implements PaymentService {
         var payment = paymentRepository.findById(result.getPaymentId()).orElseThrow();
         payment.setMaintenanceOrderId(orderId);
         paymentRepository.saveAndFlush(payment);
-        financeStore.db.update(
+        financeStore.jdbc().update(
                 "UPDATE paid_maintenance_orders SET payment_id=? WHERE id=?",
                 payment.getId(),
                 orderId);
@@ -102,6 +104,8 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
     public PaymentResponse createContractFund(UUID userId, CreateEscrowRequest request) {
+        var replay = checkouts.replay(userId, "CONTRACT_FUND", request.getContractId().toString());
+        if (replay != null) return replayResponse(replay);
         Contract contract =
                 fundingContractRepository
                         .findByIdForSettlement(request.getContractId())
@@ -132,6 +136,9 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
     public PaymentResponse createSecurityDeposit(UUID userId, CreateEscrowRequest request) {
+        var replay =
+                checkouts.replay(userId, "SECURITY_DEPOSIT", request.getContractId().toString());
+        if (replay != null) return replayResponse(replay);
         Contract contract =
                 fundingContractRepository
                         .findByIdForSettlement(request.getContractId())
@@ -251,6 +258,13 @@ public class PaymentServiceImpl implements PaymentService {
                 || s == PaymentStatus.SETTLED) return 0;
         if (s == PaymentStatus.PENDING) return 1;
         return 2;
+    }
+
+    private PaymentResponse replayResponse(com.sam.be.modules.payment.service.CheckoutService.Checkout checkout) {
+        var response=toResponse(paymentRepository.findById(checkout.objectId()).orElseThrow(),checkout.checkoutUrl());
+        response.setOrderId(checkout.orderId().toString().replace("-",""));
+        response.setCheckoutUrl(checkout.checkoutUrl());
+        return response;
     }
 
     private String resolveReturnUrl(String returnUrl) {
@@ -484,7 +498,7 @@ public class PaymentServiceImpl implements PaymentService {
                         && amount.compareTo(payment.getAmount()) == 0
                         && !otherFunded;
         UUID receipt = UUID.randomUUID();
-        financeStore.db.update(
+        financeStore.jdbc().update(
                 "INSERT INTO finance_receipts(id,payment_id,provider,environment,provider_reference,amount,disposition,created_at) VALUES (?,?,?,?,?,?,?,?)",
                 receipt,
                 payment.getId(),
@@ -522,7 +536,7 @@ public class PaymentServiceImpl implements PaymentService {
         cacheInvalidationService.paymentsChanged(
                 payment.getContract().getId(), payment.getContract().getFreelancer().getId());
         if (payment.getMaintenanceOrderId() != null) {
-            financeStore.db.update(
+            financeStore.jdbc().update(
                     "UPDATE paid_maintenance_orders SET status=CASE WHEN status='DISPUTED' THEN status ELSE 'FUNDED' END,funded_at=?,due_at=?::timestamptz+delivery_days*INTERVAL '24 hours' WHERE id=? AND status IN ('AWAITING_PAYMENT','DISPUTED')",
                     financeStore.time(financeStore.now()),
                     financeStore.time(financeStore.now()),

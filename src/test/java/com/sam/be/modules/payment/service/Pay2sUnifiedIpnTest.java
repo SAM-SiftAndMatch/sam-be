@@ -12,7 +12,6 @@ import java.time.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 class Pay2sUnifiedIpnTest {
     Pay2sClient provider = mock(Pay2sClient.class);
@@ -22,11 +21,42 @@ class Pay2sUnifiedIpnTest {
     UUID id = UUID.randomUUID();
     Map<String, Object> order;
     Pay2sIpnService service;
+    org.springframework.transaction.PlatformTransactionManager tm =
+            mock(org.springframework.transaction.PlatformTransactionManager.class);
+    PaymentReconciliationService cases = mock(PaymentReconciliationService.class);
+    UUID eventId = UUID.randomUUID();
+    Map<String, Object> event;
 
     @BeforeEach
     void setup() {
-        ReflectionTestUtils.setField(store, "db", db);
-        service = new Pay2sIpnService(provider, store, payments);
+        when(store.jdbc()).thenReturn(db);
+        service = new Pay2sIpnService(provider, store, payments, tm, cases, new ObjectMapper());
+        when(tm.getTransaction(any()))
+                .thenReturn(new org.springframework.transaction.support.SimpleTransactionStatus());
+        when(provider.merchantScope()).thenReturn("merchant");
+        event =
+                new HashMap<>(
+                        Map.of(
+                                "environment",
+                                "SANDBOX",
+                                "merchantScope",
+                                "merchant",
+                                "state",
+                                "PENDING",
+                                "orderReference",
+                                id.toString().replace("-", ""),
+                                "providerReference",
+                                "PAY2S_RECEIPT",
+                                "resultCode",
+                                0,
+                                "amountText",
+                                "149000"));
+        when(store.one(startsWith("SELECT id FROM payment_provider_events"), any(), any(), any()))
+                .thenReturn(Map.of("id", eventId));
+        when(store.one(eq("SELECT * FROM payment_provider_events WHERE id=?"), eq(eventId)))
+                .thenAnswer(a -> { event.put("verifiedPayload", payload().put("amount",event.get("amountText").toString()).toString()); return event; });
+        when(store.rows(startsWith("SELECT id FROM payment_provider_events"), eq(eventId)))
+                .thenReturn(List.of(Map.of("id", eventId)));
         when(provider.environment()).thenReturn("SANDBOX");
         when(provider.verify(any())).thenReturn(true);
         when(store.now()).thenReturn(Instant.parse("2026-11-06T12:00:00Z"));
@@ -47,9 +77,12 @@ class Pay2sUnifiedIpnTest {
                                 new BigDecimal("149000"),
                                 "expiresAt",
                                 "2026-11-06T12:15:00Z"));
-        when(store.rows(startsWith("SELECT * FROM payment_checkouts"), eq(id)))
-                .thenReturn(List.of(order));
-        when(store.rows(startsWith("SELECT checkout_id"), eq("SANDBOX"), eq("PAY2S_RECEIPT")))
+        order.put("payableNow", true);
+        when(store.rows(startsWith("SELECT *,expires_at"), eq(id))).thenReturn(List.of(order));
+        when(store.rows(
+                        startsWith("SELECT checkout_id,amount"),
+                        eq("SANDBOX"),
+                        eq("PAY2S_RECEIPT")))
                 .thenReturn(List.of());
     }
 
@@ -77,9 +110,7 @@ class Pay2sUnifiedIpnTest {
         verify(db)
                 .update(
                         startsWith("UPDATE payment_checkouts SET status='PAID'"),
-                        any(),
                         eq("PAY2S_RECEIPT"),
-                        any(),
                         eq(id));
         verifyNoInteractions(payments);
     }
@@ -95,14 +126,27 @@ class Pay2sUnifiedIpnTest {
 
     @Test
     void repeatedProviderTransactionIsAcknowledgedWithoutEnqueuingOrCreditingTwice() {
-        when(store.rows(startsWith("SELECT checkout_id"), eq("SANDBOX"), eq("PAY2S_RECEIPT")))
-                .thenReturn(List.of(Map.of("checkoutId", id)));
+        when(store.rows(
+                        startsWith("SELECT checkout_id,amount"),
+                        eq("SANDBOX"),
+                        eq("PAY2S_RECEIPT")))
+                .thenReturn(List.of(Map.of("checkoutId", id, "amount", new BigDecimal("149000"))));
         assertTrue(service.accept(payload()).get("success"));
-        verifyNoInteractions(db);
+        verify(db, never())
+                .update(
+                        startsWith("INSERT INTO payment_checkout_receipts"),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any());
+        verifyNoInteractions(payments);
     }
 
     @Test
     void wrongAmountIsSavedForReviewWithoutGrantingBenefits() {
+        event.put("amountText", "149001");
         var body = payload().put("amount", 149001);
         service.accept(body);
         verify(db)
@@ -115,17 +159,13 @@ class Pay2sUnifiedIpnTest {
                         eq(new BigDecimal("149001")),
                         eq("REVIEW"));
         verify(db, never())
-                .update(
-                        startsWith("UPDATE payment_checkouts SET status='PAID'"),
-                        any(),
-                        any(),
-                        any(),
-                        any());
+                .update(startsWith("UPDATE payment_checkouts SET status='PAID'"), any(), any());
     }
 
     @Test
     void latePaymentIsReviewableInsteadOfSilentlyDiscarded() {
         order.put("expiresAt", "2026-11-06T11:59:59Z");
+        order.put("payableNow", false);
         service.accept(payload());
         verify(db)
                 .update(
@@ -155,6 +195,7 @@ class Pay2sUnifiedIpnTest {
 
     @Test
     void cancellationDoesNotDowngradePaidOrder() {
+        event.put("resultCode", 2);
         service.accept(payload().put("resultCode", 2));
         verify(db)
                 .update(
@@ -166,9 +207,9 @@ class Pay2sUnifiedIpnTest {
     @Test
     void productionCannotConsumeSandboxCheckout() {
         when(provider.environment()).thenReturn("LIVE");
-        assertThrows(
-                org.springframework.web.server.ResponseStatusException.class,
-                () -> service.accept(payload()));
-        verifyNoInteractions(db);
+        assertTrue(service.accept(payload()).get("success"));
+        verify(cases)
+                .open(contains("MERCHANT_CHANGED"), isNull(), eq(eventId), eq("MERCHANT_CHANGED"));
+        verifyNoInteractions(payments);
     }
 }

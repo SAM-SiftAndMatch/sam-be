@@ -920,3 +920,315 @@ V39 bổ sung checkout chung, receipt bất biến, khóa chống xử lý trùn
 Web dùng `/payment/return`, có lịch sử và trang đối soát admin. Mobile nối gói thật, addon thật và điểm nạp hợp đồng/cọc; trạng thái và huy hiệu từ backend. Không còn tự bật Premium chỉ vì mở checkout. Tính năng chưa có nghiệp vụ không được mở bán lại.
 
 Lịch sử cũ được giữ với nguồn gốc gốc; subscription cũ dùng LEGACY và cần đối soát trước khi công nhận quyền lợi LIVE. Các link cũ còn chờ phải hoàn tất/hủy/đối soát trước khi cắt sang phiên bản mới; endpoint cổng cũ đã bị gỡ. Chưa có hoàn tiền provider tự động hoặc công cụ tự phân bổ lại receipt REVIEW. Mô phỏng dùng orderId của checkout, không suy ra từ paymentId.
+
+## 21. Kế hoạch gia cố chống thanh toán trùng và khôi phục sự cố
+
+Ngày đánh giá: 07/11/2026. Trạng thái: **đề xuất, chưa triển khai các thay đổi của mục 21**. Mục này bổ sung và thay thế những giả định chưa được xác minh trong các phương án trước. Phạm vi triển khai chỉ gồm `sam-be`, `sam-fe`, `sam-mobile`; chưa triển khai production hoặc thực hiện chuyển tiền thật.
+
+### 21.1. Đánh giá code hiện tại
+
+| Vấn đề | Hiện đã có | Còn phải làm |
+| --- | --- | --- |
+| Hai yêu cầu mua đồng thời | Khóa nghiệp vụ, advisory lock, unique index checkout đang hoạt động theo đối tượng nghiệp vụ và môi trường | Khóa idempotency từ client; định nghĩa một lần mua ở tầng nghiệp vụ, kể cả khi hai yêu cầu có hai object ID khác nhau |
+| Mất tiến trình khi tạo link | Giữ UNKNOWN khi bắt được một số lỗi Pay2S | Commit ý định trước HTTP; hiện HTTP vẫn nằm trong transaction tạo checkout, nên tiến trình chết có thể làm mất bản ghi local |
+| IPN gửi lặp | Xác minh HMAC/merchant, khóa checkout, unique receipt, commit trước ACK | Inbox lưu thông báo chưa khớp đơn; phân biệt mã hóa đơn và mã giao dịch tiền; xử lý cùng mã nhưng nội dung thay đổi |
+| Nhận tiền nhưng kích hoạt lỗi | Có worker bền vững, retry và khóa SKIP LOCKED | Ngưỡng cảnh báo, quy trình can thiệp, bảo vệ đầy đủ chuyển trạng thái |
+| Thiếu, thừa, muộn hoặc tiền lạ | Đưa khoản lệch đã khớp checkout vào REVIEW | Quy trình xử lý có người nhận và hạn phản hồi; chưa có tự cộng khoản thiếu hoặc tự hoàn tiền |
+| Thời gian | Cột TIMESTAMPTZ; một số lịch retry dùng DB | Hạn checkout và kiểm tra hết hạn còn dùng đồng hồ ứng dụng; cần thống nhất dùng DB |
+
+Không coi `noRollbackFor` là bảo đảm chống mất dữ liệu khi tiến trình bị dừng cứng. Không coi rate limit hoặc vô hiệu hóa nút là cơ chế chống trùng giao dịch.
+
+### 21.2. Những khả năng Pay2S phải xác minh trước
+
+Nguồn chính thức đã kiểm tra:
+
+- [Collection Link V1](https://developer.pay2s.vn/docs/api/collection-link/): có `orderId` của SAM và `requestId` của yêu cầu. Chưa tìm thấy cam kết công khai đủ rõ để coi việc gọi lại create là idempotent trong mọi trạng thái.
+- [Collection Link V2](https://developer.pay2s.vn/docs/api/collection-link-v2/): có mô tả tái sử dụng mã thanh toán khi gọi lại cùng đơn chưa trả; V2 có thể thay `orderInfo` bằng mã do Pay2S sinh. Điều này chưa chứng minh create đồng thời hoặc gọi lại sau thanh toán luôn chỉ có một đơn. SAM hiện đang ký theo V1.
+- [IPN](https://developer.pay2s.vn/docs/api/instant-payment-notification/): `transId` được mô tả là mã hóa đơn Pay2S. Không mặc định đó là ID riêng của từng lần chuyển tiền. IPN có số lượt thử lại hữu hạn.
+- [Hủy Collection Link](https://developer.pay2s.vn/docs/api/cancel-order/): hỗ trợ hủy theo `orderId` cho đơn chưa trả. Hủy không hoàn tiền, không ngăn chuyển khoản vào ngân hàng và không phát webhook hủy. HTTP 409 có thể có nhiều nguyên nhân.
+- [Lịch sử giao dịch](https://developer.pay2s.vn/docs/history-api/tai-lieu-ky-thuat/): có API lấy giao dịch ngân hàng, gồm ID Pay2S, mã ngân hàng, số tiền và nội dung. Đây là nguồn đối soát tiềm năng, không đồng nghĩa API tra trạng thái Collection Link theo mã đơn.
+
+Đầu việc bắt buộc ở giai đoạn đầu:
+
+1. Xác minh có API tra cứu Collection Link bằng merchant `orderId` không; phạm vi khóa, trạng thái, độ trễ và khả năng lấy lại link. Không dùng API tra phiên thẻ hoặc OneQR thay cho sản phẩm hiện tại.
+2. Thử cùng `orderId`/`requestId`, cùng `orderId` nhưng request mới, hai create đồng thời, gọi lại sau paid/cancelled. Kiểm tra cả phản hồi và số hóa đơn thực tế; lưu kết quả thử nghiệm, phiên bản API và phạm vi merchant. Khi tài liệu chưa đủ, cần xác nhận từ Pay2S trước khi bật tự động gọi lại.
+3. Xác minh `amount` trong IPN là từng khoản hay số cộng dồn; có IPN khi chuyển thiếu/thừa/nhiều lần không; liên kết `transId` với giao dịch ngân hàng bằng trường nào.
+4. Thử quyền truy cập lịch sử trên tài khoản đang dùng; xác minh phân trang/giới hạn dữ liệu, múi giờ, độ trễ, mã giao dịch ổn định, thay đổi sau đối soát và giao dịch đến sau hủy. Một lần không thấy giao dịch không đủ chứng minh chưa trả tiền.
+5. Xác minh create V1 có giữ nguyên memo không. Lưu riêng memo SAM đề nghị và memo provider thực tế; UI/QR dùng giá trị thực tế đã xác minh. Không lấy memo chưa chắc đúng làm cơ sở tự phân bổ tiền.
+6. Xác minh ý nghĩa từng lỗi create/cancel. Không coi toàn bộ HTTP 4xx là chắc chắn chưa tạo: 409, 429 hoặc lỗi qua proxy cần phân loại theo contract. Chỉ lỗi được chứng minh không tạo tài nguyên mới cho phép kết thúc như bị từ chối.
+
+Kết quả là bảng năng lực của adapter, ví dụ `canLookupByMerchantOrder`, `canSafelyReplayCreate`, `hasStableBankTransactionId`. Mặc định tắt các năng lực chưa có bằng chứng; không thêm endpoint suy đoán.
+
+### 21.3. Mô hình nhỏ, giữ giao dịch DB ngắn
+
+Sử dụng PostgreSQL hiện có làm hàng chờ/outbox; giai đoạn này chưa cần thêm Kafka hoặc một hệ thống hàng đợi khác.
+
+```text
+Web / mobile: mua + Idempotency-Key
+        |
+        v
+Transaction A
+  - Kiem tra quyen, gia va lan mua
+  - Luu business intent + provider attempt + creation task
+  - COMMIT
+        |
+        v
+Worker nhan lease trong transaction ngan
+  - Danh dau co the bat dau gui
+  - COMMIT
+        |
+        v
+Goi Pay2S NGOAI transaction DB
+        |
+        v
+Transaction B: luu ket qua co dieu kien theo lease/version
+
+IPN co the den BAT KY LUC NAO sau Transaction A
+        |
+        v
+Xac minh -> luu inbox -> nhan tien / doi soat -> COMMIT -> ACK
+        |
+        v
+Worker cap quyen loi / ghi escrow dung mot lan
+```
+
+Sơ đồ dùng chữ ASCII trong khối `text`, không phụ thuộc Mermaid hoặc plugin trình xem Markdown.
+
+Các khái niệm dữ liệu:
+
+- **Business intent:** một nhu cầu mua cụ thể, chủ sở hữu, môi trường, loại nghiệp vụ, giá chốt và phiên bản cấu hình. Đây là nơi bảo vệ quyền lợi khỏi cấp hai lần.
+- **Provider attempt:** một lần tạo đơn phía Pay2S với merchant order ID và request ID đã lưu trước khi gửi. Một intent chỉ có một attempt được phép thu tiền tại một thời điểm. Attempt cũ luôn được giữ để nhận callback muộn; không đổi ID để thử lại một attempt chưa rõ kết quả.
+- **Creation task:** công việc tạo/kiểm tra đơn với lease và số thế hệ nhận việc. Có thể dùng bảng riêng hoặc cột chuyên biệt; không dùng chung bộ đếm retry kích hoạt hiện có.
+- **Provider inbox:** bằng chứng thông báo đã xác minh, trạng thái xử lý và số lần thử lại. Thông báo hợp lệ nhưng chưa tìm thấy đơn vẫn được lưu để xử lý sau.
+- **Receipt/allocation và case đối soát:** tiền đã xác minh, phần phân bổ cho nghĩa vụ và phần chưa phân bổ. Không cộng IPN và lịch sử ngân hàng như hai khoản tiền độc lập.
+
+Giữ `payment_checkouts` và các ID lịch sử khi có thể; quyết định cột/bảng cụ thể trong thiết kế migration. Không tạo mô hình song song để quên dữ liệu V39.
+
+### 21.4. Chống trùng: định nghĩa đúng một lần mua
+
+`Idempotency-Key` do web/mobile tạo khi người dùng bắt đầu một lần mua và giữ nguyên khi retry mạng, tải lại hoặc tiếp tục lần mua đó. Backend tạo khóa nghiệp vụ ngay cả khi phiên bản client cũ chưa gửi header.
+
+- Unique key theo người dùng, môi trường, hành động và idempotency key; lưu fingerprint các tham số nghiệp vụ bất biến. Cùng key/cùng dữ liệu trả lại đúng intent; cùng key/khác dữ liệu trả 409.
+- Gọi lại key cũ sau 10 phút hoặc sau khi hết hạn vẫn trả intent cũ. Muốn mua/gia hạn mới phải là hành động mới rõ ràng; không đổi key tự động chỉ vì request timeout.
+- Hai tab gửi hai key khác nhau vẫn bị chặn bởi ràng buộc nghiệp vụ. Không chỉ dựa vào bảng key.
+- Gói: cùng người mua, loại gói, môi trường và chu kỳ mua/gia hạn. Mua gói khác không bị gộp nhầm; gói đang hoạt động tuân theo chính sách đổi/gia hạn riêng.
+- Addon: cùng dự án và phiên bản lựa chọn đã chốt; thay lựa chọn không xóa đơn chưa rõ kết quả. Tiền đến cho phiên bản cũ được đối soát.
+- Escrow/cọc: cùng hợp đồng, bên nộp và loại nghĩa vụ. Bảo trì: cùng đơn bảo trì. Các phần ngân sách, cọc và phí dịch vụ không dùng chung một khóa.
+- Unique/partial unique index đặt ở đúng business scope và môi trường. Nếu insert tranh chấp, rollback transaction bị lỗi rồi đọc intent đã tồn tại; không tiếp tục SQL trong transaction PostgreSQL đã lỗi.
+- Unique grant theo business intent; mã receipt, bút toán và tác vụ hậu kỳ có khóa chống trùng riêng. Nếu có nhiều merchant, khóa provider phải bao gồm merchant và môi trường.
+
+Không xóa mapping idempotency còn dùng cho hồ sơ thanh toán đang mở. Khi áp dụng chính sách lưu trữ dữ liệu, phải bảo toàn khả năng nhận diện lại các intent tài chính lịch sử.
+
+### 21.5. Lease và cửa sổ không biết kết quả
+
+Creation worker nhận việc qua `FOR UPDATE SKIP LOCKED` và cập nhật `locked_by`, `locked_until`, `lease_generation` trong một transaction ngắn. Đề xuất lease ban đầu 60 giây, dài hơn timeout HTTP hiện tại; đây là cấu hình cần kiểm chứng bằng thử tải.
+
+1. Trước HTTP, lưu dấu `dispatch_started_at` có điều kiện theo lease còn hiệu lực. Worker mất quyền không được bắt đầu gửi.
+2. Nhận kết quả chỉ được cập nhật phần tạo link khi đúng generation/version và chuyển trạng thái hợp lệ. IPN đã đánh dấu paid thì lưu bổ sung bằng chứng/link nếu phù hợp, không ghi đè về pending.
+3. Lease hết khi chưa bắt đầu gửi: worker khác có thể nhận và gửi.
+4. Lease hết sau dấu bắt đầu gửi: chuyển sang kiểm tra kết quả. Có thể worker chết trước khi thực sự gửi; vẫn phải xử lý như đã có khả năng gửi.
+5. Worker cũ trả về muộn không được ghi đè quyền worker mới. Lưu kết quả hợp lệ như bằng chứng để bộ xử lý quyết định; không bỏ mất phản hồi chỉ vì lease hết.
+6. Chỉ tự gọi lại create nếu contract Pay2S đã được kiểm chứng cho phép lặp an toàn. Nếu chưa có, tra cứu/đối soát hoặc chuyển case; không gọi create chỉ vì lease hết.
+
+Lease và fencing bảo vệ việc cập nhật DB, không tự tạo được bảo đảm gọi HTTP đúng một lần. Độ trễ tiến trình vẫn có thể vượt lease; muốn lặp HTTP an toàn cần cơ chế phía provider hoặc một quyết định xử lý bất định rõ ràng.
+
+Worker cấp quyền lợi hiện tại chủ yếu chạy nghiệp vụ DB trong transaction có row lock, nên kết nối chết sẽ nhả khóa và rollback. Không cần thêm lease một cách máy móc cho phần này. Tác vụ gọi dịch vụ ngoài phải tách outbox riêng và có cơ chế lặp an toàn tương ứng.
+
+### 21.6. UNKNOWN phải có lối xử lý và người chịu trách nhiệm
+
+Không đổi UNKNOWN thành chưa trả chỉ vì đã qua 15 phút. Hạn mở link chỉ quyết định khả năng tiếp tục checkout, không chứng minh tiền chưa tồn tại.
+
+Các mốc sau là **đề xuất vận hành**, chưa phải SLA đã cam kết:
+
+| Mốc | Hành động |
+| --- | --- |
+| Tạo đơn chưa xong sau 60 giây | Kiểm tra lease, đánh dấu cần khôi phục, hiển thị trạng thái chờ rõ ràng |
+| UNKNOWN quá 2 phút | Tạo case tự động, thông báo nội bộ cho admin tài chính; UI có mã hỗ trợ và nút xem lịch sử/liên hệ |
+| Sau 15 phút vẫn chưa rõ | Dừng lời mời thanh toán cho attempt đó, nâng mức cảnh báo; không tự kết luận thất bại |
+| Trong 4 giờ làm việc | Admin tài chính tiếp nhận, kiểm tra Pay2S/ngân hàng và phản hồi người dùng |
+| Sau 1 ngày làm việc chưa giải quyết | Chuyển quản lý xử lý; ghi mốc cập nhật tiếp theo, không âm thầm đóng case |
+
+Nhánh giải quyết cụ thể:
+
+- Provider xác nhận có đơn pending: gắn lại đúng đơn/link đã xác minh.
+- Có tiền: ghi nhận tiền và kích hoạt nếu nghiệp vụ còn hợp lệ; nếu không thì giữ khoản phải xử lý và tạo quyết định hoàn/phân bổ.
+- Có bằng chứng đơn bị từ chối hoặc đã đóng: kết thúc attempt, cho phép tạo attempt thay thế liên kết cùng intent nếu còn nhu cầu. Lịch sử ngân hàng vẫn phải nhận diện tiền muộn.
+- Chưa có bằng chứng đủ mạnh: giữ bất định và yêu cầu quyết định của người phụ trách; không tự tạo đơn khác. Nếu vận hành cho phép thay thế dù chưa rõ, cần hành động admin có lý do, cảnh báo khả năng trả hai lần, cùng một intent/quyền lợi và quy trình hoàn khoản trùng. Mặc định chưa bật khả năng này.
+
+Không thể đồng thời bảo đảm không bao giờ tạo hai đơn phía ngoài và luôn cho mua lại ngay khi provider không hỗ trợ kiểm tra/lặp an toàn. Kế hoạch giải quyết việc kẹt bằng case có trách nhiệm và hạn xử lý, không bằng một timer giả định chưa thu tiền.
+
+### 21.7. IPN, lịch sử ngân hàng và bảo toàn số tiền
+
+IPN phải xác minh chữ ký bằng so sánh an toàn, merchant, định dạng, loại tiền/số tiền nguyên VND và môi trường gắn với bộ khóa/đơn. Không lấy môi trường do trình duyệt gửi làm bằng chứng. Lưu phiên bản thông tin merchant/khóa xác minh để có kế hoạch luân chuyển khóa; không lưu secret trong checkout.
+
+- Chữ ký sai: không hạch toán/kích hoạt; ghi metric bảo mật có giới hạn, không log khóa hoặc payload nhạy cảm.
+- IPN hợp lệ: ghi inbox bền vững trước ACK, xử lý nhanh hoặc đưa công việc vào hàng chờ cùng transaction. DB lỗi thì không ACK thành công. Inbox phải có worker retry và cảnh báo riêng.
+- Đơn chưa tìm thấy hoặc payload hợp lệ có mâu thuẫn: lưu sự kiện/case, không làm mất bằng chứng bằng cách chỉ trả 404. Không tin `requestTrace` thay cho những trường đã ký để định tuyến.
+- Khóa chống lặp sự kiện và khóa chống lặp khoản tiền là hai việc khác nhau. Fingerprint payload chỉ chặn bản tin giống hệt, không chặn callback gửi lại với thời gian/chữ ký khác. Cùng mã hóa đơn nhưng số tiền thay đổi phải được điều tra hoặc xử lý theo contract đã xác minh.
+- Receipt ngân hàng dùng ID giao dịch ổn định được kiểm chứng, scoped theo nguồn/merchant/môi trường và tài khoản phù hợp. Không coi mỗi IPN là một giao dịch ngân hàng mới.
+- Khi nhập lịch sử ngân hàng, đối chiếu lại receipt/IPN đã ghi. Hai nguồn bằng chứng cho cùng khoản tiền chỉ tạo một ghi nhận tiền; chưa liên kết chắc chắn thì mở case, không cộng thêm vào cash.
+
+Đề xuất đối soát tự động: chạy định kỳ ban đầu 5 phút, giới hạn lưu lượng, quét lại khoảng thời gian chồng lấn và khử trùng theo ID; hàng ngày đối chiếu với sao kê khi có nguồn được xác minh. Chu kỳ, phạm vi ngày và cách chia cửa sổ phải dựa trên giới hạn/thực tế API. Múi giờ trường ngày giờ không có offset cần được xác nhận, không đoán là UTC.
+
+Khớp tự động chỉ khi đúng tài khoản nhận, tiền vào, mã tham chiếu duy nhất theo quy tắc đã kiểm chứng và không có mâu thuẫn nguồn. Không dùng tìm chuỗi gần đúng, chỉ giống số tiền, hoặc ảnh chụp chuyển khoản để tự đánh paid. Nếu memo provider tự sinh nhưng response bị mất, có thể cần đối soát thủ công; không hứa mọi khoản đều tự khớp được.
+
+| Tình huống đã xác minh | Chính sách đề xuất |
+| --- | --- |
+| Đúng và đủ, nghiệp vụ còn hợp lệ | Phân bổ đúng giá chốt; kích hoạt/ghi escrow một lần |
+| Thiếu tiền | Lưu khoản nhận vào tiền chưa phân bổ; chưa kích hoạt. Chỉ cộng nhiều lần nộp khi xác định được từng giao dịch và provider hỗ trợ; chưa hỗ trợ thì REVIEW, không bảo khách chuyển thêm tùy ý |
+| Thừa tiền | Khi đã xác minh số thực nhận và đủ điều kiện nghiệp vụ: phân bổ đúng giá, kích hoạt một lần; phần dư là khoản phải xử lý, không thành doanh thu hoặc ngân sách freelancer |
+| Hai lần trả thật cho một lần mua | Một lần cấp quyền; khoản còn lại vào đối soát và quy trình hoàn tiền |
+| Muộn, sau hủy hoặc dự án đã đóng | Ghi nhận sự thật đã nhận tiền; quyết định cấp muộn/hoàn riêng, không tự kích hoạt nghiệp vụ không còn hợp lệ |
+| Không khớp đơn | Giữ khoản chưa xác định và case; không cấp quyền cho người gửi khi chưa xác minh |
+
+Giai đoạn đầu giữ REVIEW cho thiếu/thừa nếu chưa xác minh đủ đặc tính Pay2S. Không mở cơ chế cộng dồn hoặc tự phân bổ dư dựa trên giả định về `transId`.
+
+Không có hoàn tiền Pay2S tự động trong phạm vi code hiện tại. Quyết định hoàn tiền cần bằng chứng, người có quyền, kiểm soát phê duyệt theo chính sách tài chính và mã chống hoàn lặp; không hoàn vào một tài khoản bất kỳ chỉ do người dùng nhập. Sau khi duyệt vẫn theo dõi đã thực hiện/đã xác nhận, không coi nút duyệt là tiền đã rời ngân hàng.
+
+### 21.8. Trạng thái và chuyển đổi hợp lệ
+
+Tách ba trục trạng thái, giữ nhỏ để tránh trộn việc tạo link với thực tế tiền và quyền lợi:
+
+```text
+Tao link:
+  READY -> DISPATCHING -> CREATED
+                      -> UNKNOWN -> CREATED / REJECTED
+                      -> REJECTED
+  UNKNOWN chi ket thuc khi co bang chung hoac quyet dinh duoc audit.
+
+Tien:
+  UNPAID -> PARTIAL -> PAID
+  UNPAID -----------> PAID
+  PARTIAL chi bat khi da ho tro xac minh tung khoan tien.
+
+Cap quyen loi:
+  WAITING -> APPLIED
+          -> RETRY -> APPLIED
+          -> REVIEW
+  REVIEW -> APPLIED chi qua thao tac phan bo hop le, duoc audit.
+
+Hieu luc checkout:
+  OPEN -> EXPIRED / CANCELLED
+  Het han/huy khong xoa receipt va khong phu nhan tien den muon.
+```
+
+`REVIEW` tài chính được biểu diễn bằng case/cờ riêng, không thay thế sự thật đã nhận tiền. Hoàn tiền là hồ sơ/dòng tiền riêng; không hạ PAID về UNPAID. Các tên trên là mô hình đích, sẽ map rõ với tên API hiện có trong migration để không làm client hiểu sai.
+
+- DB CHECK xác định tập giá trị; trigger/conditional update và logic dùng chung kiểm tra chuyển đổi. PAID và APPLIED không được lùi trạng thái; amount, owner, environment, mã tham chiếu đã gửi phải bất biến.
+- Kết quả create trả về sau IPN chỉ bổ sung thông tin, không đặt pending vô điều kiện.
+- Khóa theo một thứ tự đã thống nhất trên mọi luồng. Trước khi sửa cần lập bảng thứ tự khóa intent/attempt/domain hiện có, tránh IPN và fulfillment khóa ngược nhau.
+- Retry có giới hạn cho deadlock/serialization chỉ bao quanh transaction DB. Không đặt HTTP create bên trong đoạn được tự retry.
+- Lease, hạn thanh toán và lịch retry dùng thời gian PostgreSQL trong transaction ngắn, lưu TIMESTAMPTZ. UI chỉ chuyển đổi giờ hiển thị. Dùng version/generation để chống ghi cũ bên cạnh thời gian.
+
+### 21.9. Đối soát, cảnh báo và trải nghiệm
+
+Case đối soát cần có loại lỗi, intent/attempt/receipt liên quan, số tiền, người nhận việc, hạn xử lý, bằng chứng, lịch sử quyết định và kết quả cuối. Admin có các hành động nghiệp vụ rõ: kiểm tra lại, gắn bằng chứng, đề nghị cấp muộn/phân bổ, đề nghị hoàn, chuyển cấp. Không có nút sửa trực tiếp trạng thái hoặc sửa/xóa bút toán cũ; điều chỉnh dùng bút toán bù và audit.
+
+Đề xuất cảnh báo: tạo quá 60 giây, UNKNOWN quá 2 phút, paid chưa APPLIED quá 2 phút, tiền không khớp ngay sau phát hiện, case quá hạn, backlog inbox/outbox tăng và lỗi xác minh bất thường. Mỗi case/mức có khóa chống spam; cần xác nhận cảnh báo đã tới người trực trước production. Không dùng UUID đơn hoặc dữ liệu ngân hàng làm nhãn metric gây lộ thông tin/tăng vô hạn số chuỗi.
+
+Web/mobile hiển thị các trường hợp riêng: đang tạo, chờ thanh toán, đang kiểm tra, đã nhận tiền/đang kích hoạt, đã kích hoạt, hết hạn và cần hỗ trợ. Có mã đơn dễ đọc, thời điểm cập nhật, hạn thanh toán và đường hỗ trợ. Không yêu cầu người đã trả tiền trả lại khi kích hoạt đang retry. `POST` có thể trả 202 kèm ID và hướng dẫn đọc trạng thái; client polling có backoff và đọc lại khi focus/mở app, không phụ thuộc duy nhất WebSocket.
+
+Thông tin ngân hàng/người chuyển phát sinh từ đối soát phải theo chính sách bảo vệ dữ liệu hiện có: tối thiểu hóa dữ liệu, mã hóa trường nhạy cảm, phân quyền, che dữ liệu khi hiển thị, audit truy cập, bảo vệ backup và kế hoạch luân chuyển khóa. Không gửi secret hoặc token lịch sử ngân hàng ra web/mobile.
+
+### 21.10. Chuyển đổi dữ liệu và rollout
+
+1. Thêm migration mới sau V39, không sửa migration đã chạy. Chạy truy vấn khảo sát trùng/thiếu trước khi tạo constraint; phát hiện mâu thuẫn thì tạo danh sách cần xử lý, không xóa lịch sử để migration qua.
+2. Map đơn cũ bằng ID gốc: PAID/APPLIED giữ nguyên; PENDING nhập trạng thái chờ tương ứng; UNKNOWN/CREATING cần đối soát, tuyệt đối không đưa hàng loạt vào hàng chờ create mới. Giữ giá chốt, memo cũ, merchant, môi trường và liên kết ledger.
+3. Bổ sung reader/inbox tương thích trước, sau đó đổi đường tạo đơn. Khi chuyển phiên bản phải dừng/drain worker cũ và bảo đảm chỉ một cơ chế dispatch sở hữu mỗi attempt. Kiểm tra các luồng lỗi bị bắt ở transaction bên ngoài, tránh rollback ý định vừa tạo.
+4. Feature flag riêng cho dispatcher mới, tra cứu tự động và chính sách thiếu/thừa. Tắt dispatcher vẫn tiếp tục nhận IPN/đối soát/kích hoạt các khoản đã trả. Rollback ứng dụng không được quay lại gọi create tùy ý hoặc làm mất dữ liệu schema mới.
+5. Test migration trên bản dữ liệu staging đã ẩn thông tin nhạy cảm, rồi thử sandbox toàn luồng. Việc kiểm thử/live cutover được lên lịch riêng; chưa tự chuyển production hoặc tạo thanh toán thật.
+
+### 21.11. Kiểm thử và điều kiện nghiệm thu
+
+Phải chạy integration test với PostgreSQL thật, nhiều kết nối và điểm đồng bộ chủ động. Test bị skip không được tính là đã xác minh race condition.
+
+- Hai tab/hai thiết bị: cùng key, khác key cùng lần mua, cùng key khác payload, gói khác, lần gia hạn mới và phiên bản addon mới.
+- Dừng tiến trình ngay trước HTTP, sau dấu bắt đầu gửi, sau Pay2S tạo thành công nhưng trước khi lưu response, và sau commit trước khi trả API. Khởi động lại không mất intent và không tự tạo thêm đơn khi chưa rõ.
+- IPN đến trước response tạo link; success/cancel đảo thứ tự; success đến sau hủy/hết hạn; paid rồi nhận response create cũ. Không hạ trạng thái tiền/quyền lợi.
+- Hai IPN đồng thời, callback lặp với timestamp/chữ ký khác, cùng mã hóa đơn nhưng amount khác, cùng ID tiền xuất hiện trong hai nguồn và ID xung đột giữa đơn/merchant/môi trường.
+- Hai worker nhận việc khi lease vừa hết; worker cũ sống lại và phản hồi muộn; transaction commit thất bại; worker kích hoạt chết giữa nghiệp vụ và cập nhật task.
+- Chữ ký sai, merchant sai, sai môi trường, thiếu/thừa, định dạng tiền không hợp lệ, tiền lạ, chuyển hai lần thật, dữ liệu ngân hàng đến trễ hoặc được quét lại.
+- Lỗi fulfillment: giữ paid, retry/cảnh báo; quyền lợi, escrow và bút toán không được ghi lần hai. Kiểm tra tác vụ hậu kỳ bị gọi lặp theo khả năng idempotent thực tế.
+- Kiểm tra migration, quyền truy cập admin/người mua, che dữ liệu, đổi khóa, cảnh báo và khả năng phục hồi sau restart nhiều instance.
+
+Các bất biến cần kiểm bằng truy vấn sau test:
+
+```text
+Moi giao dich tien that duoc ghi nhan mot lan trong dung pham vi.
+Moi business intent duoc cap cung quyen loi toi da mot lan.
+Moi but toan: tong debit = tong credit.
+
+Tong tien vao da xac minh
+  = tien da phan bo cho don/nghia vu
+  + tien chua phan bo (thieu, du, la, dang doi soat)
+  + tien da hoan tu cac khoan nhan nay.
+```
+
+Công thức dùng các phần tiền không chồng lấn và trạng thái tại cùng thời điểm. Không cộng doanh thu và escrow lần nữa nếu chúng đã nằm trong tiền phân bổ. Phí ngân hàng, giao dịch đảo và tiền ra khác phải được đối chiếu riêng; tổng đơn paid cộng tiền dư không đủ để chứng minh toàn hệ thống cân.
+
+### 21.12. Plan triển khai theo thứ tự
+
+| Giai đoạn | Việc thực hiện | Đầu ra và điều kiện qua bước |
+| --- | --- | --- |
+| P0: xác minh Pay2S | Kiểm tra capability, lỗi, memo thực tế, ID tiền và khả năng đối soát trên sandbox; xin xác nhận những phần chưa rõ | Bảng contract có bằng chứng; chưa rõ thì chọn nhánh thủ công, không bật tự replay/cộng tiền |
+| P1: dữ liệu và bất biến | Migration, business scope, idempotency mapping, inbox, creation task/lease, state guards; lập thứ tự khóa | Test PostgreSQL chứng minh unique và chuyển trạng thái; map được toàn bộ đơn cũ |
+| P2: sửa cửa sổ mất đơn | Commit business intent/attempt/task trước HTTP; dispatcher lease/version; lưu response an toàn; UNKNOWN recovery | Qua test crash sau create và IPN đến trước response; không giữ DB transaction trong HTTP |
+| P3: nhận tiền và đối soát | Inbox/dedup, liên kết nguồn tiền, policy late/under/over, fulfillment và case workflow | Không hạch toán/cấp quyền hai lần; tiền không khớp có hồ sơ xử lý; hoàn tiền vẫn theo quy trình được duyệt |
+| P4: web/mobile và vận hành | Idempotency-Key, API 202/polling, lịch sử, mã hỗ trợ, màn xử lý case, metric/cảnh báo | Mua lại/đổi tab không tạo lần mua ngoài ý muốn; admin xử lý được case và nhận được cảnh báo |
+| P5: nghiệm thu và rollout | Fault injection, test đồng thời, migration rehearsal, sandbox end-to-end, rollout có flag và hướng khôi phục | Bất biến tài chính đạt; các test DB quan trọng thực sự chạy; không còn giả định provider chưa được kiểm chứng trong đường tự động |
+
+Ưu tiên P0-P2 để sửa khoảng hở mất intent, nhưng chưa coi hệ thống đủ điều kiện production nếu thiếu P3 và cơ chế xử lý case/cảnh báo P4. Chỉ thực hiện thay đổi code theo kế hoạch khi chuyển sang giai đoạn triển khai được yêu cầu.
+
+Các điều kiện giải ngân freelancer vẫn giữ: đủ 168 giờ từ nghiệm thu, không có ticket bảo trì đang chặn, đủ điều kiện tài chính và phê duyệt theo thiết kế. Thu tiền/kích hoạt gói tự động không đồng nghĩa chuyển tiền freelancer tự động.
+
+## 22. Kết quả triển khai gia cố checkout ngày 07/11/2026
+
+Mục này ghi nhận code đã thực hiện sau kế hoạch mục 21. Chưa triển khai production, chưa chuyển tiền thật. Hướng dẫn vận hành và cấu hình ở [PAY2S_FINANCE_SETUP.md](PAY2S_FINANCE_SETUP.md).
+
+Điều chỉnh khi nâng cấp dữ liệu cũ: ràng buộc gói định kỳ PENDING chỉ áp dụng cho LIVE/SANDBOX. LEGACY có thể chứa các đơn chờ trùng từ trước; migration giữ nguyên các dòng này, không tự hủy, hợp nhất hoặc đổi môi trường. Đã thêm bộ test nâng cấp V39 có LEGACY trùng; các dòng LIVE/SANDBOX trùng thực sự vẫn phải được đối soát trước khi migration qua.
+
+```text
+Bam thanh toan + key cua lan mua
+  -> Transaction luu don nghiep vu + checkout + creation task + key
+  -> COMMIT
+  -> Worker nhan lease, danh dau dispatch, COMMIT
+  -> Goi Pay2S ngoai transaction DB
+  -> Luu bang chung response va cap nhat link co dieu kien
+
+IPN da xac minh
+  -> COMMIT inbox doc lap
+  -> Xu ly receipt / doi soat, retry neu loi
+  -> Cap quyen loi / escrow qua worker da co
+  -> Web/mobile doc trang thai tu backend
+```
+
+### 22.1. Phần đã thực hiện
+
+- V40 thêm creation task có lease 60 giây, generation, dấu dispatch và observations bất biến; idempotency mapping; inbox có bằng chứng đã xác minh; case và nhật ký đối soát. Thêm unique index chống hai nghĩa vụ nạp tiền hoặc hai gói định kỳ cùng chờ thanh toán. Migration không xóa hoặc tự hợp nhất bản ghi trùng; dữ liệu mâu thuẫn cần xử lý trước khi chạy.
+- `CheckoutService.create` bắt buộc tham gia transaction nghiệp vụ của bên gọi và không gọi HTTP. Worker chỉ đọc được task sau commit. API tạo đơn có thể trả trạng thái CREATING cùng orderId trước khi có link; response envelope hiện vẫn dùng HTTP 200 để tương thích các client đang có.
+- Web/mobile tự gửi Idempotency-Key cho mua gói, addon, fund, deposit và bảo trì. Backend kiểm tra cả key và business scope. Key cũ trả đúng checkout cũ, kể cả khi payment nghiệp vụ đã trỏ sang một checkout thay thế.
+- Worker hết lease khi chưa dispatch được nhận lại; đã có khả năng dispatch thì UNKNOWN và không tự create lần nữa. Response tới sau IPN không đưa PAID về PENDING. Response từ generation cũ được giữ bằng chứng và mở case khi cần. Lỗi URL được client xác định trước HTTP có thể kết thúc như lỗi cấu hình; HTTP 4xx chung không được coi là chứng minh chưa tạo đơn.
+- Sau HMAC/merchant hợp lệ, inbox được commit riêng trước khi ACK; xử lý lỗi có retry bền vững. Sự kiện không khớp đơn được giữ trong case. Chữ ký sai không tạo chứng từ tiền và có counter khi metrics được cấu hình.
+- `transId` được xử lý thận trọng như tham chiếu hóa đơn: callback lặp không cộng tiền; cùng tham chiếu đổi số tiền mở case. Chưa cộng dồn các IPN như các lần chuyển tiền khác nhau.
+- Tiền thiếu/thừa/muộn giữ REVIEW. Tiền tới cho checkout cũ sau khi có checkout thay thế vẫn lưu receipt/case, không đụng unique index của checkout đang hoạt động và không tự cấp thêm quyền.
+- Admin có màn **Tài chính & bảo trì → Hồ sơ sự cố thanh toán**: nhận việc, ghi bằng chứng, đọc lịch sử, kiểm tra lại inbox. Thao tác yêu cầu xác thực lại mật khẩu và rate limit.
+- Đóng một đơn bất định để cho phép thay thế cần đề nghị và duyệt bởi hai admin khác nhau, không có receipt hoặc thông báo thành công đã nhận, và không còn lease đang chạy. Việc này là quyết định dựa trên bằng chứng ngoài hệ thống, không phải API SAM tự tra cứu Pay2S.
+- Phân bổ muộn chỉ hỗ trợ một receipt đã xác minh đúng giá, không có checkout thay thế hoạt động, và hai admin khác nhau. Có bút toán chuyển khoản chờ phân bổ sang đúng nguồn; nghiệp vụ kích hoạt vẫn phải qua kiểm tra của worker. Không sửa receipt bất biến hoặc tự đặt quyền lợi ACTIVE.
+- Monitor mở case khi tạo quá 60 giây, UNKNOWN/inbox/fulfillment kẹt quá 2 phút và checkout hết hạn. Case có người nhận, hạn mặc định 4 giờ **theo đồng hồ thực**, audit, log và metrics. Chưa có lịch ngày làm việc hoặc dịch vụ gửi cảnh báo bên ngoài; đội vận hành cần nối các metric vào giám sát hiện có.
+- Web/mobile có trạng thái đang tạo/đối soát, mã hỗ trợ và nút tiếp tục khi link đã sẵn sàng. Key thanh toán được giữ khi retry mạng/refresh; không lưu secret hoặc token đăng nhập trong metadata thanh toán.
+
+### 22.2. Những giới hạn được giữ có chủ đích
+
+Chưa tự tra trạng thái Collection Link, tự gọi lại create sau bất định, tự nhập lịch sử ngân hàng để phân bổ tiền, cộng nhiều lần nộp thiếu, tự xử lý dư hoặc tự hoàn tiền provider. Các khả năng này cần contract/kiểm thử Pay2S ở P0; hiện dùng case và người phụ trách. Không có biến env nào có thể bật an toàn những khả năng chưa được triển khai/xác minh này.
+
+Hết hạn không tự cho phép tạo link mới. Admin phải xác minh đơn cũ đã đóng và chưa nhận tiền trước khi duyệt thay thế. Người dùng quay lại lần mua với key mới sau quyết định đó; key cũ vẫn đọc checkout cũ. QR/chuyển khoản cũ vẫn có thể đưa tiền về, nên receipt muộn luôn được tiếp nhận để đối soát.
+
+Hồ sơ cần hoàn tiền tiếp tục do vận hành thực hiện và ghi bằng chứng; chưa có workflow hoàn tiền provider tự động hoặc nút đóng tùy ý một case còn tiền chưa phân bổ. Không suy ra tiền đã được hoàn từ một ghi chú.
+
+Giữ điều kiện escrow/bảo trì 168 giờ và ticket chặn giải ngân. Mã hóa tài khoản ngân hàng, kiểm soát chi trả và thu nhập freelancer đã có không bị thay đổi bởi phần checkout này.
+
+### 22.3. Kiểm thử và điều kiện trước production
+
+Đã bổ sung unit test cho thứ tự commit/HTTP, worker mất lease, lỗi bất định, crash, key đổi payload và callback lặp. Bộ PostgreSQL kiểm tra V40 và đồng thời gồm: intent bền vững; crash sau provider nhận; IPN trước response; hai IPN cùng lúc; hai yêu cầu mua; chặn trạng thái lùi; tiền tới đơn cũ sau thay thế; phân bổ muộn hai người duyệt và cân sổ; worker cũ sống lâu hơn lease.
+
+Các bài PostgreSQL chỉ chạy khi có `FINANCE_TEST_DATABASE_URL`; CI hiện đã có cấu hình database cho nhóm test tài chính. Môi trường thực hiện lần này không truy cập được Docker/PostgreSQL, nên các bài đó chưa được xác minh tại máy này. Chạy trên database test riêng trước khi rollout. Chưa thử giao dịch Pay2S thật hoặc chạy migration trên database production.

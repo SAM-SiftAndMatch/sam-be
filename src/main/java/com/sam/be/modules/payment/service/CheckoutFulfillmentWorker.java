@@ -33,7 +33,7 @@ public class CheckoutFulfillmentWorker {
                                         tx -> {
                                             var rows =
                                                     store.rows(
-                                                            "SELECT * FROM payment_checkouts WHERE status='PAID' AND fulfillment_status IN ('PENDING','RETRY') AND next_attempt_at<=now() ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED");
+                                                            "SELECT * FROM payment_checkouts WHERE status='PAID' AND fulfillment_status IN ('PENDING','RETRY') AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED");
                                             if (rows.isEmpty()) return false;
                                             var row = rows.getFirst();
                                             UUID id = FinanceStore.id(row, "id");
@@ -86,7 +86,7 @@ public class CheckoutFulfillmentWorker {
                                                                                         + id),
                                                                 amount));
                                             }
-                                            store.db.update(
+                                            store.jdbc().update(
                                                     "UPDATE payment_checkouts SET fulfillment_status=? WHERE id=?",
                                                     result,
                                                     id);
@@ -101,8 +101,8 @@ public class CheckoutFulfillmentWorker {
                 new TransactionTemplate(transactions)
                         .executeWithoutResult(
                                 tx ->
-                                        store.db.update(
-                                                "UPDATE payment_checkouts SET fulfillment_status='RETRY',attempt_count=attempt_count+1,next_attempt_at=now()+make_interval(secs => LEAST(3600, 10 * power(2,LEAST(attempt_count,8)))::int) WHERE id=? AND status='PAID' AND fulfillment_status<>'APPLIED'",
+                                        store.jdbc().update(
+                                                "UPDATE payment_checkouts SET fulfillment_status='RETRY',attempt_count=attempt_count+1,next_attempt_at=clock_timestamp()+make_interval(secs => LEAST(3600, 10 * power(2,LEAST(attempt_count,8)))::int) WHERE id=? AND status='PAID' AND fulfillment_status IN ('PENDING','RETRY')",
                                                 current.get()));
                 log.warn(
                         "CHECKOUT_FULFILLMENT_RETRY order={} type={}",

@@ -111,7 +111,9 @@ class SubscriptionVerifiedPaymentTest {
                         "SAMGOITEST01",
                         "2026-11-07T00:00:00Z",
                         "2026-11-06T00:00:00Z",
-                        null);
+                        null,
+                        "SAMTEST",
+                        false);
         when(checkouts.create(
                         eq("SUBSCRIPTION"),
                         eq(id),

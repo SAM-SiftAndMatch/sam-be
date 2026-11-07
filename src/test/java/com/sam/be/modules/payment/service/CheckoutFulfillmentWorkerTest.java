@@ -10,7 +10,6 @@ import java.math.BigDecimal;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
@@ -26,7 +25,7 @@ class CheckoutFulfillmentWorkerTest {
 
     @BeforeEach
     void setup() {
-        ReflectionTestUtils.setField(store, "db", db);
+        when(store.jdbc()).thenReturn(db);
         when(tm.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         var row =
                 Map.<String, Object>of(

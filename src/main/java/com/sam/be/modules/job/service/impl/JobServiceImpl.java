@@ -476,7 +476,7 @@ public class JobServiceImpl implements JobService {
         jobRepository.save(job);
         cacheInvalidationService.jobChanged(jobId, job.getClient().getId(), null);
         if (newlyUrgent)
-            financeStore.db.update(
+            financeStore.jdbc().update(
                     "INSERT INTO job_addon_tasks(job_id) VALUES (?) ON CONFLICT(job_id) DO NOTHING",
                     jobId);
     }

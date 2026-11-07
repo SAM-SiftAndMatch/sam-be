@@ -42,7 +42,7 @@ public class FinanceLedgerService {
                             credit(prefix + "escrow:" + p.getId(), p.getAmount()));
                 }
         var accepted = settlement.getCompletedAt().toInstant(java.time.ZoneOffset.UTC);
-        store.db.update(
+        store.jdbc().update(
                 """
             INSERT INTO finance_payables
             (id,settlement_id,contract_id,job_id,owner_id,client_id,amount,earnings,deposit_refund,sandbox,accepted_at,available_at)

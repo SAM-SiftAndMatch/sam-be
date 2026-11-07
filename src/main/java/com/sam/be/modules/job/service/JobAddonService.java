@@ -133,6 +133,8 @@ public class JobAddonService {
     @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
     public com.sam.be.modules.payment.service.CheckoutService.Checkout checkout(
             UUID clientId, UUID jobId, String returnUrl) {
+        var replay = checkouts.replay(clientId, "JOB_ADDON", jobId.toString());
+        if (replay != null) return replay;
         ownedOpenJob(clientId, jobId);
         JobAddonOrder order =
                 orderRepository

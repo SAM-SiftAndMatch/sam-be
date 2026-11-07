@@ -55,7 +55,7 @@ public class MaintenanceService {
         var p = payable(actor, job, false);
         boolean active = FinancePolicy.canOpen(instant(p, "acceptedAt"), store.now());
         long count =
-                store.db.queryForObject(
+                store.jdbc().queryForObject(
                         "SELECT COUNT(*) FROM maintenance_tickets WHERE payable_id=? AND kind='WARRANTY' AND closed_at IS NULL",
                         Long.class,
                         id(p, "id"));
@@ -108,7 +108,7 @@ public class MaintenanceService {
             throw invalid("Dự án còn trong thời gian bảo trì; hãy gửi ticket để phân loại");
         UUID ticket = UUID.randomUUID();
         Instant now = store.now();
-        store.db.update(
+        store.jdbc().update(
                 """
           INSERT INTO maintenance_tickets(id,payable_id,creator_id,request_key,kind,title,description,status,created_at,response_due_at,resolution_due_at)
           VALUES (?,?,?,?,?,?,?,'OPEN',?,?,?)
@@ -208,7 +208,7 @@ public class MaintenanceService {
         }
         Instant now = store.now();
         if (!"COMMENT".equals(action))
-            store.db.update(
+            store.jdbc().update(
                     "UPDATE maintenance_tickets SET status=?,closed_at=?,fix_submitted_at=? WHERE id=?",
                     next,
                     Set.of("RESOLVED", "OUT_OF_SCOPE", "WITHDRAWN").contains(next)
@@ -243,7 +243,7 @@ public class MaintenanceService {
         if (!deadline.isAfter(store.now())
                 || deadline.isAfter(store.now().plus(Duration.ofDays(30))))
             throw invalid("Hạn gia hạn phải trong 30 ngày tới");
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE maintenance_tickets SET resolution_due_at=?,overdue_at=NULL,status='IN_PROGRESS' WHERE id=?",
                 store.time(deadline),
                 ticket);
@@ -257,7 +257,7 @@ public class MaintenanceService {
     }
 
     private void event(UUID actor, UUID ticket, String action, String content) {
-        store.db.update(
+        store.jdbc().update(
                 "INSERT INTO maintenance_ticket_events VALUES (?,?,?,?,?,?)",
                 UUID.randomUUID(),
                 ticket,
@@ -334,7 +334,7 @@ public class MaintenanceService {
         Instant now = store.now();
         boolean expired = !now.isBefore(instant(row, "resolutionDueAt"));
         Long responses =
-                store.db.queryForObject(
+                store.jdbc().queryForObject(
                         "SELECT COUNT(*) FROM maintenance_ticket_events WHERE ticket_id=? AND actor_id=?",
                         Long.class,
                         ticket,
@@ -345,7 +345,7 @@ public class MaintenanceService {
         if ("FIX_SUBMITTED".equals(row.get("status")) && row.get("fixSubmittedAt") != null)
             expired = !now.isBefore(instant(row, "fixSubmittedAt").plus(Duration.ofHours(48)));
         if (!expired) return;
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE maintenance_tickets SET status='DISPUTED',overdue_at=? WHERE id=?",
                 store.time(now),
                 ticket);

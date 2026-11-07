@@ -49,11 +49,11 @@ public class PaidMaintenanceService {
                 || amount.compareTo(new BigDecimal("1000000000")) > 0
                 || days < 1
                 || days > 90) throw invalid("Báo giá không hợp lệ");
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE maintenance_quotes SET status='SUPERSEDED' WHERE ticket_id=? AND status='QUOTED'",
                 ticket);
         UUID quote = UUID.randomUUID();
-        store.db.update(
+        store.jdbc().update(
                 "INSERT INTO maintenance_quotes(id,ticket_id,amount,delivery_days,scope,created_at) VALUES (?,?,?,?,?,?)",
                 quote,
                 ticket,
@@ -90,7 +90,7 @@ public class PaidMaintenanceService {
         if (!"QUOTED".equals(q.get("status")) || t.get("closedAt") != null)
             throw invalid("Báo giá không còn hiệu lực");
         UUID order = UUID.randomUUID();
-        store.db.update(
+        store.jdbc().update(
                 "INSERT INTO paid_maintenance_orders(id,quote_id,ticket_id,owner_id,client_id,contract_id,job_id,amount,delivery_days,scope,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 order,
                 quote,
@@ -103,7 +103,7 @@ public class PaidMaintenanceService {
                 q.get("deliveryDays"),
                 q.get("scope"),
                 store.time(store.now()));
-        store.db.update("UPDATE maintenance_quotes SET status='ACCEPTED' WHERE id=?", quote);
+        store.jdbc().update("UPDATE maintenance_quotes SET status='ACCEPTED' WHERE id=?", quote);
         event(
                 actor,
                 order,
@@ -183,7 +183,7 @@ public class PaidMaintenanceService {
             default -> throw invalid("Thao tác không hợp lệ");
         }
         if ("COMPLETED".equals(next)) complete(actor, row);
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE paid_maintenance_orders SET status=?,submitted_at=CASE WHEN ?='SUBMITTED' THEN ? ELSE submitted_at END,completed_at=CASE WHEN ?='COMPLETED' THEN ? ELSE completed_at END WHERE id=?",
                 next,
                 next,
@@ -215,7 +215,7 @@ public class PaidMaintenanceService {
                 net = gross.subtract(fee);
         if (net.signum() <= 0) throw invalid("Giá trị đơn không đủ để quyết toán");
         var accepted = store.now();
-        store.db.update(
+        store.jdbc().update(
                 "INSERT INTO finance_payables(id,contract_id,job_id,owner_id,client_id,amount,earnings,deposit_refund,sandbox,accepted_at,available_at,maintenance_order_id) VALUES (?,?,?,?,?,?,?,0,?,?,?,?)",
                 UUID.randomUUID(),
                 contract,
@@ -237,11 +237,11 @@ public class PaidMaintenanceService {
                 debit(prefix + "escrow:" + id(order, "paymentId"), gross),
                 credit(prefix + "payable:" + owner, net),
                 credit(prefix + "platform-revenue", fee));
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE payments SET status='SETTLED',released_at=? WHERE id=?",
                 java.time.LocalDateTime.ofInstant(accepted, java.time.ZoneOffset.UTC),
                 id(order, "paymentId"));
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE maintenance_tickets SET status='RESOLVED',closed_at=? WHERE id=?",
                 store.time(accepted),
                 id(order, "ticketId"));
@@ -254,7 +254,7 @@ public class PaidMaintenanceService {
     }
 
     private void event(UUID actor, UUID order, String action, String content) {
-        store.db.update(
+        store.jdbc().update(
                 "INSERT INTO paid_maintenance_order_events VALUES (?,?,?,?,?,?)",
                 UUID.randomUUID(),
                 order,

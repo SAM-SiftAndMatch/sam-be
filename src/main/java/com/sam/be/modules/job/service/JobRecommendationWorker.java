@@ -32,7 +32,7 @@ public class JobRecommendationWorker {
                                 UUID id = FinanceStore.id(rows.getFirst(), "jobId");
                                 current.set(id);
                                 jobs.processPaidRecommendations(id);
-                                store.db.update(
+                                store.jdbc().update(
                                         "UPDATE job_addon_tasks SET status='DONE' WHERE job_id=?",
                                         id);
                             });
@@ -41,7 +41,7 @@ public class JobRecommendationWorker {
                 new TransactionTemplate(transactions)
                         .executeWithoutResult(
                                 tx ->
-                                        store.db.update(
+                                        store.jdbc().update(
                                                 "UPDATE job_addon_tasks SET status='RETRY',attempt_count=attempt_count+1,next_attempt_at=now()+make_interval(secs => LEAST(3600, 10 * power(2,LEAST(attempt_count,8)))::int) WHERE job_id=?",
                                                 current.get()));
             log.warn(

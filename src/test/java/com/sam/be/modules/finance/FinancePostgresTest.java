@@ -47,7 +47,7 @@ class FinancePostgresTest {
         db = new JdbcTemplate(source);
         tx = new TransactionTemplate(new DataSourceTransactionManager(source));
         db.execute(
-                "CREATE TABLE users(id UUID PRIMARY KEY); CREATE TABLE jobs(id UUID PRIMARY KEY,title TEXT); CREATE TABLE contracts(id UUID PRIMARY KEY); CREATE TABLE project_settlements(id UUID PRIMARY KEY,gross_amount NUMERIC(38,2) NOT NULL DEFAULT 100000); CREATE TABLE payments(id UUID PRIMARY KEY,payment_gateway_id TEXT,status TEXT)");
+                "CREATE TABLE users(id UUID PRIMARY KEY); CREATE TABLE jobs(id UUID PRIMARY KEY,title TEXT); CREATE TABLE contracts(id UUID PRIMARY KEY); CREATE TABLE project_settlements(id UUID PRIMARY KEY,gross_amount NUMERIC(38,2) NOT NULL DEFAULT 100000); CREATE TABLE payments(id UUID PRIMARY KEY,payment_gateway_id TEXT,status TEXT,contract_id UUID,payment_type TEXT)");
         try (var stream =
                 getClass()
                         .getResourceAsStream(
@@ -62,9 +62,17 @@ class FinancePostgresTest {
             assertNotNull(stream);
             db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
-        db.execute("CREATE TABLE user_subscriptions(id UUID PRIMARY KEY)");
+        db.execute(
+                "CREATE TABLE user_subscriptions(id UUID PRIMARY KEY,user_id UUID,package_id UUID,status TEXT)");
         try (var stream =
                 getClass().getResourceAsStream("/db/migration/V39__Unified_Pay2s_Checkouts.sql")) {
+            assertNotNull(stream);
+            db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
+        try (var stream =
+                getClass()
+                        .getResourceAsStream(
+                                "/db/migration/V40__Durable_Checkout_Dispatch_And_Reconciliation.sql")) {
             assertNotNull(stream);
             db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
@@ -363,12 +371,17 @@ class FinancePostgresTest {
         org.mockito.Mockito.when(provider.verify(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(true);
         org.mockito.Mockito.when(provider.environment()).thenReturn("SANDBOX");
+        org.mockito.Mockito.when(provider.merchantScope()).thenReturn("merchant");
         var ipn =
                 new com.sam.be.modules.payment.service.Pay2sIpnService(
                         provider,
                         store(),
                         org.mockito.Mockito.mock(
-                                com.sam.be.modules.payment.service.PaymentService.class));
+                                com.sam.be.modules.payment.service.PaymentService.class),
+                        new DataSourceTransactionManager(source),
+                        new com.sam.be.modules.payment.service.PaymentReconciliationService(
+                                store()),
+                        new com.fasterxml.jackson.databind.ObjectMapper());
         var payload =
                 new com.fasterxml.jackson.databind.ObjectMapper()
                         .createObjectNode()

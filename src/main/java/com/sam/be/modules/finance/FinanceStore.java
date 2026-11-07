@@ -12,12 +12,17 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Repository
 public class FinanceStore {
-    public final JdbcTemplate db;
+    private final JdbcTemplate db;
     private final Clock clock;
 
     public FinanceStore(JdbcTemplate db, @Qualifier("financeClock") Clock clock) {
-        this.db = db;
-        this.clock = clock;
+        this.db = Objects.requireNonNull(db, "JdbcTemplate must be configured");
+        this.clock = Objects.requireNonNull(clock, "Finance clock must be configured");
+    }
+
+    /** Repository proxies delegate methods to the initialized target; field access bypasses it. */
+    public JdbcTemplate jdbc() {
+        return db;
     }
 
     public Instant now() {

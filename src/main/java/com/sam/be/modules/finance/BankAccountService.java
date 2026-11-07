@@ -87,7 +87,7 @@ public class BankAccountService {
         }
         UUID id = UUID.randomUUID();
         String encoded = encode(new Details(number, name));
-        store.db.update(
+        store.jdbc().update(
                 "INSERT INTO finance_bank_accounts(id,owner_id,bank_code,details_encrypted,last_four,fingerprint,created_at) VALUES (?,?,?,?,?,?,?)",
                 id,
                 owner,
@@ -158,16 +158,16 @@ public class BankAccountService {
                     previous,
                     owner);
         Long active =
-                store.db.queryForObject(
+                store.jdbc().queryForObject(
                         "SELECT COUNT(*) FROM finance_withdrawals WHERE bank_account_id=? AND status IN ('REQUESTED','APPROVED','PROCESSING','RECONCILIATION_REQUIRED')",
                         Long.class,
                         previous);
         if (active != null && active > 0)
             throw invalid(
                     "Tài khoản đang gắn với lệnh chi chưa kết thúc. Hãy thêm tài khoản mới hoặc chờ lệnh chi được xử lý");
-        store.db.update("UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=?", previous);
+        store.jdbc().update("UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=?", previous);
         var replacement = add(owner, normalized[0], normalized[1], normalized[2]);
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE finance_bank_accounts SET replaced_by=? WHERE id=?",
                 id(replacement, "id"),
                 previous);
@@ -185,7 +185,7 @@ public class BankAccountService {
     @Transactional
     public void disable(UUID owner, UUID id) {
         store.lockOwner(owner);
-        if (store.db.update(
+        if (store.jdbc().update(
                         "UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=? AND owner_id=?",
                         id,
                         owner)
@@ -206,7 +206,7 @@ public class BankAccountService {
         if (!"PENDING".equals(bank.get("status")))
             throw invalid("Tài khoản không còn chờ xác minh");
         if (actor.equals(owner)) throw forbidden();
-        store.db.update(
+        store.jdbc().update(
                 "UPDATE finance_bank_accounts SET status=?,verification_note=?,verified_by=?,verified_at=? WHERE id=?",
                 approved ? "VERIFIED" : "REJECTED",
                 note,
