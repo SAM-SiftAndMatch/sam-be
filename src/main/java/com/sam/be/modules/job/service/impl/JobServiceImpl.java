@@ -26,8 +26,8 @@ import com.sam.be.modules.job.entity.JobSkill;
 import com.sam.be.modules.job.repository.AiJobRecommendationRepository;
 import com.sam.be.modules.job.repository.JobRepository;
 import com.sam.be.modules.job.repository.JobSkillRepository;
-import com.sam.be.modules.job.service.JobService;
 import com.sam.be.modules.job.service.JobInvitationService;
+import com.sam.be.modules.job.service.JobService;
 import com.sam.be.modules.notification.service.NotificationService;
 import com.sam.be.modules.skill.dto.response.SkillResponse;
 import com.sam.be.modules.skill.entity.Skill;
@@ -62,6 +62,12 @@ import org.springframework.web.client.RestClient;
 @RequiredArgsConstructor
 public class JobServiceImpl implements JobService {
 
+    @org.springframework.beans.factory.annotation.Value("${payments.environment:SANDBOX}")
+    private String paymentEnvironment;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sam.be.modules.finance.FinanceStore financeStore;
+
     private final JobRepository jobRepository;
     private final UserRepository userRepository;
     private final SkillRepository skillRepository;
@@ -82,8 +88,9 @@ public class JobServiceImpl implements JobService {
     @Transactional
     public JobResponse createJob(UUID clientId, JobCreateRequest request) {
         if (request.getClientRequestId() != null) {
-            var existing = jobRepository.findByClientIdAndClientRequestId(
-                    clientId, request.getClientRequestId());
+            var existing =
+                    jobRepository.findByClientIdAndClientRequestId(
+                            clientId, request.getClientRequestId());
             if (existing.isPresent()) return mapToResponse(existing.get());
         }
         User client =
@@ -96,7 +103,12 @@ public class JobServiceImpl implements JobService {
             srsContent = "";
             if (request.getSrsDocumentUrl() != null && !request.getSrsDocumentUrl().isBlank()) {
                 try {
-                    srsContent = restClient.get().uri(request.getSrsDocumentUrl()).retrieve().body(String.class);
+                    srsContent =
+                            restClient
+                                    .get()
+                                    .uri(request.getSrsDocumentUrl())
+                                    .retrieve()
+                                    .body(String.class);
                 } catch (Exception e) {
                     log.warn("Failed to fetch SRS content from Cloudinary URL", e);
                 }
@@ -133,11 +145,13 @@ public class JobServiceImpl implements JobService {
                                 request.getDeadline() != null
                                         ? request.getDeadline()
                                         : java.time.LocalDateTime.now().plusDays(30))
-                        // Add-ons are selected separately and only activated after verified payment.
+                        // Add-ons are selected separately and only activated after verified
+                        // payment.
                         .isFeatured(false)
                         .isUrgentHiring(false)
                         .clientRequestId(request.getClientRequestId())
-                        // Paid QA is paused. Manual QA checklists remain available for every delivery.
+                        // Paid QA is paused. Manual QA checklists remain available for every
+                        // delivery.
                         .requiresAiQa(false)
                         .status(JobStatus.OPEN)
                         .build();
@@ -185,8 +199,12 @@ public class JobServiceImpl implements JobService {
             Job job, String srsContent, List<AiExtractedSkill> requiredSkills) {
         try {
             List<UserSubscription> proDevSubs =
-                    userSubscriptionRepository.findByServicePackage_NameAndStatusAndEndDateAfter(
-                            "Gói PRO DEV", SubscriptionStatus.ACTIVE, LocalDateTime.now());
+                    userSubscriptionRepository
+                            .findByServicePackage_NameAndStatusAndEndDateAfterAndEnvironment(
+                                    "Gói PRO DEV",
+                                    SubscriptionStatus.ACTIVE,
+                                    LocalDateTime.now(),
+                                    paymentEnvironment);
             List<UUID> proDevIds = proDevSubs.stream().map(sub -> sub.getUser().getId()).toList();
             log.info("Urgent hiring for job {}: found {} PRO devs", job.getId(), proDevIds.size());
 
@@ -418,8 +436,7 @@ public class JobServiceImpl implements JobService {
                         }
                     });
         } catch (Exception e) {
-            // Không bao giờ để lỗi mai mối làm fail cả việc đăng job
-            log.error("Urgent hiring failed for job {}", job.getId(), e);
+            throw new IllegalStateException("Paid recommendation task failed", e);
         }
     }
 
@@ -445,10 +462,12 @@ public class JobServiceImpl implements JobService {
     @Override
     @Transactional
     public void activateAddons(UUID jobId, boolean featured, boolean urgent) {
-        Job job = jobRepository.findByIdForWorkflowUpdate(jobId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (job.getStatus() != JobStatus.OPEN ||
-                (job.getDeadline() != null && !job.getDeadline().isAfter(LocalDateTime.now()))) {
+        Job job =
+                jobRepository
+                        .findByIdForWorkflowUpdate(jobId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (job.getStatus() != JobStatus.OPEN
+                || (job.getDeadline() != null && !job.getDeadline().isAfter(LocalDateTime.now()))) {
             throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án đã ngừng nhận ứng tuyển");
         }
         boolean newlyUrgent = urgent && !Boolean.TRUE.equals(job.getIsUrgentHiring());
@@ -456,17 +475,32 @@ public class JobServiceImpl implements JobService {
         if (urgent) job.setIsUrgentHiring(true);
         jobRepository.save(job);
         cacheInvalidationService.jobChanged(jobId, job.getClient().getId(), null);
-        if (newlyUrgent) {
-            Job detailed = jobRepository.findByIdWithDetails(jobId).orElseThrow();
-            List<AiExtractedSkill> skills = detailed.getJobSkills().stream().map(js -> {
-                AiExtractedSkill skill = new AiExtractedSkill();
-                skill.setSkillId(js.getSkill().getId());
-                skill.setYearsOfExperience(js.getRequiredYearsOfExperience());
-                return skill;
-            }).toList();
-            processUrgentHiring(detailed, detailed.getSrsContent(), skills);
-            cacheInvalidationService.recommendationChanged(jobId);
-        }
+        if (newlyUrgent)
+            financeStore.jdbc().update(
+                    "INSERT INTO job_addon_tasks(job_id) VALUES (?) ON CONFLICT(job_id) DO NOTHING",
+                    jobId);
+    }
+
+    @Override
+    @Transactional
+    public void processPaidRecommendations(UUID jobId) {
+        Job detailed = jobRepository.findByIdWithDetails(jobId).orElseThrow();
+        if (detailed.getStatus() != JobStatus.OPEN
+                || !Boolean.TRUE.equals(detailed.getIsUrgentHiring())
+                || detailed.getDeadline() != null
+                        && !detailed.getDeadline().isAfter(LocalDateTime.now())) return;
+        var skills =
+                detailed.getJobSkills().stream()
+                        .map(
+                                js -> {
+                                    var skill = new AiExtractedSkill();
+                                    skill.setSkillId(js.getSkill().getId());
+                                    skill.setYearsOfExperience(js.getRequiredYearsOfExperience());
+                                    return skill;
+                                })
+                        .toList();
+        processUrgentHiring(detailed, detailed.getSrsContent(), skills);
+        cacheInvalidationService.recommendationChanged(jobId);
     }
 
     @Override
@@ -919,8 +953,13 @@ public class JobServiceImpl implements JobService {
             throw new ApiException(ErrorCode.REQUEST_FAILED);
         }
 
-        invitationService.invite(clientId, jobId, recommendation.getFreelancer().getId(),
-                null, JobInvitation.Source.RECOMMENDATION, recommendationId);
+        invitationService.invite(
+                clientId,
+                jobId,
+                recommendation.getFreelancer().getId(),
+                null,
+                JobInvitation.Source.RECOMMENDATION,
+                recommendationId);
 
         recommendation.setStatus(RecommendationStatus.CLIENT_REQUESTED);
         aiJobRecommendationRepository.save(recommendation);
@@ -1072,9 +1111,14 @@ public class JobServiceImpl implements JobService {
             throw new ApiException(ErrorCode.REQUEST_FAILED);
         }
 
-        var invitation = invitationService.invite(clientId, jobId,
-                recommendation.getFreelancer().getId(), null,
-                JobInvitation.Source.RECOMMENDATION, recommendationId);
+        var invitation =
+                invitationService.invite(
+                        clientId,
+                        jobId,
+                        recommendation.getFreelancer().getId(),
+                        null,
+                        JobInvitation.Source.RECOMMENDATION,
+                        recommendationId);
         var acceptedInvitation = invitationService.acceptAsClient(clientId, invitation.id());
 
         recommendation.setStatus(RecommendationStatus.ACCEPTED);

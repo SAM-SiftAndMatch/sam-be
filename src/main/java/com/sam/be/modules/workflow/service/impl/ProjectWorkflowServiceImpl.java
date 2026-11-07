@@ -54,8 +54,8 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
     private final ProjectTaskReportRepository reportRepository;
     private final ProjectDeliveryRepository deliveryRepository;
     private final ManualQaPlanService manualQaPlanService;
-    private final com.sam.be.modules.wallet.service.SandboxSettlementService
-            sandboxSettlementService;
+    private final com.sam.be.modules.finance.FinanceStore financeStore;
+    private final com.sam.be.modules.wallet.service.ProjectSettlementService settlementService;
     private final RedisCacheService redisCacheService;
     private final CacheInvalidationService cacheInvalidationService;
 
@@ -319,10 +319,26 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
     @Override
     @Transactional
     public DeliveryAcceptanceResponse acceptDelivery(UUID clientId, UUID jobId, UUID deliveryId) {
+        Contract initialContract = requireContract(jobId);
+        if (!initialContract.getClient().getId().equals(clientId))
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        financeStore.lockOwner(initialContract.getFreelancer().getId());
         Job job = getAccessibleJobForUpdate(clientId, jobId);
         Contract contract = requireContract(jobId);
         if (!contract.getClient().getId().equals(clientId)) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        if (job.getStatus() == JobStatus.COMPLETED) {
+            ProjectDelivery accepted =
+                    deliveryRepository
+                            .findByIdAndJobIdForUpdate(deliveryId, jobId)
+                            .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (accepted.getStatus() != DeliveryStatus.ACCEPTED)
+                throw new ApiException(ErrorCode.REQUEST_FAILED, "Phiên bản chưa được nghiệm thu");
+            return DeliveryAcceptanceResponse.builder()
+                    .delivery(toDeliveryResponse(accepted))
+                    .settlement(settlementService.getByContract(clientId, contract.getId()))
+                    .build();
         }
         if (job.getStatus() != JobStatus.IN_PROGRESS) {
             throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án không còn chờ nghiệm thu");
@@ -338,13 +354,14 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         manualQaPlanService.getByDeliveryId(deliveryId);
 
         delivery.setStatus(DeliveryStatus.ACCEPTED);
-        delivery.setReviewedAt(LocalDateTime.now());
+        delivery.setReviewedAt(
+                LocalDateTime.ofInstant(financeStore.now(), java.time.ZoneOffset.UTC));
         ProjectDelivery savedDelivery = deliveryRepository.save(delivery);
         cacheInvalidationService.deliveriesChanged(jobId);
         cacheInvalidationService.timelineChanged(jobId);
         return DeliveryAcceptanceResponse.builder()
                 .delivery(toDeliveryResponse(savedDelivery))
-                .settlement(sandboxSettlementService.settle(contract.getId(), savedDelivery))
+                .settlement(settlementService.settle(contract.getId(), savedDelivery))
                 .build();
     }
 

@@ -30,6 +30,11 @@ public class RateLimitService {
     }
 
     public boolean allowRequest(String fullKey, long capacity, double rate, long tokensRequested) {
+        return allowRequest(fullKey, capacity, rate, tokensRequested, false);
+    }
+
+    public boolean allowRequest(
+            String fullKey, long capacity, double rate, long tokensRequested, boolean failClosed) {
         long now = Instant.now().getEpochSecond();
         try {
             Boolean allowed =
@@ -43,8 +48,7 @@ public class RateLimitService {
             return Boolean.TRUE.equals(allowed);
         } catch (Exception e) {
             log.error("Redis Rate Limit execution error on key {}: {}", fullKey, e.getMessage());
-            // Fail-open: Nếu Redis tạm thời có vấn đề, không chặn request của người dùng
-            return true;
+            return !failClosed;
         }
     }
 }

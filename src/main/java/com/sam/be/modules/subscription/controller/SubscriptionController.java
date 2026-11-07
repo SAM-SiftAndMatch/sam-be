@@ -9,10 +9,8 @@ import com.sam.be.modules.subscription.service.SubscriptionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -24,10 +22,16 @@ public class SubscriptionController {
     private final SubscriptionService subscriptionService;
 
     @PostMapping("/purchase")
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "subscription_checkout",
+            limit = 5,
+            duration = 60,
+            failClosed = true)
     @Operation(
             summary = "Purchase a service package",
             description =
-                    "Creates a PENDING order and returns the VNPay URL. Pay-per-use requires the target"
+                    "Creates a PENDING order and returns the Pay2S URL. Pay-per-use requires the target"
                             + " projectId; monthly lasts 30 days from activation with no project")
     public ApiResponse<UserSubscriptionResponse> purchase(
             @RequestBody PurchaseSubscriptionRequest request) {
@@ -36,18 +40,10 @@ public class SubscriptionController {
         return ApiResponse.<UserSubscriptionResponse>builder().result(response).build();
     }
 
-    @PostMapping("/vnpay-ipn")
-    @Operation(
-            summary = "VNPay IPN webhook for packages",
-            description = "Server-to-server callback from VNPay, checksum verified, no JWT needed")
-    public ResponseEntity<Map<String, String>> vnpayIpn(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(subscriptionService.handleVnpayIpn(params));
-    }
-
     @PostMapping("/{id}/confirm-payment")
     @Operation(
-            summary = "Read server-verified subscription state after VNPay redirect",
-            description = "Only the signed VNPay IPN can activate a pending subscription")
+            summary = "Read server-verified subscription state after Pay2S redirect",
+            description = "Only the signed Pay2S IPN can activate a pending subscription")
     public ApiResponse<UserSubscriptionResponse> confirmPayment(@PathVariable String id) {
         UserSubscriptionResponse response =
                 subscriptionService.confirmPayment(

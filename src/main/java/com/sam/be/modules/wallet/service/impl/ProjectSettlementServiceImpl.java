@@ -13,12 +13,8 @@ import com.sam.be.modules.payment.entity.Payment;
 import com.sam.be.modules.payment.repository.PaymentRepository;
 import com.sam.be.modules.wallet.dto.response.ProjectSettlementResponse;
 import com.sam.be.modules.wallet.entity.ProjectSettlement;
-import com.sam.be.modules.wallet.entity.WalletAccount;
-import com.sam.be.modules.wallet.entity.WalletLedgerEntry;
 import com.sam.be.modules.wallet.repository.ProjectSettlementRepository;
-import com.sam.be.modules.wallet.repository.WalletAccountRepository;
-import com.sam.be.modules.wallet.repository.WalletLedgerEntryRepository;
-import com.sam.be.modules.wallet.service.SandboxSettlementService;
+import com.sam.be.modules.wallet.service.ProjectSettlementService;
 import com.sam.be.modules.workflow.entity.ProjectDelivery;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -31,15 +27,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class SandboxSettlementServiceImpl implements SandboxSettlementService {
+public class ProjectSettlementServiceImpl implements ProjectSettlementService {
 
     private static final BigDecimal PLATFORM_FEE_RATE = new BigDecimal("0.10");
 
     private final ContractRepository contractRepository;
+    private final com.sam.be.modules.finance.FinanceLedgerService financeLedger;
     private final PaymentRepository paymentRepository;
     private final ProjectSettlementRepository settlementRepository;
-    private final WalletAccountRepository walletAccountRepository;
-    private final WalletLedgerEntryRepository ledgerEntryRepository;
     private final JobRepository jobRepository;
     private final NotificationService notificationService;
     private final CacheInvalidationService cacheInvalidationService;
@@ -51,9 +46,8 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
                 contractRepository
                         .findByIdForSettlement(contractId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (settlementRepository.findByContractId(contractId).isPresent()) {
-            throw new ApiException(ErrorCode.REQUEST_FAILED, "Hợp đồng này đã được quyết toán");
-        }
+        var existing = settlementRepository.findByContractId(contractId);
+        if (existing.isPresent()) return toResponse(existing.get());
         if (contract.getStatus() != ContractStatus.ACTIVE) {
             throw new ApiException(
                     ErrorCode.REQUEST_FAILED, "Hợp đồng không còn ở trạng thái thực hiện");
@@ -64,13 +58,18 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
         Payment deposit = requireHeldPayment(payments, PaymentType.SECURITY_DEPOSIT);
         BigDecimal gross = fund.getAmount().setScale(2, RoundingMode.HALF_UP);
         BigDecimal platformFee =
-                gross.multiply(PLATFORM_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
+                gross.multiply(PLATFORM_FEE_RATE).setScale(0, RoundingMode.HALF_UP).setScale(2);
         BigDecimal payout = gross.subtract(platformFee).setScale(2, RoundingMode.HALF_UP);
         BigDecimal depositRefund = deposit.getAmount().setScale(2, RoundingMode.HALF_UP);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = delivery.getReviewedAt();
+        if (financeLedger.isLive(fund) != financeLedger.isLive(deposit))
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED,
+                    "Không thể quyết toán gộp thanh toán thật và sandbox");
+        boolean live = financeLedger.isLive(fund) && financeLedger.isLive(deposit);
 
         ProjectSettlement settlement =
-                settlementRepository.save(
+                settlementRepository.saveAndFlush(
                         ProjectSettlement.builder()
                                 .contract(contract)
                                 .delivery(delivery)
@@ -78,37 +77,18 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
                                 .freelancerPayout(payout)
                                 .platformFee(platformFee)
                                 .depositRefund(depositRefund)
-                                .status(SettlementStatus.SIMULATED_COMPLETED)
+                                .status(
+                                        live
+                                                ? SettlementStatus.POSTED
+                                                : SettlementStatus.SIMULATED_COMPLETED)
                                 .completedAt(now)
                                 .build());
 
-        WalletAccount freelancerWallet = getOrCreateFreelancerWallet(contract);
-        WalletAccount platformWallet = getOrCreatePlatformWallet();
-        credit(
-                freelancerWallet,
-                settlement,
-                contract,
-                payout,
-                WalletEntryType.PROJECT_PAYOUT,
-                "Ghi có sandbox 90% giá trị hợp đồng");
-        credit(
-                freelancerWallet,
-                settlement,
-                contract,
-                depositRefund,
-                WalletEntryType.SECURITY_DEPOSIT_REFUND,
-                "Hoàn cọc cam kết sandbox");
-        credit(
-                platformWallet,
-                settlement,
-                contract,
-                platformFee,
-                WalletEntryType.PLATFORM_COMMISSION,
-                "Phí nền tảng sandbox 10% từ hợp đồng");
+        financeLedger.recordSettlement(contract, settlement, fund, deposit);
 
-        fund.setStatus(PaymentStatus.RELEASED);
+        fund.setStatus(PaymentStatus.SETTLED);
         fund.setReleasedAt(now);
-        deposit.setStatus(PaymentStatus.REFUNDED);
+        deposit.setStatus(PaymentStatus.SETTLED);
         deposit.setReleasedAt(now);
         paymentRepository.saveAll(List.of(fund, deposit));
 
@@ -129,15 +109,15 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
                 contract.getId(),
                 fund.getId(),
                 payout.add(depositRefund),
-                "SANDBOX_SETTLEMENT_COMPLETED",
-                "Dự án đã được nghiệm thu. Tiền đã được ghi có vào ví thử nghiệm.");
+                "PROJECT_SETTLEMENT_POSTED",
+                "Đã nghiệm thu và ghi công nợ; chỉ được rút sau 7 ngày bảo trì và xử lý xong ticket.");
         notificationService.sendPaymentNotification(
                 contract.getClient().getId(),
                 contract.getId(),
                 fund.getId(),
                 gross,
-                "SANDBOX_SETTLEMENT_COMPLETED",
-                "Bạn đã nghiệm thu sản phẩm. Quyết toán sandbox đã hoàn tất.");
+                "PROJECT_SETTLEMENT_POSTED",
+                "Đã nghiệm thu. Bạn có 7 ngày để mở ticket bảo trì trong không gian dự án.");
         return toResponse(settlement);
     }
 
@@ -172,57 +152,6 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
                                         "Khoản ký quỹ chưa sẵn sàng để quyết toán"));
     }
 
-    private WalletAccount getOrCreateFreelancerWallet(Contract contract) {
-        UUID freelancerId = contract.getFreelancer().getId();
-        return walletAccountRepository
-                .findByOwnerIdForUpdate(freelancerId)
-                .orElseGet(
-                        () ->
-                                walletAccountRepository.save(
-                                        WalletAccount.builder()
-                                                .owner(contract.getFreelancer())
-                                                .walletKey("freelancer:" + freelancerId)
-                                                .walletType(WalletType.FREELANCER)
-                                                .availableBalance(BigDecimal.ZERO)
-                                                .build()));
-    }
-
-    private WalletAccount getOrCreatePlatformWallet() {
-        return walletAccountRepository
-                .findByWalletKeyForUpdate("platform")
-                .orElseGet(
-                        () ->
-                                walletAccountRepository.save(
-                                        WalletAccount.builder()
-                                                .walletKey("platform")
-                                                .walletType(WalletType.PLATFORM)
-                                                .availableBalance(BigDecimal.ZERO)
-                                                .build()));
-    }
-
-    private void credit(
-            WalletAccount wallet,
-            ProjectSettlement settlement,
-            Contract contract,
-            BigDecimal amount,
-            WalletEntryType entryType,
-            String description) {
-        BigDecimal newBalance =
-                wallet.getAvailableBalance().add(amount).setScale(2, RoundingMode.HALF_UP);
-        wallet.setAvailableBalance(newBalance);
-        walletAccountRepository.save(wallet);
-        ledgerEntryRepository.save(
-                WalletLedgerEntry.builder()
-                        .wallet(wallet)
-                        .settlement(settlement)
-                        .contract(contract)
-                        .entryType(entryType)
-                        .amount(amount)
-                        .balanceAfter(newBalance)
-                        .description(description)
-                        .build());
-    }
-
     private ProjectSettlementResponse toResponse(ProjectSettlement settlement) {
         return ProjectSettlementResponse.builder()
                 .id(settlement.getId())
@@ -234,7 +163,7 @@ public class SandboxSettlementServiceImpl implements SandboxSettlementService {
                 .depositRefund(settlement.getDepositRefund())
                 .status(settlement.getStatus())
                 .completedAt(settlement.getCompletedAt())
-                .sandbox(true)
+                .sandbox(settlement.getStatus() == SettlementStatus.SIMULATED_COMPLETED)
                 .build();
     }
 }

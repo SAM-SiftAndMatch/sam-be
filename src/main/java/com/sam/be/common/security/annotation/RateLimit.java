@@ -14,6 +14,9 @@ public @interface RateLimit {
 
     long duration() default 60; // Chu kỳ hồi phục tính bằng giây
 
+    /** Deny sensitive operations when the rate-limit store is unavailable. */
+    boolean failClosed() default false;
+
     Type type() default Type.IP_ADDRESS;
 
     /**

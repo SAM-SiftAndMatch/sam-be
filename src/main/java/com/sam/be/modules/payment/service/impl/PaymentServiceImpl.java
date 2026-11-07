@@ -10,9 +10,6 @@ import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
-import com.sam.be.infrastructure.thirdparty.vnpay.VnpayClient;
-import com.sam.be.infrastructure.thirdparty.vnpay.VnpayProperties;
-import com.sam.be.infrastructure.thirdparty.vnpay.VnpaySigner;
 import com.sam.be.modules.contract.entity.Contract;
 import com.sam.be.modules.contract.service.ContractService;
 import com.sam.be.modules.notification.service.NotificationService;
@@ -31,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,16 +45,16 @@ public class PaymentServiceImpl implements PaymentService {
     private static final BigDecimal PLATFORM_FEE_RATE = new BigDecimal("0.10");
 
     private final PaymentRepository paymentRepository;
+    private final com.sam.be.modules.payment.service.CheckoutService checkouts;
+    private final com.sam.be.modules.contract.repository.ContractRepository
+            fundingContractRepository;
+    private final com.sam.be.modules.finance.Pay2sClient pay2s;
+    private final com.sam.be.modules.finance.PaymentReturnPolicy paymentReturns;
+    private final com.sam.be.modules.finance.FinanceStore financeStore;
 
     private final ContractService contractService;
 
     private final com.sam.be.modules.ai.service.AiService aiService;
-
-    private final VnpayClient vnpayClient;
-
-    private final VnpaySigner vnpaySigner;
-
-    private final VnpayProperties vnpayProperties;
 
     private final NotificationService notificationService;
 
@@ -66,9 +64,52 @@ public class PaymentServiceImpl implements PaymentService {
     private final CacheInvalidationService cacheInvalidationService;
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
+    public PaymentResponse createMaintenanceFunding(UUID actor, UUID orderId) {
+        var replay = checkouts.replay(actor, "MAINTENANCE_FUND", orderId.toString());
+        if (replay != null) return replayResponse(replay);
+        var order = financeStore.one("SELECT * FROM paid_maintenance_orders WHERE id=?", orderId);
+        if (!actor.equals(com.sam.be.modules.finance.FinanceStore.id(order, "clientId")))
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        financeStore.lockOwner(com.sam.be.modules.finance.FinanceStore.id(order, "ownerId"));
+        order =
+                financeStore.one(
+                        "SELECT * FROM paid_maintenance_orders WHERE id=? FOR UPDATE", orderId);
+        if (!"AWAITING_PAYMENT".equals(order.get("status")))
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED, "Đơn bảo trì không còn chờ thanh toán");
+        var contract =
+                fundingContractRepository
+                        .findByIdForSettlement(
+                                com.sam.be.modules.finance.FinanceStore.id(order, "contractId"))
+                        .orElseThrow();
+        var result =
+                createFundingPayment(
+                        contract,
+                        com.sam.be.common.constant.enums.PaymentType.MAINTENANCE_FUND,
+                        com.sam.be.modules.finance.FinanceStore.money(order, "amount"),
+                        "Bao tri du an " + orderId,
+                        resolveReturnUrl(null),
+                        orderId);
+        var payment = paymentRepository.findById(result.getPaymentId()).orElseThrow();
+        payment.setMaintenanceOrderId(orderId);
+        paymentRepository.saveAndFlush(payment);
+        financeStore.jdbc().update(
+                "UPDATE paid_maintenance_orders SET payment_id=? WHERE id=?",
+                payment.getId(),
+                orderId);
+        return result;
+    }
+
+    @Override
+    @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
     public PaymentResponse createContractFund(UUID userId, CreateEscrowRequest request) {
-        Contract contract = contractService.getContractById(request.getContractId());
+        var replay = checkouts.replay(userId, "CONTRACT_FUND", request.getContractId().toString());
+        if (replay != null) return replayResponse(replay);
+        Contract contract =
+                fundingContractRepository
+                        .findByIdForSettlement(request.getContractId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (contract.getStatus() != ContractStatus.ACTIVE) {
             throw new ApiException(ErrorCode.CONTRACT_NOT_ACTIVE);
@@ -82,23 +123,26 @@ public class PaymentServiceImpl implements PaymentService {
 
         String okUrl = resolveReturnUrl(request.getReturnUrl());
 
-        // Đơn dở thì cho hết hạn rồi tạo đơn mới (VNPay không cho dùng lại mã cũ)
-        expireStalePendingPayments(
-                contract, com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND);
-
         BigDecimal amount = contract.getAgreedAmount().setScale(2, RoundingMode.HALF_UP);
-        return createVnpayPayment(
+        return createFundingPayment(
                 contract,
                 com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND,
                 amount,
                 "Nop 100% gia tri hop dong " + contract.getId(),
-                okUrl);
+                okUrl,
+                null);
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = com.sam.be.common.exception.PaymentGatewayException.class)
     public PaymentResponse createSecurityDeposit(UUID userId, CreateEscrowRequest request) {
-        Contract contract = contractService.getContractById(request.getContractId());
+        var replay =
+                checkouts.replay(userId, "SECURITY_DEPOSIT", request.getContractId().toString());
+        if (replay != null) return replayResponse(replay);
+        Contract contract =
+                fundingContractRepository
+                        .findByIdForSettlement(request.getContractId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (contract.getStatus() != ContractStatus.ACTIVE) {
             throw new ApiException(ErrorCode.CONTRACT_NOT_ACTIVE);
@@ -111,21 +155,19 @@ public class PaymentServiceImpl implements PaymentService {
 
         String okUrl = resolveReturnUrl(request.getReturnUrl());
 
-        expireStalePendingPayments(
-                contract, com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT);
-
         // Cọc cam kết 2%, làm tròn tới đồng
         BigDecimal amount =
                 contract.getAgreedAmount()
                         .multiply(DEPOSIT_RATE)
                         .setScale(0, RoundingMode.HALF_UP)
                         .setScale(2);
-        return createVnpayPayment(
+        return createFundingPayment(
                 contract,
                 com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT,
                 amount,
                 "Dat coc cam ket 2% hop dong " + contract.getId(),
-                okUrl);
+                okUrl,
+                null);
     }
 
     @Override
@@ -159,7 +201,8 @@ public class PaymentServiceImpl implements PaymentService {
         BigDecimal agreed = contract.getAgreedAmount().setScale(2, RoundingMode.HALF_UP);
         BigDecimal deposit =
                 agreed.multiply(DEPOSIT_RATE).setScale(0, RoundingMode.HALF_UP).setScale(2);
-        BigDecimal fee = agreed.multiply(PLATFORM_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal fee =
+                agreed.multiply(PLATFORM_FEE_RATE).setScale(0, RoundingMode.HALF_UP).setScale(2);
         BigDecimal payout = agreed.subtract(fee);
 
         PaymentStatus fundStatus =
@@ -170,11 +213,14 @@ public class PaymentServiceImpl implements PaymentService {
                         contractId, com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT);
 
         boolean fundPaid =
-                fundStatus == PaymentStatus.HELD_IN_ESCROW || fundStatus == PaymentStatus.RELEASED;
+                fundStatus == PaymentStatus.HELD_IN_ESCROW
+                        || fundStatus == PaymentStatus.RELEASED
+                        || fundStatus == PaymentStatus.SETTLED;
         boolean depositPaid =
                 depositStatus == PaymentStatus.HELD_IN_ESCROW
                         || depositStatus == PaymentStatus.RELEASED
-                        || depositStatus == PaymentStatus.REFUNDED;
+                        || depositStatus == PaymentStatus.REFUNDED
+                        || depositStatus == PaymentStatus.SETTLED;
 
         return FundingStatusResponse.builder()
                 .contractId(contract.getId())
@@ -208,57 +254,21 @@ public class PaymentServiceImpl implements PaymentService {
     private int statusRank(PaymentStatus s) {
         if (s == PaymentStatus.HELD_IN_ESCROW
                 || s == PaymentStatus.RELEASED
-                || s == PaymentStatus.REFUNDED) return 0;
+                || s == PaymentStatus.REFUNDED
+                || s == PaymentStatus.SETTLED) return 0;
         if (s == PaymentStatus.PENDING) return 1;
         return 2;
     }
 
-    private String resolveReturnUrl(String returnUrl) {
-        if (returnUrl != null && !returnUrl.isBlank()) {
-            if (!vnpayProperties.isReturnUrlAllowed(returnUrl)) {
-                throw new ApiException(ErrorCode.INVALID_RETURN_URL);
-            }
-            return returnUrl.trim();
-        }
-        return vnpayProperties.getDefaultReturnUrl();
+    private PaymentResponse replayResponse(com.sam.be.modules.payment.service.CheckoutService.Checkout checkout) {
+        var response=toResponse(paymentRepository.findById(checkout.objectId()).orElseThrow(),checkout.checkoutUrl());
+        response.setOrderId(checkout.orderId().toString().replace("-",""));
+        response.setCheckoutUrl(checkout.checkoutUrl());
+        return response;
     }
 
-    /**
-     * Bấm Nạp lần nữa khi đơn cũ còn dở: VNPay không cho dùng lại mã cũ nên đánh dấu đơn PENDING cũ
-     * hết hạn rồi tạo đơn mới toanh (mã mới). Chỉ chặn khi đã trả xong.
-     */
-    private void expireStalePendingPayments(
-            Contract contract, com.sam.be.common.constant.enums.PaymentType type) {
-        List<Payment> existing =
-                paymentRepository.findAllByContractIdAndPaymentType(contract.getId(), type).stream()
-                        .filter(
-                                p ->
-                                        p.getStatus() != PaymentStatus.REFUNDED
-                                                && p.getStatus() != PaymentStatus.EXPIRED)
-                        .toList();
-        boolean paid =
-                existing.stream()
-                        .anyMatch(
-                                p ->
-                                        p.getStatus() == PaymentStatus.HELD_IN_ESCROW
-                                                || p.getStatus() == PaymentStatus.RELEASED);
-        if (paid) {
-            throw new ApiException(
-                    ErrorCode.ESCROW_PAYMENT_EXISTS, "Khoản này đã được thanh toán rồi.");
-        }
-        List<Payment> stale =
-                existing.stream().filter(p -> p.getStatus() == PaymentStatus.PENDING).toList();
-        for (Payment p : stale) {
-            p.setStatus(PaymentStatus.EXPIRED);
-        }
-        if (!stale.isEmpty()) {
-            paymentRepository.saveAll(stale);
-            log.info(
-                    "Expired {} stale PENDING {} payment(s) for contract {}",
-                    stale.size(),
-                    type,
-                    contract.getId());
-        }
+    private String resolveReturnUrl(String returnUrl) {
+        return paymentReturns.resolve(returnUrl);
     }
 
     private void assertAmountVerified(Contract contract) {
@@ -274,41 +284,69 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    private PaymentResponse createVnpayPayment(
+    private PaymentResponse createFundingPayment(
             Contract contract,
             com.sam.be.common.constant.enums.PaymentType type,
             BigDecimal amount,
             String orderInfo,
-            String returnUrl) {
+            String returnUrl,
+            UUID maintenanceOrder) {
+        if (amount.signum() <= 0 || amount.stripTrailingZeros().scale() > 0)
+            throw new ApiException(
+                    ErrorCode.VALIDATION_ERROR, "Thanh toán VND phải là số nguyên dương");
+        var existing =
+                paymentRepository.findAllByContractIdAndPaymentType(contract.getId(), type).stream()
+                        .filter(
+                                p ->
+                                        java.util.Objects.equals(
+                                                p.getMaintenanceOrderId(), maintenanceOrder))
+                        .toList();
+        if (existing.stream()
+                .anyMatch(
+                        p ->
+                                Set.of(
+                                                PaymentStatus.HELD_IN_ESCROW,
+                                                PaymentStatus.SETTLED,
+                                                PaymentStatus.RELEASED)
+                                        .contains(p.getStatus())))
+            throw new ApiException(ErrorCode.ESCROW_PAYMENT_EXISTS);
         Payment payment =
-                Payment.builder()
-                        .contract(contract)
-                        .paymentType(type)
-                        .amount(amount)
-                        .currency("VND")
-                        .status(PaymentStatus.PENDING)
-                        .installmentNo(1)
-                        .build();
-        payment = paymentRepository.save(payment);
-        String txnRef = payment.getId().toString().replace("-", "");
-        payment.setPaymentGatewayId(txnRef);
-
-        if (returnUrl != null && !returnUrl.isBlank()) {
-            if (!vnpayProperties.isReturnUrlAllowed(returnUrl)) {
-                throw new ApiException(ErrorCode.INVALID_RETURN_URL);
-            }
-        } else {
-            returnUrl = vnpayProperties.getDefaultReturnUrl();
-        }
-
-        long amountVnd = amount.multiply(BigDecimal.valueOf(100)).longValueExact();
-        String vnpayUrl =
-                vnpayClient.buildPaymentUrl(txnRef, amountVnd, orderInfo, null, returnUrl);
-
-        log.info("Created {} payment {} for contract {}", type, payment.getId(), contract.getId());
+                existing.stream()
+                        .filter(
+                                p ->
+                                        p.getStatus() == PaymentStatus.PENDING
+                                                && "PAY2S".equals(p.getProvider()))
+                        .findFirst()
+                        .orElseGet(
+                                () ->
+                                        paymentRepository.save(
+                                                Payment.builder()
+                                                        .contract(contract)
+                                                        .maintenanceOrderId(maintenanceOrder)
+                                                        .paymentType(type)
+                                                        .amount(amount)
+                                                        .currency("VND")
+                                                        .status(PaymentStatus.PENDING)
+                                                        .installmentNo(1)
+                                                        .provider("PAY2S")
+                                                        .environment(pay2s.environment())
+                                                        .build()));
+        if (!pay2s.environment().equals(payment.getEnvironment()))
+            throw com.sam.be.modules.finance.FinanceStore.invalid(
+                    "Khoản thanh toán thuộc môi trường khác");
+        UUID payer =
+                type == com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT
+                        ? contract.getFreelancer().getId()
+                        : contract.getClient().getId();
+        var checkout =
+                checkouts.create(
+                        type.name(), payment.getId(), payer, payment.getAmount(), returnUrl);
+        payment.setPaymentGatewayId(checkout.orderId().toString().replace("-", ""));
+        payment.setCheckoutUrl(checkout.checkoutUrl());
+        paymentRepository.save(payment);
         cacheInvalidationService.paymentsChanged(
                 contract.getId(), contract.getFreelancer().getId());
-        return toResponse(payment, vnpayUrl);
+        return toResponse(payment, checkout.checkoutUrl());
     }
 
     @Override
@@ -341,99 +379,169 @@ public class PaymentServiceImpl implements PaymentService {
 
         // Idempotent: IPN tới trước rồi thì thôi
         if (payment.getStatus() == PaymentStatus.HELD_IN_ESCROW
-                || payment.getStatus() == PaymentStatus.RELEASED) {
+                || payment.getStatus() == PaymentStatus.RELEASED
+                || payment.getStatus() == PaymentStatus.SETTLED) {
             return toResponse(payment, null);
         }
         if (payment.getStatus() != PaymentStatus.PENDING) {
             throw new ApiException(ErrorCode.REQUEST_FAILED);
         }
 
-        // Đối chiếu với query trên URL return của VNPay (chống báo bừa)
-        if (request != null) {
-            if (request.getTxnRef() != null
-                    && !request.getTxnRef().equals(payment.getPaymentGatewayId())) {
-                throw new ApiException(ErrorCode.REQUEST_FAILED, "Mã giao dịch không khớp.");
-            }
-            if (request.getAmountVnd() != null) {
-                long expected =
-                        payment.getAmount().multiply(BigDecimal.valueOf(100)).longValueExact();
-                if (request.getAmountVnd() != expected) {
-                    throw new ApiException(ErrorCode.REQUEST_FAILED, "Số tiền không khớp.");
-                }
-            }
-        }
-
-        payment.setStatus(PaymentStatus.HELD_IN_ESCROW);
-        payment.setEscrowHeldAt(LocalDateTime.now());
-        paymentRepository.save(payment);
-
-        pushPaymentEvent(
-                contract,
-                payment,
-                "PAYMENT_ESCROW_HELD",
-                "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
-        log.info("Funding confirmed by FE for payment {}", payment.getId());
-        cacheInvalidationService.paymentsChanged(
-                contract.getId(), contract.getFreelancer().getId());
-
-        maybeStartProject(contract);
-        return toResponse(payment, null);
+        // Browser redirects are navigation only. Only verified provider IPN changes funding.
+        return toResponse(payment, payment.getCheckoutUrl());
     }
 
     @Override
     @Transactional
-    public Map<String, String> handleVnpayIpn(Map<String, String> params) {
-        if (!vnpaySigner.verify(params, vnpayProperties.getHashSecret())) {
-            log.warn("VNPay IPN rejected: invalid signature, txnRef={}", params.get("vnp_TxnRef"));
-            return Map.of("RspCode", "97", "Message", "Invalid signature");
-        }
-
-        String txnRef = params.get("vnp_TxnRef");
-        Payment payment = paymentRepository.findByPaymentGatewayId(txnRef).orElse(null);
-        if (payment == null) {
-            return Map.of("RspCode", "01", "Message", "Order not found");
-        }
-
-        long expectedVnd = payment.getAmount().multiply(BigDecimal.valueOf(100)).longValueExact();
-        long receivedVnd;
+    public Map<String, Boolean> handlePay2sIpn(com.fasterxml.jackson.databind.JsonNode payload) {
+        if (!pay2s.verify(payload))
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED, "Invalid Pay2S signature");
+        String order = payload.path("orderId").asText();
+        Payment payment =
+                paymentRepository
+                        .findByPaymentGatewayId(order)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!"PAY2S".equals(payment.getProvider())
+                || !pay2s.environment().equals(payment.getEnvironment()))
+            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND);
+        financeStore.lockOwner(payment.getContract().getFreelancer().getId());
+        fundingContractRepository
+                .findByIdForSettlement(payment.getContract().getId())
+                .orElseThrow();
+        payment = paymentRepository.findByIdForFunding(payment.getId()).orElseThrow();
+        java.math.BigDecimal amount;
         try {
-            receivedVnd = Long.parseLong(params.get("vnp_Amount"));
-        } catch (NumberFormatException | NullPointerException e) {
-            return Map.of("RspCode", "04", "Message", "Invalid amount");
+            amount = new java.math.BigDecimal(payload.path("amount").asText());
+            if (amount.signum() <= 0
+                    || amount.stripTrailingZeros().scale() > 0
+                    || amount.precision() > 15) throw new IllegalArgumentException();
+        } catch (Exception ex) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Invalid Pay2S amount");
         }
-        if (receivedVnd != expectedVnd) {
-            log.warn(
-                    "VNPay IPN amount mismatch for payment {}: expected {} got {}",
-                    payment.getId(),
-                    expectedVnd,
-                    receivedVnd);
-            return Map.of("RspCode", "04", "Message", "Invalid amount");
-        }
-
-        if (payment.getStatus() == PaymentStatus.HELD_IN_ESCROW) {
-            return Map.of("RspCode", "02", "Message", "Order already confirmed");
-        }
-
-        if ("00".equals(params.get("vnp_ResponseCode"))
+        String transaction = payload.path("transId").asText();
+        if (transaction.isBlank() || transaction.length() > 150)
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Invalid Pay2S transaction");
+        if ("0".equals(payload.path("resultCode").asText()))
+            recordReceipt(payment, transaction, amount);
+        else if ("2".equals(payload.path("resultCode").asText())
+                && amount.compareTo(payment.getAmount()) == 0
                 && payment.getStatus() == PaymentStatus.PENDING) {
-            payment.setStatus(PaymentStatus.HELD_IN_ESCROW);
-            payment.setEscrowHeldAt(LocalDateTime.now());
+            payment.setStatus(PaymentStatus.EXPIRED);
             paymentRepository.save(payment);
-
-            Contract contract = payment.getContract();
-            pushPaymentEvent(
-                    contract,
-                    payment,
-                    "PAYMENT_ESCROW_HELD",
-                    "Tiền ký quỹ (" + payment.getAmount() + " VND) đã vào Escrow.");
             cacheInvalidationService.paymentsChanged(
-                    contract.getId(), contract.getFreelancer().getId());
-            log.info("Escrow held for payment {}", payment.getId());
-
-            // Đủ cả 2 khoản (client 100% + freelancer cọc 2%) thì cho dự án chạy
-            maybeStartProject(contract);
+                    payment.getContract().getId(), payment.getContract().getFreelancer().getId());
         }
-        return Map.of("RspCode", "00", "Message", "Confirm Success");
+        return Map.of("success", true);
+    }
+
+    @Override
+    @Transactional
+    public String applyVerifiedPay2sPayment(
+            UUID paymentId, String order, String transaction, BigDecimal amount) {
+        Payment payment =
+                paymentRepository
+                        .findById(paymentId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!"PAY2S".equals(payment.getProvider())
+                || !pay2s.environment().equals(payment.getEnvironment()))
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        financeStore.lockOwner(payment.getContract().getFreelancer().getId());
+        fundingContractRepository
+                .findByIdForSettlement(payment.getContract().getId())
+                .orElseThrow();
+        payment = paymentRepository.findByIdForFunding(payment.getId()).orElseThrow();
+        payment.setPaymentGatewayId(order);
+        recordReceipt(payment, transaction, amount);
+        var receipt =
+                financeStore.one(
+                        "SELECT disposition FROM finance_receipts WHERE provider='PAY2S' AND environment=? AND provider_reference=?",
+                        payment.getEnvironment(),
+                        transaction);
+        return "APPLIED".equals(receipt.get("disposition")) ? "APPLIED" : "REVIEW";
+    }
+
+    private void recordReceipt(Payment payment, String transaction, BigDecimal amount) {
+        var existing =
+                financeStore.rows(
+                        "SELECT payment_id FROM finance_receipts WHERE provider=? AND environment=? AND provider_reference=?",
+                        payment.getProvider(),
+                        payment.getEnvironment(),
+                        transaction);
+        if (!existing.isEmpty()) {
+            if (!payment.getId()
+                    .equals(
+                            com.sam.be.modules.finance.FinanceStore.id(
+                                    existing.getFirst(), "paymentId")))
+                throw new ApiException(
+                        ErrorCode.REQUEST_FAILED, "Transaction reference already assigned");
+            return;
+        }
+        boolean otherFunded =
+                payment.getMaintenanceOrderId() == null
+                        && paymentRepository
+                                .findAllByContractIdAndPaymentType(
+                                        payment.getContract().getId(), payment.getPaymentType())
+                                .stream()
+                                .anyMatch(
+                                        p ->
+                                                !p.getId().equals(payment.getId())
+                                                        && (p.getStatus()
+                                                                        == PaymentStatus
+                                                                                .HELD_IN_ESCROW
+                                                                || p.getStatus()
+                                                                        == PaymentStatus.RELEASED
+                                                                || p.getStatus()
+                                                                        == PaymentStatus.SETTLED));
+        boolean applied =
+                payment.getStatus() == PaymentStatus.PENDING
+                        && amount.compareTo(payment.getAmount()) == 0
+                        && !otherFunded;
+        UUID receipt = UUID.randomUUID();
+        financeStore.jdbc().update(
+                "INSERT INTO finance_receipts(id,payment_id,provider,environment,provider_reference,amount,disposition,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                receipt,
+                payment.getId(),
+                payment.getProvider(),
+                payment.getEnvironment(),
+                transaction,
+                amount,
+                applied ? "APPLIED" : "REVIEW",
+                financeStore.time(financeStore.now()));
+        String prefix = "LIVE".equals(payment.getEnvironment()) ? "live:" : "sandbox:";
+        financeStore.journal(
+                "receipt:" + receipt,
+                payment.getContract().getId(),
+                payment.getContract().getFreelancer().getId(),
+                applied ? "Thanh toán đã xác minh" : "Tiền nhận cần đối soát",
+                !"LIVE".equals(payment.getEnvironment()),
+                com.sam.be.modules.finance.FinanceStore.debit(
+                        prefix + "cash:platform-bank", amount),
+                com.sam.be.modules.finance.FinanceStore.credit(
+                        applied
+                                ? prefix + "escrow:" + payment.getId()
+                                : prefix + "unapplied:" + receipt,
+                        amount));
+        if (!applied) return;
+        payment.setVerifiedAt(financeStore.now());
+        payment.setProviderTransactionId(transaction);
+        payment.setStatus(PaymentStatus.HELD_IN_ESCROW);
+        payment.setEscrowHeldAt(LocalDateTime.now());
+        paymentRepository.save(payment);
+        pushPaymentEvent(
+                payment.getContract(),
+                payment,
+                "PAYMENT_ESCROW_HELD",
+                "Đã xác nhận tiền thanh toán từ nhà cung cấp.");
+        cacheInvalidationService.paymentsChanged(
+                payment.getContract().getId(), payment.getContract().getFreelancer().getId());
+        if (payment.getMaintenanceOrderId() != null) {
+            financeStore.jdbc().update(
+                    "UPDATE paid_maintenance_orders SET status=CASE WHEN status='DISPUTED' THEN status ELSE 'FUNDED' END,funded_at=?,due_at=?::timestamptz+delivery_days*INTERVAL '24 hours' WHERE id=? AND status IN ('AWAITING_PAYMENT','DISPUTED')",
+                    financeStore.time(financeStore.now()),
+                    financeStore.time(financeStore.now()),
+                    payment.getMaintenanceOrderId());
+        } else maybeStartProject(payment.getContract());
     }
 
     private void maybeStartProject(Contract contract) {
@@ -450,7 +558,8 @@ public class PaymentServiceImpl implements PaymentService {
                         .anyMatch(
                                 p ->
                                         p.getStatus() == PaymentStatus.HELD_IN_ESCROW
-                                                || p.getStatus() == PaymentStatus.RELEASED);
+                                                || p.getStatus() == PaymentStatus.RELEASED
+                                                || p.getStatus() == PaymentStatus.SETTLED);
         boolean depositPaid =
                 paymentRepository
                         .findAllByContractIdAndPaymentType(
@@ -460,7 +569,8 @@ public class PaymentServiceImpl implements PaymentService {
                         .anyMatch(
                                 p ->
                                         p.getStatus() == PaymentStatus.HELD_IN_ESCROW
-                                                || p.getStatus() == PaymentStatus.RELEASED);
+                                                || p.getStatus() == PaymentStatus.RELEASED
+                                                || p.getStatus() == PaymentStatus.SETTLED);
         if (!fundPaid || !depositPaid) {
             return;
         }
@@ -486,23 +596,9 @@ public class PaymentServiceImpl implements PaymentService {
         if (!SecurityUtils.isAdmin()) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
-        if (payment.getStatus() != PaymentStatus.HELD_IN_ESCROW) {
-            throw new ApiException(ErrorCode.REQUEST_FAILED);
-        }
-
-        payment.setStatus(PaymentStatus.RELEASED);
-        payment.setReleasedAt(LocalDateTime.now());
-        paymentRepository.save(payment);
-
-        pushPaymentEvent(
-                contract,
-                payment,
-                "PAYMENT_RELEASED",
-                "Tiền ký quỹ (" + payment.getAmount() + " VND) đã được giải ngân.");
-        cacheInvalidationService.paymentsChanged(
-                contract.getId(), contract.getFreelancer().getId());
-        log.info("Escrow released for payment {}", payment.getId());
-        return toResponse(payment, null);
+        throw new ApiException(
+                ErrorCode.REQUEST_FAILED,
+                "Không thể đổi trạng thái escrow trực tiếp. Hãy nghiệm thu, xử lý ticket và chi trả qua nghiệp vụ công nợ.");
     }
 
     @Override
@@ -631,9 +727,10 @@ public class PaymentServiceImpl implements PaymentService {
                 message);
     }
 
-    private PaymentResponse toResponse(Payment payment, String vnpayUrl) {
+    private PaymentResponse toResponse(Payment payment, String checkoutUrl) {
         return PaymentResponse.builder()
                 .paymentId(payment.getId())
+                .orderId(payment.getPaymentGatewayId())
                 .contractId(payment.getContract().getId())
                 .installment(
                         payment.getPaymentType() != null ? payment.getPaymentType().name() : null)
@@ -641,7 +738,9 @@ public class PaymentServiceImpl implements PaymentService {
                 .amount(payment.getAmount())
                 .currency(payment.getCurrency())
                 .status(payment.getStatus())
-                .vnpayUrl(vnpayUrl)
+                .checkoutUrl(checkoutUrl)
+                .provider(payment.getProvider())
+                .environment(payment.getEnvironment())
                 .escrowHeldAt(payment.getEscrowHeldAt())
                 .releasedAt(payment.getReleasedAt())
                 .build();

@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class WalletServiceImpl implements WalletService {
 
     private final WalletAccountRepository walletAccountRepository;
+    private final com.sam.be.modules.finance.FinanceLedgerService financeLedger;
     private final WalletLedgerEntryRepository ledgerEntryRepository;
     private final UserRepository userRepository;
 
@@ -34,7 +35,13 @@ public class WalletServiceImpl implements WalletService {
     @Transactional
     public WalletSummaryResponse getMyWallet(UUID userId) {
         WalletAccount wallet = getOrCreateFreelancerWallet(userId);
-        return toSummary(wallet);
+        var summary = financeLedger.wallet(userId);
+        return WalletSummaryResponse.builder()
+                .walletId(wallet.getId())
+                .currency("VND")
+                .availableBalance((BigDecimal) summary.get("availableBalance"))
+                .sandbox(false)
+                .build();
     }
 
     @Override

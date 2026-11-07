@@ -1,4 +1,7 @@
 # TÀI LIỆU ĐẶC TẢ API PAYMENT & SUBSCRIPTION
+
+> **Cập nhật triển khai 06/11/2026:** phần funding/escrow dưới đây có mô tả lịch sử không còn áp dụng. API browser `confirm` chỉ đọc trạng thái, không xác nhận nhận tiền; giải ngân trực tiếp bị chặn. Thu hợp đồng/cọc và đơn bảo trì chọn Pay2S hoặc VNPay; nghiệm thu ghi `POSTED`/`SETTLED` rồi giữ công nợ ít nhất 168 giờ và qua kiểm tra ticket. `SETTLED` không có nghĩa đã chuyển ngân hàng. Luồng hiện hành, API và env xem [PAY2S_FINANCE_SETUP.md](PAY2S_FINANCE_SETUP.md) và [PAYMENT_ESCROW_PAYOUT_DIRECTION.md](PAYMENT_ESCROW_PAYOUT_DIRECTION.md). Subscription cũ vẫn dùng VNPay.
+
 **Hệ thống Freelance Platform**
 Dành cho Backend + Frontend Developer | Phiên bản 1.1 (Funding mới — thay thế ký quỹ 2 đợt cũ từ 10/2026)
 

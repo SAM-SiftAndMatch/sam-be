@@ -38,7 +38,9 @@ public class RateLimitAspect {
         long capacity = rateLimit.limit();
         double refillRate = (double) capacity / rateLimit.duration();
 
-        boolean allowed = rateLimitService.allowRequest(fullKey, capacity, refillRate, 1);
+        boolean allowed =
+                rateLimitService.allowRequest(
+                        fullKey, capacity, refillRate, 1, rateLimit.failClosed());
 
         if (!allowed) {
             log.warn("Rate limit exceeded for key: {}", fullKey);
