@@ -5,11 +5,13 @@ import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CheckoutService {
     private final FinanceStore store;
     private final Pay2sClient pay2s;
@@ -54,7 +56,9 @@ public class CheckoutService {
             if (!("CANCELLED".equals(old.get("status"))
                     && Boolean.TRUE.equals(old.get("replacementAllowed")))) {
                 bind(owner, purpose, FinanceStore.id(old, "id"));
-                return view(old);
+                var checkout = view(old);
+                logReusedCheckout(checkout);
+                return checkout;
             }
             amount = FinanceStore.money(old, "amount");
         }
@@ -100,7 +104,18 @@ public class CheckoutService {
         if (rows.isEmpty()) return null;
         if (!context.payloadHash().equals(rows.getFirst().get("payloadHash")))
             throw FinanceStore.invalid("Idempotency-Key đã dùng cho nội dung mua khác");
-        return get(owner, FinanceStore.id(rows.getFirst(), "checkoutId"));
+        var checkout = get(owner, FinanceStore.id(rows.getFirst(), "checkoutId"));
+        logReusedCheckout(checkout);
+        return checkout;
+    }
+
+    private void logReusedCheckout(Checkout checkout) {
+        log.info(
+                "PAY2S_CHECKOUT_REUSED orderId={} environment={} status={} createdAt={}",
+                checkout.orderId(),
+                checkout.environment(),
+                checkout.paymentStatus(),
+                checkout.createdAt());
     }
 
     private void bind(UUID owner, String purpose, UUID checkout) {
