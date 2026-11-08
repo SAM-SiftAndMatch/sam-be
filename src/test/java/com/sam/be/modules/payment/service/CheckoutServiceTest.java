@@ -55,7 +55,8 @@ class CheckoutServiceTest {
         when(store.rows(
                         startsWith("SELECT * FROM payment_checkouts WHERE purpose"),
                         eq("SUBSCRIPTION"),
-                        eq(object)))
+                        eq(object),
+                        eq("LIVE")))
                 .thenReturn(List.of(row));
     }
 
@@ -89,11 +90,33 @@ class CheckoutServiceTest {
     }
 
     @Test
+    void closedOrderWithLatePaymentCannotCreateAnotherCheckout() {
+        row.put("status", "CANCELLED");
+        row.put("replacementAllowed", true);
+        when(store.rows(startsWith("SELECT id FROM payment_checkout_receipts"), eq(id)))
+                .thenReturn(List.of(Map.of("id", UUID.randomUUID())));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.create("SUBSCRIPTION", object, owner,
+                        new BigDecimal("149000"), "https://sam.example/payment/return"));
+        verify(db, never()).update(startsWith("INSERT INTO payment_checkouts"), any(Object[].class));
+    }
+
+    @Test
     void paymentStatusIsOnlyVisibleToItsOwner() {
         when(store.one(anyString(), eq(id))).thenReturn(row);
         assertThrows(
                 org.springframework.web.server.ResponseStatusException.class,
                 () -> service.get(UUID.randomUUID(), id));
         assertEquals(id, service.get(owner, id).orderId());
+    }
+
+    @Test
+    void confirmedUnpaidClosureDoesNotDisplayAnOpenMoneyReview() {
+        row.put("status", "CANCELLED");
+        row.put("replacementAllowed", true);
+        when(store.one(anyString(), eq(id))).thenReturn(row);
+        assertFalse(service.get(owner, id).reviewRequired());
+        row.put("replacementAllowed", false);
+        assertTrue(service.get(owner, id).reviewRequired());
     }
 }

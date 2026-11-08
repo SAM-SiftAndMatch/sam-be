@@ -99,6 +99,59 @@ public class Pay2sClient {
         }
     }
 
+    /** Cancellation is idempotent at Pay2S; an ambiguous result never authorizes replacement. */
+    public record Cancellation(String requestId) {}
+
+    public Cancellation cancel(String order) {
+        if (order == null || !order.matches("[a-f0-9]{32}"))
+            throw FinanceStore.invalid("Mã đơn thanh toán không hợp lệ");
+        String reference = UUID.randomUUID().toString();
+        String requestId = "CANCEL" + reference.replace("-", "");
+        var context = new CheckoutContext(reference, safeOrigin(ipnUrl), "none");
+        var body = new LinkedHashMap<String, String>();
+        body.put("accessKey", accessKey);
+        body.put("partnerCode", partnerCode);
+        body.put("orderId", order);
+        body.put("requestId", requestId);
+        body.put("requestType", "cancel");
+        body.put("signature", sign(secretKey,
+                "accessKey=" + accessKey + "&orderId=" + order + "&partnerCode=" + partnerCode
+                        + "&requestId=" + requestId + "&requestType=cancel"));
+        try {
+            return http.post()
+                    .uri(baseUrl + "/v1/gateway/api/cancel")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .body(JSON.writeValueAsString(body))
+                    .exchange((request, response) -> {
+                        int status = response.getStatusCode().value();
+                        byte[] bytes = response.getBody().readNBytes(65537);
+                        if (bytes.length > 65536)
+                            throw failure(context, "CANCEL_NOT_CONFIRMED", status, null, null);
+                        JsonNode result;
+                        try {
+                            result = JSON.readTree(bytes);
+                        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+                            throw failure(context, "CANCEL_NOT_CONFIRMED", status, null, null);
+                        }
+                        Integer code = providerCode(result);
+                        if (status != 200 || !Integer.valueOf(0).equals(code)
+                                || result == null || !"cancelled".equals(result.path("status").asText())
+                                || !order.equals(result.path("orderId").asText())
+                                || !requestId.equals(result.path("requestId").asText())
+                                || !partnerCode.equals(result.path("partnerCode").asText()))
+                            throw failure(context, "CANCEL_NOT_CONFIRMED", status, code, null);
+                        log.info("PAY2S_CHECKOUT_CANCELLED reference={} orderId={} requestId={} environment={}",
+                                reference, order, requestId, environment);
+                        return new Cancellation(requestId);
+                    });
+        } catch (PaymentGatewayException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw failure(context, "CANCEL_NOT_CONFIRMED", null, null, null);
+        }
+    }
+
     /** Provider memo: ASCII letters/digits, 10–32 chars, without user or project data. */
     public static String transferMemo(String order, PaymentType paymentType) {
         return transferMemo(order, paymentType.name());
@@ -537,6 +590,8 @@ public class Pay2sClient {
                                 : HttpStatus.BAD_GATEWAY;
         String message =
                 switch (reason) {
+                    case "CANCEL_NOT_CONFIRMED" ->
+                            "Chưa xác nhận được việc đóng liên kết cũ. Không chuyển thêm tiền; hãy kiểm tra lại hoặc liên hệ hỗ trợ.";
                     case "TIMEOUT" -> "Pay2S chưa phản hồi kịp. Vui lòng thử lại sau.";
                     case "CONNECTION_FAILED", "DNS_FAILED", "TLS_FAILED" ->
                             "Không kết nối được cổng thanh toán Pay2S. Vui lòng thử lại sau.";

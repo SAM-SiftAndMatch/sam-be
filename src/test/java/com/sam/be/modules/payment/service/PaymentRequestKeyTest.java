@@ -64,4 +64,17 @@ class PaymentRequestKeyTest {
                 () -> service.replay(owner, "SUBSCRIPTION", "package"));
         verifyNoInteractions(db);
     }
+
+    @Test
+    void samePurchaseKeyCanProceedAfterConfirmedUnpaidClosure() {
+        UUID previous = UUID.randomUUID();
+        when(store.rows(startsWith("SELECT checkout_id,payload_hash"), eq(owner), eq("LIVE"),
+                eq("SUBSCRIPTION"), any()))
+                .thenReturn(List.of(Map.of("payloadHash", PaymentRequestKey.hash("SUBSCRIPTION:package"),
+                        "checkoutId", previous)));
+        when(store.one(eq("SELECT * FROM payment_checkouts WHERE id=?"), eq(previous)))
+                .thenReturn(Map.of("ownerId", owner, "status", "CANCELLED", "replacementAllowed", true));
+        assertNull(service.replay(owner, "SUBSCRIPTION", "package"));
+        verify(provider, never()).create(anyString(), anyLong(), anyString(), anyString());
+    }
 }

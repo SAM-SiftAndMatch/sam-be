@@ -1221,7 +1221,7 @@ IPN da xac minh
 
 Chưa tự tra trạng thái Collection Link, tự gọi lại create sau bất định, tự nhập lịch sử ngân hàng để phân bổ tiền, cộng nhiều lần nộp thiếu, tự xử lý dư hoặc tự hoàn tiền provider. Các khả năng này cần contract/kiểm thử Pay2S ở P0; hiện dùng case và người phụ trách. Không có biến env nào có thể bật an toàn những khả năng chưa được triển khai/xác minh này.
 
-Hết hạn không tự cho phép tạo link mới. Admin phải xác minh đơn cũ đã đóng và chưa nhận tiền trước khi duyệt thay thế. Người dùng quay lại lần mua với key mới sau quyết định đó; key cũ vẫn đọc checkout cũ. QR/chuyển khoản cũ vẫn có thể đưa tiền về, nên receipt muộn luôn được tiếp nhận để đối soát.
+Hết hạn không tự cho phép tạo link mới. Khách chưa chuyển tiền có thể chọn **Khôi phục thanh toán** trên web/mobile: SAM kiểm tra chủ đơn, môi trường, merchant, receipt/IPN và gọi API cancel của Pay2S ngoài transaction. Chỉ phản hồi xác nhận đóng đúng đơn mới cho phép thay thế, sau khi kiểm tra lại chưa có thông tin nhận tiền và ghi audit. Timeout, lỗi, khác merchant hoặc đã có tiền vẫn cần hỗ trợ/admin. Sau khi xác nhận đóng, cùng key/cùng nội dung mua được chuyển sang lần thử mới; các đơn còn hoạt động hoặc bất định không được chuyển key. QR/chuyển khoản cũ vẫn có thể đưa tiền về, nên receipt muộn luôn được tiếp nhận để đối soát. Chi tiết: [khôi phục checkout](PAY2S_RECEIVER_DIAGNOSTICS.md#khôi-phục-liên-kết-hết-hạn).
 
 Hồ sơ cần hoàn tiền tiếp tục do vận hành thực hiện và ghi bằng chứng; chưa có workflow hoàn tiền provider tự động hoặc nút đóng tùy ý một case còn tiền chưa phân bổ. Không suy ra tiền đã được hoàn từ một ghi chú.
 
@@ -1232,3 +1232,5 @@ Giữ điều kiện escrow/bảo trì 168 giờ và ticket chặn giải ngân.
 Đã bổ sung unit test cho thứ tự commit/HTTP, worker mất lease, lỗi bất định, crash, key đổi payload và callback lặp. Bộ PostgreSQL kiểm tra V40 và đồng thời gồm: intent bền vững; crash sau provider nhận; IPN trước response; hai IPN cùng lúc; hai yêu cầu mua; chặn trạng thái lùi; tiền tới đơn cũ sau thay thế; phân bổ muộn hai người duyệt và cân sổ; worker cũ sống lâu hơn lease.
 
 Các bài PostgreSQL chỉ chạy khi có `FINANCE_TEST_DATABASE_URL`; CI hiện đã có cấu hình database cho nhóm test tài chính. Môi trường thực hiện lần này không truy cập được Docker/PostgreSQL, nên các bài đó chưa được xác minh tại máy này. Chạy trên database test riêng trước khi rollout. Chưa thử giao dịch Pay2S thật hoặc chạy migration trên database production.
+
+Bổ sung kiểm thử hủy đơn đúng chữ ký, phản hồi sai mã đơn/merchant/request, timeout, tiền tới trong lúc hủy, hai yêu cầu khôi phục song song và cùng key sau khi đóng đơn. Luồng hợp đồng chọn và tính trạng thái góp tiền theo môi trường hiện tại; không chuyển dữ liệu SANDBOX thành LIVE.
