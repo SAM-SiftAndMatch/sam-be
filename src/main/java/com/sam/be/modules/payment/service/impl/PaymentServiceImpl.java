@@ -244,6 +244,7 @@ public class PaymentServiceImpl implements PaymentService {
         List<Payment> all = paymentRepository.findAllByContractIdAndPaymentType(contractId, type);
         // Ưu tiên trạng thái đã được nạp hoặc đã hoàn cọc, rồi tới đơn đang chờ.
         return all.stream()
+                .filter(p -> pay2s.environment().equals(p.getEnvironment()))
                 .map(Payment::getStatus)
                 .filter(s -> s != PaymentStatus.EXPIRED)
                 .sorted((a, b) -> Integer.compare(statusRank(a), statusRank(b)))
@@ -299,7 +300,8 @@ public class PaymentServiceImpl implements PaymentService {
                         .filter(
                                 p ->
                                         java.util.Objects.equals(
-                                                p.getMaintenanceOrderId(), maintenanceOrder))
+                                                p.getMaintenanceOrderId(), maintenanceOrder)
+                                                && pay2s.environment().equals(p.getEnvironment()))
                         .toList();
         if (existing.stream()
                 .anyMatch(
@@ -555,6 +557,7 @@ public class PaymentServiceImpl implements PaymentService {
                                 contract.getId(),
                                 com.sam.be.common.constant.enums.PaymentType.CONTRACT_FUND)
                         .stream()
+                        .filter(p -> pay2s.environment().equals(p.getEnvironment()))
                         .anyMatch(
                                 p ->
                                         p.getStatus() == PaymentStatus.HELD_IN_ESCROW
@@ -566,6 +569,7 @@ public class PaymentServiceImpl implements PaymentService {
                                 contract.getId(),
                                 com.sam.be.common.constant.enums.PaymentType.SECURITY_DEPOSIT)
                         .stream()
+                        .filter(p -> pay2s.environment().equals(p.getEnvironment()))
                         .anyMatch(
                                 p ->
                                         p.getStatus() == PaymentStatus.HELD_IN_ESCROW

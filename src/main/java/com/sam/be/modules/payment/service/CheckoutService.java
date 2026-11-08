@@ -43,9 +43,10 @@ public class CheckoutService {
         String target = returns.resolve(returnUrl);
         var previous =
                 store.rows(
-                        "SELECT * FROM payment_checkouts WHERE purpose=? AND object_id=? ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE",
+                        "SELECT * FROM payment_checkouts WHERE purpose=? AND object_id=? AND environment=? ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE",
                         purpose,
-                        objectId);
+                        objectId,
+                        pay2s.environment());
         if (!previous.isEmpty()) {
             var old = previous.getFirst();
             if (!owner.equals(FinanceStore.id(old, "ownerId"))
@@ -60,6 +61,11 @@ public class CheckoutService {
                 logReusedCheckout(checkout);
                 return checkout;
             }
+            if (!store.rows("SELECT id FROM payment_checkout_receipts WHERE checkout_id=?",
+                    FinanceStore.id(old, "id")).isEmpty()
+                    || !store.rows("SELECT id FROM payment_provider_events WHERE order_reference=? AND result_code=0",
+                            old.get("id").toString().replace("-", "")).isEmpty())
+                throw FinanceStore.invalid("Đơn cũ có thông tin nhận tiền; cần đối soát trước khi tạo lại");
             amount = FinanceStore.money(old, "amount");
         }
         if (amount == null || amount.signum() <= 0 || amount.stripTrailingZeros().scale() > 0)
@@ -104,7 +110,22 @@ public class CheckoutService {
         if (rows.isEmpty()) return null;
         if (!context.payloadHash().equals(rows.getFirst().get("payloadHash")))
             throw FinanceStore.invalid("Idempotency-Key đã dùng cho nội dung mua khác");
-        var checkout = get(owner, FinanceStore.id(rows.getFirst(), "checkoutId"));
+        var row = load(FinanceStore.id(rows.getFirst(), "checkoutId"));
+        if (!owner.equals(FinanceStore.id(row, "ownerId"))) throw FinanceStore.forbidden();
+        if ("CANCELLED".equals(row.get("status"))
+                && Boolean.TRUE.equals(row.get("replacementAllowed"))) {
+            // Keep the original idempotency evidence immutable. Follow attempts only within
+            // the same business purchase after the original checkout was safely closed.
+            var attempts = store.rows(
+                    "SELECT * FROM payment_checkouts WHERE purpose=? AND object_id=? AND environment=? ORDER BY created_at DESC,id DESC LIMIT 1",
+                    purpose, FinanceStore.id(row, "objectId"), pay2s.environment());
+            if (attempts.isEmpty()) throw FinanceStore.invalid("Không tìm được lịch sử đơn thanh toán");
+            row = attempts.getFirst();
+            if (!owner.equals(FinanceStore.id(row, "ownerId"))) throw FinanceStore.forbidden();
+            if ("CANCELLED".equals(row.get("status"))
+                    && Boolean.TRUE.equals(row.get("replacementAllowed"))) return null;
+        }
+        var checkout = view(row);
         logReusedCheckout(checkout);
         return checkout;
     }
@@ -120,15 +141,20 @@ public class CheckoutService {
 
     private void bind(UUID owner, String purpose, UUID checkout) {
         var c = PaymentRequestKey.current(owner, purpose);
-        if (c != null)
-            store.jdbc().update(
-                    "INSERT INTO payment_idempotency_keys(owner_id,environment,purpose,key_hash,payload_hash,checkout_id) VALUES (?,?,?,?,?,?)",
+        if (c != null) {
+            int bound = store.jdbc().update(
+                    "INSERT INTO payment_idempotency_keys(owner_id,environment,purpose,key_hash,payload_hash,checkout_id) VALUES (?,?,?,?,?,?) ON CONFLICT(owner_id,environment,purpose,key_hash) DO NOTHING",
                     owner,
                     pay2s.environment(),
                     purpose,
                     c.keyHash(),
                     c.payloadHash(),
                     checkout);
+            if (bound != 1 && store.rows(
+                    "SELECT k.checkout_id FROM payment_idempotency_keys k JOIN payment_checkouts original ON original.id=k.checkout_id JOIN payment_checkouts target ON target.id=? WHERE k.owner_id=? AND k.environment=? AND k.purpose=? AND k.key_hash=? AND k.payload_hash=? AND original.owner_id=target.owner_id AND original.environment=target.environment AND original.purpose=target.purpose AND original.object_id=target.object_id AND original.amount=target.amount AND (original.id=target.id OR (original.status='CANCELLED' AND original.replacement_allowed=true))",
+                    checkout, owner, pay2s.environment(), purpose, c.keyHash(), c.payloadHash()).isEmpty())
+                throw FinanceStore.invalid("Idempotency-Key chưa được phép theo đơn thay thế");
+        }
     }
 
     public Map<String, Object> load(UUID id) {
@@ -161,9 +187,10 @@ public class CheckoutService {
     public Checkout latest(String purpose, UUID object) {
         var rows =
                 store.rows(
-                        "SELECT * FROM payment_checkouts WHERE purpose=? AND object_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+                        "SELECT * FROM payment_checkouts WHERE purpose=? AND object_id=? AND environment=? ORDER BY created_at DESC,id DESC LIMIT 1",
                         purpose,
-                        object);
+                        object,
+                        pay2s.environment());
         return rows.isEmpty() ? null : view(rows.getFirst());
     }
 
@@ -198,7 +225,8 @@ public class CheckoutService {
                 Objects.toString(
                         row.get("supportCode"),
                         "SAM" + row.get("id").toString().replace("-", "").toUpperCase(Locale.ROOT)),
-                Set.of("UNKNOWN", "REVIEW", "EXPIRED", "CANCELLED").contains(status)
+                Set.of("UNKNOWN", "REVIEW", "EXPIRED").contains(status)
+                        || "CANCELLED".equals(status) && !Boolean.TRUE.equals(row.get("replacementAllowed"))
                         || "REVIEW".equals(row.get("fulfillmentStatus")));
     }
 }

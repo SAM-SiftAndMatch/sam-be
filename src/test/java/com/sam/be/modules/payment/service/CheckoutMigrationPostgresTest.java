@@ -7,6 +7,7 @@ import java.sql.DriverManager;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.*;
@@ -86,6 +87,65 @@ class CheckoutMigrationPostgresTest {
         assertEquals(0, db.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema=? AND table_name='payment_checkouts' AND column_name='support_code'", Integer.class, schema));
     }
 
+    @Test
+    void v41UpgradesExistingExpiredCheckoutWithoutRewritingHistory() throws Exception {
+        apply("V40__Durable_Checkout_Dispatch_And_Reconciliation.sql");
+        UUID id = checkout("EXPIRED", "NONE");
+        var before = db.queryForMap("SELECT * FROM payment_checkouts WHERE id=?", id);
+        // Reproduce the production failure against V40 before applying the forward fix.
+        assertThrows(DataAccessException.class, () -> db.update(
+                "UPDATE payment_checkouts SET status='CANCELLED',replacement_allowed=true WHERE id=?", id));
+        apply("V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql");
+        assertEquals(before, db.queryForMap("SELECT * FROM payment_checkouts WHERE id=?", id));
+        assertEquals(original, subscriptions());
+        assertEquals(1, db.update("UPDATE payment_checkouts SET status='CANCELLED',replacement_allowed=true WHERE id=?", id));
+        assertEquals("CANCELLED", db.queryForObject("SELECT status FROM payment_checkouts WHERE id=?", String.class, id));
+        assertEquals(Boolean.TRUE, db.queryForObject("SELECT replacement_allowed FROM payment_checkouts WHERE id=?", Boolean.class, id));
+        // A repeated provider acknowledgment changes no identity or terminal state.
+        assertEquals(1, db.update("UPDATE payment_checkouts SET status='CANCELLED',replacement_allowed=true WHERE id=?", id));
+    }
+
+    @Test
+    void v41AllowsSignedCancellationWithoutAutomaticallyPermittingReplacement() throws Exception {
+        upgrade();
+        UUID id = checkout("EXPIRED", "NONE");
+        assertEquals(1, db.update("UPDATE payment_checkouts SET status='CANCELLED' WHERE id=?", id));
+        assertEquals(Boolean.FALSE, db.queryForObject("SELECT replacement_allowed FROM payment_checkouts WHERE id=?", Boolean.class, id));
+        for (String state : List.of("CREATING", "PENDING", "UNKNOWN")) {
+            assertThrows(DataAccessException.class, () -> db.update(
+                    "UPDATE payment_checkouts SET status=? WHERE id=?", state, id));
+        }
+    }
+
+    @Test
+    void v41StillProtectsPaidCheckoutsIdentityAndAppliedBenefits() throws Exception {
+        upgrade();
+        UUID paid = checkout("PAID", "APPLIED");
+        for (String state : List.of("CREATING", "PENDING", "UNKNOWN", "CANCELLED", "EXPIRED", "REVIEW")) {
+            assertThrows(DataAccessException.class, () -> db.update(
+                    "UPDATE payment_checkouts SET status=? WHERE id=?", state, paid));
+        }
+        assertThrows(DataAccessException.class, () -> db.update(
+                "UPDATE payment_checkouts SET fulfillment_status='NONE' WHERE id=?", paid));
+        UUID expired = checkout("EXPIRED", "NONE");
+        assertThrows(DataAccessException.class, () -> db.update(
+                "UPDATE payment_checkouts SET amount=amount+1 WHERE id=?", expired));
+        assertThrows(DataAccessException.class, () -> db.update(
+                "UPDATE payment_checkouts SET environment='SANDBOX' WHERE id=?", expired));
+        assertThrows(DataAccessException.class, () -> db.update(
+                "UPDATE payment_checkouts SET expires_at=clock_timestamp() WHERE id=?", expired));
+        assertThrows(DataAccessException.class, () -> db.update(
+                "UPDATE payment_checkouts SET fulfillment_status='APPLIED' WHERE id=?", expired));
+    }
+
+    private UUID checkout(String state, String fulfillment) {
+        UUID id = UUID.randomUUID();
+        String memo = "SAM" + id.toString().replace("-", "").substring(0, 24);
+        db.update("INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,fulfillment_status,transfer_content,expires_at,support_code,merchant_scope) VALUES (?,'SUBSCRIPTION',?,?,149000,'LIVE',?,?,?,clock_timestamp()-INTERVAL '1 minute',?,'merchant')",
+                id, UUID.randomUUID(), owner, state, fulfillment, memo, memo);
+        return id;
+    }
+
     private void pending(UUID plan, String environment) {
         db.update("INSERT INTO user_subscriptions(id,user_id,package_id,status,environment,amount_paid) VALUES (?,?,?,'PENDING',?,149000)", UUID.randomUUID(), owner, plan, environment);
     }
@@ -95,7 +155,13 @@ class CheckoutMigrationPostgresTest {
     }
 
     private void upgrade() throws Exception {
-        String sql = migration("V40__Durable_Checkout_Dispatch_And_Reconciliation.sql");
+        String sql = migration("V40__Durable_Checkout_Dispatch_And_Reconciliation.sql")
+                + "\n" + migration("V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql");
+        tx.executeWithoutResult(transaction -> db.execute(sql));
+    }
+
+    private void apply(String name) throws Exception {
+        String sql = migration(name);
         tx.executeWithoutResult(transaction -> db.execute(sql));
     }
 

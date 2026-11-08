@@ -69,12 +69,13 @@ class FinancePostgresTest {
             assertNotNull(stream);
             db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
-        try (var stream =
-                getClass()
-                        .getResourceAsStream(
-                                "/db/migration/V40__Durable_Checkout_Dispatch_And_Reconciliation.sql")) {
-            assertNotNull(stream);
-            db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        for (String migration : java.util.List.of(
+                "/db/migration/V40__Durable_Checkout_Dispatch_And_Reconciliation.sql",
+                "/db/migration/V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql")) {
+            try (var stream = getClass().getResourceAsStream(migration)) {
+                assertNotNull(stream);
+                db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+            }
         }
         db.update("INSERT INTO users VALUES (?),(?)", owner, client);
         db.update("INSERT INTO jobs VALUES (?,'Finance test')", job);
