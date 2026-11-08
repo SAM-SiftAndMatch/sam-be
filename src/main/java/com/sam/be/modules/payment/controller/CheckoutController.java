@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/checkouts")
 public class CheckoutController {
     private final CheckoutService checkouts;
+    private final com.sam.be.modules.payment.service.CheckoutRetryService retries;
     private final com.sam.be.modules.payment.service.PaymentReconciliationService reconciliation;
     private final com.sam.be.modules.user.repository.UserRepository users;
     private final org.springframework.security.crypto.password.PasswordEncoder passwords;
@@ -56,6 +57,16 @@ public class CheckoutController {
             throw com.sam.be.modules.finance.FinanceStore.forbidden();
         reconciliation.action(actor, id, input.action(), input.evidenceReference());
         return ApiResponse.builder().result(Map.of("recorded", true)).build();
+    }
+
+    @PostMapping("/{id}/prepare-retry")
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "checkout_prepare_retry", limit = 3, duration = 60, failClosed = true)
+    public ApiResponse<CheckoutService.Checkout> prepareRetry(@PathVariable UUID id) {
+        return ApiResponse.<CheckoutService.Checkout>builder()
+                .result(retries.prepare(SecurityUtils.getCurrentUserId(), id))
+                .build();
     }
 
     @GetMapping("/{id}")

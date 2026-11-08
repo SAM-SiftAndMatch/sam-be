@@ -58,7 +58,8 @@ class CheckoutRecoveryPostgresTest {
         for (String migration :
                 List.of(
                         "V39__Unified_Pay2s_Checkouts.sql",
-                        "V40__Durable_Checkout_Dispatch_And_Reconciliation.sql")) {
+                        "V40__Durable_Checkout_Dispatch_And_Reconciliation.sql",
+                        "V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql")) {
             try (var input = getClass().getResourceAsStream("/db/migration/" + migration)) {
                 assertNotNull(input);
                 db.execute(new String(input.readAllBytes(), StandardCharsets.UTF_8));
@@ -83,6 +84,7 @@ class CheckoutRecoveryPostgresTest {
 
     @AfterEach
     void cleanup() {
+        org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
         if (db != null) db.execute("DROP SCHEMA " + schema + " CASCADE");
     }
 
@@ -302,6 +304,67 @@ class CheckoutRecoveryPostgresTest {
         assertEquals(0,db.queryForObject("SELECT sum(debit-credit) FROM finance_entries",BigDecimal.class).signum());
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->tx.executeWithoutResult(t->cases.action(second,caseId,"APPROVE_LATE_ALLOCATION","repeat")));
         assertEquals(2,db.queryForObject("SELECT count(*) FROM finance_journals",Integer.class));
+    }
+
+    private UUID expiredCheckout() {
+        UUID id = UUID.randomUUID();
+        String memo = Pay2sClient.transferMemo(id.toString().replace("-", ""), "SUBSCRIPTION");
+        db.update("INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at,support_code,merchant_scope) VALUES (?,'SUBSCRIPTION',?,?,149000,'SANDBOX','EXPIRED',?,clock_timestamp()-INTERVAL '1 minute',?,'merchant')",
+                id, object, owner, memo, memo);
+        db.update("INSERT INTO payment_creation_tasks(checkout_id,return_url,state) VALUES (?,'https://sam.example/payment/return','DONE')", id);
+        return id;
+    }
+
+    @Test
+    void parallelProviderClosuresAuditOnceAndPurchasesShareOneReplacement() throws Exception {
+        UUID old = expiredCheckout();
+        var retries = new CheckoutRetryService(store, provider, service, cases, tx.getTransactionManager());
+        var together = new CountDownLatch(2);
+        when(provider.cancel(any())).thenAnswer(call -> {
+            together.countDown();
+            assertTrue(together.await(10, TimeUnit.SECONDS));
+            return new Pay2sClient.Cancellation("CANCEL_CONFIRMED");
+        });
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var first = pool.submit(() -> retries.prepare(owner, old));
+            var second = pool.submit(() -> retries.prepare(owner, old));
+            assertEquals("CANCELLED", first.get(15, TimeUnit.SECONDS).paymentStatus());
+            assertEquals("CANCELLED", second.get(15, TimeUnit.SECONDS).paymentStatus());
+            assertEquals(1, db.queryForObject("SELECT count(*) FROM payment_reconciliation_events WHERE action='PROVIDER_CLOSED_FOR_RETRY'", Integer.class));
+            var one = pool.submit(this::intent);
+            var two = pool.submit(this::intent);
+            UUID replacement = one.get(15, TimeUnit.SECONDS).orderId();
+            assertEquals(replacement, two.get(15, TimeUnit.SECONDS).orderId());
+            assertNotEquals(old, replacement);
+            assertEquals(2, db.queryForObject("SELECT count(*) FROM payment_checkouts", Integer.class));
+            assertEquals(1, db.queryForObject("SELECT count(*) FROM payment_creation_tasks WHERE state='READY'", Integer.class));
+            verify(provider, never()).create(anyString(), anyLong(), anyString(), anyString());
+        } finally { pool.shutdownNow(); }
+    }
+
+    @Test
+    void sameClientKeyResumesReplacementAfterProviderAcknowledgesClosure() {
+        UUID old = expiredCheckout();
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.addHeader("Idempotency-Key", UUID.randomUUID().toString());
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(request));
+        tx.executeWithoutResult(t -> {
+            assertNull(service.replay(owner, "SUBSCRIPTION", "package"));
+            assertEquals(old, intent().orderId());
+        });
+        when(provider.cancel(any())).thenReturn(new Pay2sClient.Cancellation("CANCEL_CONFIRMED"));
+        var retries = new CheckoutRetryService(store, provider, service, cases, tx.getTransactionManager());
+        retries.prepare(owner, old);
+        var next = tx.execute(t -> {
+            assertNull(service.replay(owner, "SUBSCRIPTION", "package"));
+            return intent();
+        });
+        assertNotEquals(old, next.orderId());
+        assertEquals(next.orderId(), tx.execute(t -> service.replay(owner, "SUBSCRIPTION", "package")).orderId());
+        assertEquals(1, db.queryForObject("SELECT count(*) FROM payment_idempotency_keys", Integer.class));
+        assertEquals(old, db.queryForObject("SELECT checkout_id FROM payment_idempotency_keys", UUID.class));
     }
 
     @Test

@@ -9,7 +9,7 @@ nhận tiền mà Pay2S đã gắn vào một đơn trước đó.
 Sau khi triển khai image chứa phần chẩn đoán này, chạy trên EC2:
 
 ```sh
-sudo docker logs --since 30m sam-backend 2>&1 | grep -E 'PAY2S_CHECKOUT_(REQUEST|RESPONSE|REUSED|FAILED)'
+sudo docker logs --since 30m sam-backend 2>&1 | grep -E 'PAY2S_CHECKOUT_(REQUEST|RESPONSE|REUSED|FAILED|CANCELLED)'
 ```
 
 - `REQUEST`: cấu hình thực tế dùng để gửi yêu cầu; `bank=MBB`,
@@ -50,3 +50,45 @@ khi cho phép thay thế. Log mới không khôi phục được phản hồi c�
 
 Tham khảo cấu trúc `bankAccounts`, `qrList`, `isDemo`, `environment`:
 [Pay2S Collection Link](https://developer.pay2s.vn/docs/api/collection-link/).
+
+## Khôi phục liên kết hết hạn
+
+Web và mobile có nút **Khôi phục thanh toán** trên trang kết quả của đơn EXPIRED.
+Chỉ dùng khi chưa chuyển tiền. Sau khi khôi phục thành công, quay lại dịch vụ rồi
+bấm thanh toán; SAM kiểm tra lại điều kiện mua và tạo liên kết mới.
+
+API xác thực chủ đơn: `POST /api/v1/checkouts/{id}/prepare-retry`.
+Luồng xử lý:
+
+```text
+Kiểm tra chủ đơn, môi trường, merchant và thời hạn
+  -> kiểm tra chưa có receipt/IPN thành công và không có worker đang chạy
+  -> thả transaction, gọi API cancel của Pay2S với đúng mã đơn cũ
+  -> chỉ chấp nhận HTTP 200 + resultCode 0 + status cancelled
+     và phản hồi khớp orderId, requestId, partnerCode
+  -> khóa đơn và kiểm tra lại receipt/IPN
+  -> đánh dấu CANCELLED, cho phép thay thế, ghi lịch sử đối soát
+  -> khách quay lại dịch vụ để thanh toán qua API nghiệp vụ hiện có
+```
+
+Timeout, HTTP 404/409, dữ liệu trả về không khớp, khác merchant hoặc có thông tin
+nhận tiền đều không cho phép thay thế. Gọi lại cancel sau mất phản hồi là an toàn
+theo contract idempotent của Pay2S; không gọi lại create khi kết quả chưa rõ.
+Yêu cầu trùng dùng cùng khóa mua chỉ theo checkout mới sau khi checkout cũ đã
+được xác nhận đóng và cho phép thay thế. Bản ghi idempotency vẫn trỏ tới đơn gốc
+và không bị cập nhật/xóa; backend tìm checkout mới nhất của cùng đối tượng nghiệp
+vụ và môi trường khi xử lý lần mua lặp. Giá đã chốt được giữ nguyên.
+
+Hủy trên Pay2S không ngăn chuyển khoản ngân hàng. Tiền về mã đơn cũ sau đó vẫn
+vào đối soát, không tự kích hoạt lần nữa. Các đơn cũ khác phạm vi khóa hoặc đã
+nhận tiền tiếp tục dùng quy trình hỗ trợ/admin hiện có.
+
+Luồng hợp đồng chọn khoản thanh toán theo môi trường đang chạy. Khoản SANDBOX
+không đổi nhãn thành LIVE, không được dùng để tính đã góp đủ tiền LIVE và vẫn
+giữ nguyên trong lịch sử. Không cần sửa env. Backend cần áp dụng migration
+`V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql` để trigger PostgreSQL
+cho phép chuyển EXPIRED sang CANCELLED sau khi xác nhận đóng đơn; các bảo vệ
+đơn đã trả tiền, định danh và quyền lợi đã kích hoạt được giữ nguyên. Không sửa
+V40 đã áp dụng và không dùng Flyway repair để bỏ qua lỗi.
+
+Tham khảo [API hủy đơn Pay2S](https://developer.pay2s.vn/docs/api/cancel-order/).
