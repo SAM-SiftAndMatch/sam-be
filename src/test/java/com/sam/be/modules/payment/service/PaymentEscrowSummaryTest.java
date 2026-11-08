@@ -52,7 +52,18 @@ class PaymentEscrowSummaryTest {
         when(totals.getFundedProjectCount()).thenReturn(1L);
         var service =
                 new PaymentServiceImpl(
-                        repository, null, null, null, null, null, null, null, cache, null);
+                        repository,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        cache,
+                        null);
 
         var result = service.getFreelancerEscrowSummary(freelancerId, freelancerId);
 
@@ -84,7 +95,18 @@ class PaymentEscrowSummaryTest {
                 .thenReturn(cached);
         var service =
                 new PaymentServiceImpl(
-                        repository, null, null, null, null, null, null, null, cache, null);
+                        repository,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        cache,
+                        null);
 
         assertSame(cached, service.getFreelancerEscrowSummary(freelancerId, freelancerId));
         verifyNoInteractions(repository);

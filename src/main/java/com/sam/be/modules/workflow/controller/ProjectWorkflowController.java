@@ -109,8 +109,9 @@ public class ProjectWorkflowController {
     @PostMapping("/{jobId}/deliveries/{deliveryId}/accept")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(
-            summary = "Client manually accepts a delivery and triggers sandbox settlement",
-            description = "This credits the sandbox wallet only; no real payout is sent")
+            summary = "Client accepts a delivery and posts project payables",
+            description =
+                    "Records debt with a 168-hour maintenance hold. No bank transfer is triggered.")
     public ApiResponse<DeliveryAcceptanceResponse> acceptDelivery(
             @PathVariable UUID jobId, @PathVariable UUID deliveryId) {
         return ApiResponse.<DeliveryAcceptanceResponse>builder()

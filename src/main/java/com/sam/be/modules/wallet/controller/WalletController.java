@@ -16,13 +16,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/wallets")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('FREELANCER')")
-@Tag(name = "Sandbox Wallet", description = "Internal sandbox balance and ledger; no bank payout")
+@Tag(
+        name = "Wallet",
+        description = "Withdrawable live payables after maintenance and ticket checks")
 public class WalletController {
 
     private final WalletService walletService;
 
     @GetMapping("/me")
-    @Operation(summary = "Get my sandbox wallet balance")
+    @Operation(summary = "Get my available live payable balance")
     public ApiResponse<WalletSummaryResponse> getMyWallet() {
         return ApiResponse.<WalletSummaryResponse>builder()
                 .result(walletService.getMyWallet(SecurityUtils.getCurrentUserId()))

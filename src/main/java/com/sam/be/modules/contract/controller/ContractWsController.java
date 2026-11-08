@@ -19,18 +19,21 @@ public class ContractWsController {
     @MessageMapping("/contracts/{contractId}/sync")
     public void syncContract(
             @DestinationVariable UUID contractId, @Payload ContractSyncPayload payload) {
+        payload.setSenderId(com.sam.be.common.security.util.SecurityUtils.getCurrentUserId());
         contractService.syncContract(contractId, payload);
     }
 
     @MessageMapping("/contracts/{contractId}/sign")
     public void signContract(
             @DestinationVariable UUID contractId, @Payload ContractSignPayload payload) {
+        payload.setSenderId(com.sam.be.common.security.util.SecurityUtils.getCurrentUserId());
         contractService.signContract(contractId, payload);
     }
 
     @MessageMapping("/contracts/{contractId}/confirm")
     public void confirmKeepContract(
             @DestinationVariable UUID contractId, @Payload ContractSignPayload payload) {
+        payload.setSenderId(com.sam.be.common.security.util.SecurityUtils.getCurrentUserId());
         contractService.confirmKeepContract(contractId, payload);
     }
 }

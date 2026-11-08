@@ -16,6 +16,8 @@ public interface JobService {
     /** Only the server-side add-on entitlement flow may call this method. */
     void activateAddons(UUID jobId, boolean featured, boolean urgent);
 
+    void processPaidRecommendations(UUID jobId);
+
     JobResponse cancelJob(UUID clientId, UUID jobId);
 
     JobResponse getJobById(UUID jobId);
