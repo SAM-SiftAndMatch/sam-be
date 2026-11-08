@@ -92,3 +92,30 @@ cho phép chuyển EXPIRED sang CANCELLED sau khi xác nhận đóng đơn; các
 V40 đã áp dụng và không dùng Flyway repair để bỏ qua lỗi.
 
 Tham khảo [API hủy đơn Pay2S](https://developer.pay2s.vn/docs/api/cancel-order/).
+
+## Đơn demo cũ nhưng SAM ghi môi trường LIVE
+
+Đổi cấu hình sang production không chuyển đơn demo tại Pay2S thành đơn thật.
+API cancel production có thể trả 404 vì đơn nằm ngoài phạm vi khóa đang dùng.
+404 hoặc việc không thấy đơn ở danh sách production không tự chứng minh đã đóng
+đơn hay chưa có tiền; không tự cho phép thay thế dựa riêng vào các dấu hiệu này.
+
+Đối chiếu mã đơn trong tài khoản demo đã tạo nó hoặc nhờ Pay2S xác nhận môi trường
+và trạng thái. Đóng đơn demo nếu còn chờ thanh toán. Khi có bằng chứng đóng đơn
+và chưa thu tiền, vào **Tài chính & bảo trì → Hồ sơ sự cố thanh toán** của SAM:
+
+1. Tìm hồ sơ ứng với checkout cũ, ghi mã bằng chứng đối chiếu demo/production.
+2. Admin thứ nhất chọn **Đề nghị xác nhận Pay2S đã đóng, chưa nhận tiền**.
+3. Admin khác chọn **Admin thứ hai duyệt xác nhận chưa nhận tiền**.
+4. Khách quay lại trang mua gói và chọn thanh toán để tạo checkout mới bằng cấu
+   hình LIVE đang chạy. Backend vẫn kiểm tra receipt, IPN, lease và điều kiện mua.
+
+Đây là quy trình duyệt đã có của SAM, không phải yêu cầu phê duyệt mới của Pay2S.
+Không xóa lịch sử, đổi nhãn môi trường trên đơn cũ hay tạm chuyển backend production
+về sandbox. Đơn có thông báo nhận tiền vẫn cần đối soát, không đi theo nhánh chưa thu.
+
+Bản vá nhận diện thêm tài khoản demo `P2S99999999` hoặc QR URL thuộc
+`sandbox-payment.pay2s.vn` trong `qrList`: nếu SAM đang LIVE thì từ chối ngay cả
+khi phản hồi thiếu cờ `isDemo`/`environment`. Tên ngân hàng ACB không phải dấu hiệu
+demo; tài khoản thật tại ACB vẫn được hỗ trợ. Bản vá này không sửa trạng thái đơn
+cũ và không cần migration mới ngoài V41 của luồng khôi phục.
