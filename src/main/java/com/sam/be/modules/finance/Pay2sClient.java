@@ -3,6 +3,7 @@ package com.sam.be.modules.finance;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sam.be.common.constant.enums.PaymentType;
 import com.sam.be.common.exception.PaymentGatewayException;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
@@ -198,6 +199,15 @@ public class Pay2sClient {
                         + order
                         + "&requestType=pay2s";
         body.put("signature", sign(secretKey, raw));
+        log.info(
+                "PAY2S_CHECKOUT_REQUEST reference={} orderId={} environment={} apiOrigin={} bank={}"
+                    + " accountLast4={}",
+                reference,
+                safeOrderId(order),
+                environment,
+                baseUrl,
+                safeBankCode(bankCode),
+                maskedAccount(bankAccount));
         try {
             return http.post()
                     .uri(baseUrl + "/v1/gateway/api/create")
@@ -307,6 +317,7 @@ public class Pay2sClient {
                                                                         .toLowerCase(Locale.ROOT))
                                                 || "sandbox-payment.pay2s.vn"
                                                         .equals(parsed.getHost());
+                                logCheckoutResponse(reference, order, result, parsed.getHost());
                                 if ("LIVE".equals(environment) && providerDemo
                                         || "SANDBOX".equals(environment) && declaredLive)
                                     throw failure(
@@ -386,6 +397,71 @@ public class Pay2sClient {
         } catch (Exception ex) {
             return "invalid";
         }
+    }
+
+    /**
+     * Diagnostic comparison only: virtual account mappings may differ from the requested account.
+     */
+    private void logCheckoutResponse(
+            String reference, String order, JsonNode result, String checkoutHost) {
+        JsonNode receivers = result.path("qrList");
+        StringJoiner summary = new StringJoiner(",");
+        boolean complete = receivers.isArray() && !receivers.isEmpty();
+        boolean different = false;
+        if (receivers.isArray()) {
+            int index = 0;
+            for (JsonNode receiver : receivers) {
+                JsonNode bank = receiver.path("bank_id");
+                JsonNode account = receiver.path("account_number");
+                boolean valid =
+                        bank.isTextual()
+                                && !bank.asText().isBlank()
+                                && account.isTextual()
+                                && !account.asText().isBlank();
+                complete &= valid;
+                different |=
+                        valid
+                                && (!bankCode.equals(bank.asText())
+                                        || !bankAccount.equals(account.asText()));
+                if (index++ < 10) {
+                    summary.add(
+                            safeBankCode(bank.asText()) + ":" + maskedAccount(account.asText()));
+                }
+            }
+        }
+        String declaredEnvironment = result.path("environment").asText().toLowerCase(Locale.ROOT);
+        log.info(
+                "PAY2S_CHECKOUT_RESPONSE reference={} orderId={} environment={} checkoutHost={}"
+                    + " providerEnvironment={} providerIsDemo={} qrCount={} receivers={}"
+                    + " receiverMatch={}",
+                reference,
+                safeOrderId(order),
+                environment,
+                checkoutHost,
+                Set.of("live", "production", "demo", "sandbox", "test")
+                                .contains(declaredEnvironment)
+                        ? declaredEnvironment
+                        : "UNKNOWN",
+                result.path("isDemo").isBoolean() ? result.path("isDemo").asText() : "UNKNOWN",
+                receivers.isArray() ? receivers.size() : 0,
+                summary.length() == 0 ? "UNAVAILABLE" : summary.toString(),
+                different ? "DIFFERENT" : complete ? "EXACT_MATCH" : "UNVERIFIED");
+    }
+
+    private static String safeOrderId(String order) {
+        return order != null && order.matches("[A-Fa-f0-9]{32}") ? order : "REDACTED";
+    }
+
+    private static String safeBankCode(String bank) {
+        return bank != null && bank.matches("[A-Za-z]{2,10}")
+                ? bank.toUpperCase(Locale.ROOT)
+                : "UNKNOWN";
+    }
+
+    private static String maskedAccount(String account) {
+        return account != null && account.matches("[0-9]{5,40}")
+                ? "****" + account.substring(account.length() - 4)
+                : "REDACTED";
     }
 
     private static Integer providerCode(JsonNode result) {
