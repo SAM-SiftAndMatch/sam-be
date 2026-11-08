@@ -74,8 +74,10 @@ Kiểm tra chủ đơn, môi trường, merchant và thời hạn
 Timeout, HTTP 404/409, dữ liệu trả về không khớp, khác merchant hoặc có thông tin
 nhận tiền đều không cho phép thay thế. Gọi lại cancel sau mất phản hồi là an toàn
 theo contract idempotent của Pay2S; không gọi lại create khi kết quả chưa rõ.
-Yêu cầu trùng dùng cùng khóa mua chỉ chuyển sang checkout mới sau khi checkout
-cũ đã được xác nhận đóng và cho phép thay thế. Giá đã chốt được giữ nguyên.
+Yêu cầu trùng dùng cùng khóa mua chỉ theo checkout mới sau khi checkout cũ đã
+được xác nhận đóng và cho phép thay thế. Bản ghi idempotency vẫn trỏ tới đơn gốc
+và không bị cập nhật/xóa; backend tìm checkout mới nhất của cùng đối tượng nghiệp
+vụ và môi trường khi xử lý lần mua lặp. Giá đã chốt được giữ nguyên.
 
 Hủy trên Pay2S không ngăn chuyển khoản ngân hàng. Tiền về mã đơn cũ sau đó vẫn
 vào đối soát, không tự kích hoạt lần nữa. Các đơn cũ khác phạm vi khóa hoặc đã
@@ -83,6 +85,10 @@ nhận tiền tiếp tục dùng quy trình hỗ trợ/admin hiện có.
 
 Luồng hợp đồng chọn khoản thanh toán theo môi trường đang chạy. Khoản SANDBOX
 không đổi nhãn thành LIVE, không được dùng để tính đã góp đủ tiền LIVE và vẫn
-giữ nguyên trong lịch sử. Không cần sửa env hoặc migration cho bản sửa này.
+giữ nguyên trong lịch sử. Không cần sửa env. Backend cần áp dụng migration
+`V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql` để trigger PostgreSQL
+cho phép chuyển EXPIRED sang CANCELLED sau khi xác nhận đóng đơn; các bảo vệ
+đơn đã trả tiền, định danh và quyền lợi đã kích hoạt được giữ nguyên. Không sửa
+V40 đã áp dụng và không dùng Flyway repair để bỏ qua lỗi.
 
 Tham khảo [API hủy đơn Pay2S](https://developer.pay2s.vn/docs/api/cancel-order/).

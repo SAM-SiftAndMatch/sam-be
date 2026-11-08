@@ -68,13 +68,39 @@ class PaymentRequestKeyTest {
     @Test
     void samePurchaseKeyCanProceedAfterConfirmedUnpaidClosure() {
         UUID previous = UUID.randomUUID();
+        UUID object = UUID.randomUUID();
+        when(store.rows(startsWith("SELECT checkout_id,payload_hash"), eq(owner), eq("LIVE"),
+                eq("SUBSCRIPTION"), any()))
+                .thenReturn(List.of(Map.of("payloadHash", PaymentRequestKey.hash("SUBSCRIPTION:package"),
+                        "checkoutId", previous)));
+        var old = Map.<String, Object>of("ownerId", owner, "objectId", object,
+                "status", "CANCELLED", "replacementAllowed", true);
+        when(store.one(eq("SELECT * FROM payment_checkouts WHERE id=?"), eq(previous)))
+                .thenReturn(old);
+        when(store.rows(startsWith("SELECT * FROM payment_checkouts WHERE purpose"),
+                eq("SUBSCRIPTION"), eq(object), eq("LIVE"))).thenReturn(List.of(old));
+        assertNull(service.replay(owner, "SUBSCRIPTION", "package"));
+        verify(provider, never()).create(anyString(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void originalKeyReadsExistingReplacementInsteadOfCreatingAnotherAttempt() {
+        UUID previous = UUID.randomUUID(), replacement = UUID.randomUUID(), object = UUID.randomUUID();
         when(store.rows(startsWith("SELECT checkout_id,payload_hash"), eq(owner), eq("LIVE"),
                 eq("SUBSCRIPTION"), any()))
                 .thenReturn(List.of(Map.of("payloadHash", PaymentRequestKey.hash("SUBSCRIPTION:package"),
                         "checkoutId", previous)));
         when(store.one(eq("SELECT * FROM payment_checkouts WHERE id=?"), eq(previous)))
-                .thenReturn(Map.of("ownerId", owner, "status", "CANCELLED", "replacementAllowed", true));
-        assertNull(service.replay(owner, "SUBSCRIPTION", "package"));
+                .thenReturn(Map.of("ownerId", owner, "objectId", object,
+                        "status", "CANCELLED", "replacementAllowed", true));
+        var next = new HashMap<String, Object>();
+        next.putAll(Map.of("id", replacement, "ownerId", owner, "objectId", object,
+                "purpose", "SUBSCRIPTION", "amount", new java.math.BigDecimal("149000"),
+                "environment", "LIVE", "status", "CREATING", "fulfillmentStatus", "NONE",
+                "expiresAt", "2026-11-08T12:00:00Z"));
+        when(store.rows(startsWith("SELECT * FROM payment_checkouts WHERE purpose"),
+                eq("SUBSCRIPTION"), eq(object), eq("LIVE"))).thenReturn(List.of(next));
+        assertEquals(replacement, service.replay(owner, "SUBSCRIPTION", "package").orderId());
         verify(provider, never()).create(anyString(), anyLong(), anyString(), anyString());
     }
 }

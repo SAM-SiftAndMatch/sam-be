@@ -58,7 +58,8 @@ class CheckoutRecoveryPostgresTest {
         for (String migration :
                 List.of(
                         "V39__Unified_Pay2s_Checkouts.sql",
-                        "V40__Durable_Checkout_Dispatch_And_Reconciliation.sql")) {
+                        "V40__Durable_Checkout_Dispatch_And_Reconciliation.sql",
+                        "V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql")) {
             try (var input = getClass().getResourceAsStream("/db/migration/" + migration)) {
                 assertNotNull(input);
                 db.execute(new String(input.readAllBytes(), StandardCharsets.UTF_8));
@@ -363,6 +364,7 @@ class CheckoutRecoveryPostgresTest {
         assertNotEquals(old, next.orderId());
         assertEquals(next.orderId(), tx.execute(t -> service.replay(owner, "SUBSCRIPTION", "package")).orderId());
         assertEquals(1, db.queryForObject("SELECT count(*) FROM payment_idempotency_keys", Integer.class));
+        assertEquals(old, db.queryForObject("SELECT checkout_id FROM payment_idempotency_keys", UUID.class));
     }
 
     @Test
