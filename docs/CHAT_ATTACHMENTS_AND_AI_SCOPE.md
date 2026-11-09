@@ -26,6 +26,15 @@ Chỉ chủ tải lên mới được gửi tệp, vào đúng phòng của tệ
 
 Migration V44 tạo `chat_attachments` và chỉ mục mã gửi tin. Spring multipart cho phép file 10MB, request 11MB để đủ phần bao multipart. Reverse proxy bên ngoài cũng cần cho phép request ít nhất 11MB. Bản mobile tiếp tục gửi tin chữ qua REST/WebSocket; để hiển thị và gửi tệp, mobile cần dùng các trường/API mới.
 
+## Nội dung đã chia sẻ trong workspace
+
+Hai nút ở góc phải chuyển giữa tiến độ thu nhỏ và thư viện ảnh, tệp, liên kết. Màn hình nhỏ mở ngăn chi tiết bên phải. Thư viện dùng lịch sử trên server, độc lập với số tin nhắn đã tải trong chat, có nút Xem thêm.
+
+- `GET /api/v1/chat/rooms/{roomId}/attachments?type=images|files&page=0&size=18`: chỉ trả tệp đã gửi trong đúng phòng; không gồm tệp mới tải lên nhưng chưa gửi.
+- `GET /api/v1/chat/rooms/{roomId}/shared-links?page=0&size=18`: phân trang theo tin nhắn chứa liên kết HTTP/HTTPS hoặc www; mỗi tin có danh sách liên kết riêng, tên người gửi và ngày gửi. Bỏ qua tin hệ thống, liên kết lỗi hoặc chứa thông tin đăng nhập.
+
+Cả hai API yêu cầu thành viên phòng, cho phép đọc lại phòng cũ. Phân trang giới hạn tối đa 100 mục; thứ tự mới nhất trước, dùng ID để ổn định khi trùng thời gian. Ảnh/tệp vẫn tải nội dung qua API xác thực hiện có. Migration V45 bổ sung chỉ mục cho tệp đã gắn tin theo phòng; cần triển khai backend cùng frontend.
+
 ## Phạm vi AI
 
 Luồng AI Brief và các endpoint BA/Risk kiểm tra phạm vi trước khi gọi tác vụ sinh SRS/đánh giá đầy đủ:

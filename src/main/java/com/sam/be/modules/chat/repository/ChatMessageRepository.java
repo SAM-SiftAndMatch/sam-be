@@ -27,6 +27,14 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
             nativeQuery = true)
     long countUnreadMessagesForUser(@Param("userId") UUID userId);
 
+    @EntityGraph(attributePaths = "sender")
+    @Query(
+            "select m from ChatMessage m where m.room.id = :roomId and m.sender is not null "
+                    + "and (m.isSystem = false or m.isSystem is null) "
+                    + "and (lower(m.content) like '%https://%' or lower(m.content) like '%http://%' or lower(m.content) like '%www.%')")
+    org.springframework.data.domain.Page<ChatMessage> findSharedLinks(
+            @Param("roomId") UUID roomId, Pageable pageable);
+
     // Lấy tin nhắn theo phòng, sắp xếp cũ nhất lên trước (như Messenger)
     @EntityGraph(attributePaths = "sender")
     List<ChatMessage> findByRoomIdOrderByCreatedAtAsc(UUID roomId);
