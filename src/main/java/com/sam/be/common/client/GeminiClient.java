@@ -59,7 +59,21 @@ public class GeminiClient {
         throw new ApiException(ErrorCode.UNEXPECTED_ERROR);
     }
 
+    /** Cheap scope classification: one attempt, a small output budget, no expensive retries. */
+    public String classifyProjectScope(String systemPrompt, String input) {
+        return extractValidJson(
+                executeRequest(
+                        systemPrompt,
+                        List.of(Map.of("role", "user", "parts", List.of(Map.of("text", input)))),
+                        64));
+    }
+
     private String executeRequest(String systemPrompt, List<Map<String, Object>> history) {
+        return executeRequest(systemPrompt, history, 8192);
+    }
+
+    private String executeRequest(
+            String systemPrompt, List<Map<String, Object>> history, int maxOutputTokens) {
         String url =
                 "https://generativelanguage.googleapis.com/v1beta/models/"
                         + model
@@ -68,7 +82,7 @@ public class GeminiClient {
 
         Map<String, Object> generationConfig = new HashMap<>();
         generationConfig.put("responseMimeType", "application/json");
-        generationConfig.put("maxOutputTokens", 8192);
+        generationConfig.put("maxOutputTokens", maxOutputTokens);
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put(

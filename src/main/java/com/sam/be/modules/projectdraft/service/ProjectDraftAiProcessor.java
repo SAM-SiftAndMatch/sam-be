@@ -34,9 +34,19 @@ public class ProjectDraftAiProcessor {
                 AiChatRequest request = new AiChatRequest();
                 request.setSessionId("draft-" + turn.getDraft().getId());
                 request.setUserMessage(turn.getUserMessage());
-                AiChatResponse response = "BA".equals(turn.getPhase())
-                        ? ai.chatWithAiBaFromHistory(request, baHistory(turn))
-                        : riskResponse(turn, request);
+                request.setProjectContext(
+                        "Dự án: "
+                                + turn.getDraft().getTitle()
+                                + "\nMô tả: "
+                                + turn.getDraft().getBrief()
+                                + "\nSRS: "
+                                + (turn.getDraft().getSrsContent() == null
+                                        ? ""
+                                        : turn.getDraft().getSrsContent()));
+                AiChatResponse response =
+                        "BA".equals(turn.getPhase())
+                                ? ai.chatWithAiBaFromHistory(request, baHistory(turn))
+                                : riskResponse(turn, request);
                 store.complete(turnId, response);
             } catch (Exception ex) {
                 log.warn("AI draft turn {} failed: {}", turnId, ex.getMessage());
@@ -56,8 +66,11 @@ public class ProjectDraftAiProcessor {
 
     private List<Map<String, Object>> baHistory(ProjectDraftAiTurn current) {
         List<Map<String, Object>> history = new ArrayList<>();
-        for (ProjectDraftAiTurn turn : turns.findByDraftIdAndActiveTrueOrderByCreatedAtAscIdAsc(current.getDraft().getId())) {
+        for (ProjectDraftAiTurn turn :
+                turns.findByDraftIdAndActiveTrueOrderByCreatedAtAscIdAsc(
+                        current.getDraft().getId())) {
             if (!"BA".equals(turn.getPhase()) || !"COMPLETED".equals(turn.getStatus())) continue;
+            if (rejected(turn)) continue;
             history.add(geminiMessage("user", turn.getUserMessage()));
             history.add(geminiMessage("model", turn.getAiResponseJson()));
         }
@@ -68,18 +81,35 @@ public class ProjectDraftAiProcessor {
         var draft = current.getDraft();
         request.setCurrentSrsContent(draft.getSrsContent());
         List<Map<String, String>> history = new ArrayList<>();
-        for (ProjectDraftAiTurn turn : turns.findByDraftIdAndActiveTrueOrderByCreatedAtAscIdAsc(draft.getId())) {
+        for (ProjectDraftAiTurn turn :
+                turns.findByDraftIdAndActiveTrueOrderByCreatedAtAscIdAsc(draft.getId())) {
             if (!"RISK".equals(turn.getPhase()) || !"COMPLETED".equals(turn.getStatus())) continue;
+            if (rejected(turn)) continue;
             history.add(Map.of("role", "user", "content", turn.getUserMessage()));
             try {
-                AiChatResponse response = mapper.readValue(turn.getAiResponseJson(), AiChatResponse.class);
-                history.add(Map.of("role", "assistant", "content", response.getAiMessage() == null ? "" : response.getAiMessage()));
+                AiChatResponse response =
+                        mapper.readValue(turn.getAiResponseJson(), AiChatResponse.class);
+                history.add(
+                        Map.of(
+                                "role",
+                                "assistant",
+                                "content",
+                                response.getAiMessage() == null ? "" : response.getAiMessage()));
             } catch (Exception ex) {
                 throw new IllegalStateException("Stored AI answer is invalid", ex);
             }
         }
         request.setChatHistory(history);
         return ai.chatWithAiRisk(request);
+    }
+
+    private boolean rejected(ProjectDraftAiTurn turn) {
+        try {
+            return "OUT_OF_SCOPE"
+                    .equals(mapper.readTree(turn.getAiResponseJson()).path("status").asText());
+        } catch (Exception ex) {
+            throw new IllegalStateException("Stored AI answer is invalid", ex);
+        }
     }
 
     private Map<String, Object> geminiMessage(String role, String content) {

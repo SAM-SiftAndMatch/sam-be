@@ -25,29 +25,35 @@ public class ProjectDraftController {
     private final ProjectDraftAiProcessor aiProcessor;
 
     @PostMapping
-    public ApiResponse<ProjectDraftResponse> create(@Valid @RequestBody CreateProjectDraftRequest request) {
+    public ApiResponse<ProjectDraftResponse> create(
+            @Valid @RequestBody CreateProjectDraftRequest request) {
         return ApiResponse.<ProjectDraftResponse>builder()
-                .result(drafts.create(SecurityUtils.getCurrentUserId(), request)).build();
+                .result(drafts.create(SecurityUtils.getCurrentUserId(), request))
+                .build();
     }
 
     @GetMapping("/page")
     public ApiResponse<PageResponse<ProjectDraftSummaryResponse>> page(
-            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
         return ApiResponse.<PageResponse<ProjectDraftSummaryResponse>>builder()
-                .result(drafts.page(SecurityUtils.getCurrentUserId(), page, size)).build();
+                .result(drafts.page(SecurityUtils.getCurrentUserId(), page, size))
+                .build();
     }
 
     @GetMapping("/{draftId}")
     public ApiResponse<ProjectDraftResponse> get(@PathVariable UUID draftId) {
         return ApiResponse.<ProjectDraftResponse>builder()
-                .result(drafts.get(SecurityUtils.getCurrentUserId(), draftId)).build();
+                .result(drafts.get(SecurityUtils.getCurrentUserId(), draftId))
+                .build();
     }
 
     @PatchMapping("/{draftId}")
-    public ApiResponse<ProjectDraftSaveResponse> update(@PathVariable UUID draftId,
-            @Valid @RequestBody UpdateProjectDraftRequest request) {
+    public ApiResponse<ProjectDraftSaveResponse> update(
+            @PathVariable UUID draftId, @Valid @RequestBody UpdateProjectDraftRequest request) {
         return ApiResponse.<ProjectDraftSaveResponse>builder()
-                .result(drafts.update(SecurityUtils.getCurrentUserId(), draftId, request)).build();
+                .result(drafts.update(SecurityUtils.getCurrentUserId(), draftId, request))
+                .build();
     }
 
     @DeleteMapping("/{draftId}")
@@ -56,18 +62,26 @@ public class ProjectDraftController {
         return ApiResponse.<Void>builder().build();
     }
 
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "ai_project_chat",
+            limit = 10,
+            duration = 60,
+            failClosed = true)
     @PostMapping("/{draftId}/ai-turns")
-    public ApiResponse<ProjectDraftAiTurnResponse> chat(@PathVariable UUID draftId,
-            @Valid @RequestBody CreateDraftAiTurnRequest request) {
+    public ApiResponse<ProjectDraftAiTurnResponse> chat(
+            @PathVariable UUID draftId, @Valid @RequestBody CreateDraftAiTurnRequest request) {
         var turn = turnStore.submit(SecurityUtils.getCurrentUserId(), draftId, request);
         return ApiResponse.<ProjectDraftAiTurnResponse>builder()
-                .result(aiProcessor.processNow(turn.getId())).build();
+                .result(aiProcessor.processNow(turn.getId()))
+                .build();
     }
 
     @PostMapping("/{draftId}/publish")
-    public ApiResponse<JobResponse> publish(@PathVariable UUID draftId,
-            @Valid @RequestBody JobCreateRequest request) {
+    public ApiResponse<JobResponse> publish(
+            @PathVariable UUID draftId, @Valid @RequestBody JobCreateRequest request) {
         return ApiResponse.<JobResponse>builder()
-                .result(drafts.publish(SecurityUtils.getCurrentUserId(), draftId, request)).build();
+                .result(drafts.publish(SecurityUtils.getCurrentUserId(), draftId, request))
+                .build();
     }
 }

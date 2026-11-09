@@ -70,6 +70,7 @@ public class AiServiceImpl implements AiService {
     private String manualQaPlanPrompt;
     private List<AiQuestion> baseQuestions;
 
+    private final com.sam.be.modules.ai.service.ProjectPromptGuard promptGuard;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final GeminiClient geminiClient;
@@ -121,13 +122,17 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public AiChatResponse chatWithAiBa(AiChatRequest request) {
-        String redisKey = BA_REDIS_PREFIX + request.getSessionId();
+        String redisKey = ownedSessionKey(BA_REDIS_PREFIX, request.getSessionId());
         List<Map<String, Object>> history = loadHistory(redisKey);
         boolean firstTurn = history.isEmpty();
+        AiChatResponse rejection = scopeRejection(request, history);
+        if (rejection != null) return rejection;
+        history = boundedHistory(history);
         history.add(createMessage("user", request.getUserMessage()));
         String aiResponseJson = geminiClient.generateContent(baSystemPrompt, history);
         AiChatResponse response =
                 parseAndUploadSrs(request.getSessionId(), aiResponseJson, true, firstTurn);
+        if ("OUT_OF_SCOPE".equals(response.getStatus())) return response;
         // Keep the actual response shown to the client in history, including the first-turn guard.
         history.add(
                 createMessage(
@@ -144,6 +149,9 @@ public class AiServiceImpl implements AiService {
             AiChatRequest request, List<Map<String, Object>> previousHistory) {
         List<Map<String, Object>> history = new ArrayList<>(previousHistory);
         boolean firstTurn = history.isEmpty();
+        AiChatResponse rejection = scopeRejection(request, history);
+        if (rejection != null) return rejection;
+        history = boundedHistory(history);
         history.add(createMessage("user", request.getUserMessage()));
         String aiResponseJson = geminiClient.generateContent(baSystemPrompt, history);
         return parseAndUploadSrs(request.getSessionId(), aiResponseJson, true, firstTurn);
@@ -151,13 +159,58 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public AiChatResponse chatWithAiRisk(AiChatRequest request) {
+        // The draft worker supplies server-owned context. Legacy HTTP clients must use
+        // their own completed BA session; incoming SRS/history cannot redefine the project.
+        String legacyRiskKey = null;
+        List<Map<String, Object>> legacyRiskHistory = null;
+        if (request.getProjectContext() == null) {
+            var baHistory = loadHistory(ownedSessionKey(BA_REDIS_PREFIX, request.getSessionId()));
+            String savedSrs = latestStoredSrs(baHistory);
+            if (savedSrs == null)
+                throw new ApiException(
+                        ErrorCode.REQUEST_FAILED,
+                        "Vui lòng hoàn tất mô tả dự án trong cùng phiên AI trước khi đánh giá rủi ro.");
+            legacyRiskKey = ownedSessionKey("ai:risk:session:", request.getSessionId());
+            legacyRiskHistory = boundedHistory(loadHistory(legacyRiskKey));
+            String revisedSrs = latestStoredSrs(legacyRiskHistory);
+            if (revisedSrs != null) savedSrs = revisedSrs;
+            request.setCurrentSrsContent(savedSrs);
+            request.setProjectContext(baHistory.getFirst().toString() + "\n" + savedSrs);
+            List<Map<String, String>> savedConversation = new ArrayList<>();
+            for (var item : legacyRiskHistory) {
+                savedConversation.add(
+                        Map.of(
+                                "role",
+                                "model".equals(item.get("role")) ? "assistant" : "user",
+                                "content",
+                                historyText(item)));
+            }
+            request.setChatHistory(savedConversation);
+        }
+        String context =
+                request.getProjectContext() != null
+                        ? request.getProjectContext()
+                        : request.getCurrentSrsContent();
+        String last =
+                request.getChatHistory() == null || request.getChatHistory().isEmpty()
+                        ? ""
+                        : request.getChatHistory().getLast().getOrDefault("content", "");
+        AiChatResponse rejection = promptGuard.rejection(request.getUserMessage(), context, last);
+        if (rejection != null) return rejection;
         StringBuilder userPrompt = new StringBuilder();
 
         // Nếu có lịch sử hội thoại thì đưa vào để AI nhớ các option đã đề xuất
         if (request.getChatHistory() != null && !request.getChatHistory().isEmpty()) {
             userPrompt.append(
                     "LỊCH SỬ ĐÀM PHÁN TRƯỚC ĐÓ (Quan trọng: phải bám sát các option đã đề xuất):\n");
-            for (Map<String, String> msg : request.getChatHistory()) {
+            int historyCharacters = 0;
+            for (Map<String, String> msg :
+                    request.getChatHistory()
+                            .subList(
+                                    Math.max(0, request.getChatHistory().size() - 24),
+                                    request.getChatHistory().size())) {
+                historyCharacters += msg.getOrDefault("content", "").length();
+                if (historyCharacters > 60000) break;
                 String role = msg.getOrDefault("role", "user");
                 String content = msg.getOrDefault("content", "");
                 userPrompt.append(role).append(": ").append(content).append("\n");
@@ -176,7 +229,14 @@ public class AiServiceImpl implements AiService {
         List<Map<String, Object>> singleTurnHistory = new ArrayList<>();
         singleTurnHistory.add(createMessage("user", userPrompt.toString()));
         String aiResponseJson = geminiClient.generateContent(riskSystemPrompt, singleTurnHistory);
-        return parseAndUploadSrs(request.getSessionId(), aiResponseJson, false, false);
+        AiChatResponse response =
+                parseAndUploadSrs(request.getSessionId(), aiResponseJson, false, false);
+        if (legacyRiskKey != null && !"OUT_OF_SCOPE".equals(response.getStatus())) {
+            legacyRiskHistory.add(createMessage("user", request.getUserMessage()));
+            legacyRiskHistory.add(createMessage("model", aiResponseJson));
+            saveHistory(legacyRiskKey, boundedHistory(legacyRiskHistory));
+        }
+        return response;
     }
 
     @Override
@@ -387,6 +447,9 @@ public class AiServiceImpl implements AiService {
             String cleaned = cleanJson(aiResponseJson);
             AiChatResponse response = permissiveMapper.readValue(cleaned, AiChatResponse.class);
 
+            if ("OUT_OF_SCOPE".equalsIgnoreCase(response.getStatus())) {
+                return com.sam.be.modules.ai.service.ProjectPromptGuard.refused();
+            }
             if (firstBaTurn) {
                 // A short initial description may not contain enough information for an SRS,
                 // even when the model incorrectly claims it is finished.
@@ -466,6 +529,60 @@ public class AiServiceImpl implements AiService {
             }
         }
         return new ArrayList<>();
+    }
+
+    private String ownedSessionKey(String prefix, String sessionId) {
+        return prefix
+                + com.sam.be.common.security.util.SecurityUtils.getCurrentUserId()
+                + ":"
+                + sessionId;
+    }
+
+    private String latestStoredSrs(List<Map<String, Object>> history) {
+        for (int i = history.size() - 1; i >= 0; i--) {
+            if (!"model".equals(history.get(i).get("role"))) continue;
+            try {
+                var reply = objectMapper.readTree(historyText(history.get(i)));
+                if (reply.path("srsContent").isTextual()
+                        && !reply.path("srsContent").asText().isBlank())
+                    return reply.path("srsContent").asText();
+            } catch (Exception ex) {
+                throw new ApiException(ErrorCode.REQUEST_FAILED, "Lịch sử dự án không hợp lệ.");
+            }
+        }
+        return null;
+    }
+
+    private String historyText(Map<String, Object> message) {
+        Object parts = message.get("parts");
+        if (parts instanceof List<?> values
+                && !values.isEmpty()
+                && values.getFirst() instanceof Map<?, ?> part)
+            return String.valueOf(part.get("text"));
+        return "";
+    }
+
+    private AiChatResponse scopeRejection(
+            AiChatRequest request, List<Map<String, Object>> history) {
+        String context = request.getProjectContext();
+        if ((context == null || context.isBlank()) && !history.isEmpty())
+            context = history.getFirst().toString();
+        String last = history.isEmpty() ? "" : history.getLast().toString();
+        return promptGuard.rejection(request.getUserMessage(), context, last);
+    }
+
+    private List<Map<String, Object>> boundedHistory(List<Map<String, Object>> history) {
+        if (history.isEmpty()) return new ArrayList<>();
+        List<Map<String, Object>> result = new ArrayList<>();
+        result.add(history.getFirst());
+        int total = history.getFirst().toString().length();
+        for (int i = history.size() - 1; i > 0 && result.size() < 23; i--) {
+            int size = history.get(i).toString().length();
+            if (total + size > 60000) break;
+            result.add(1, history.get(i));
+            total += size;
+        }
+        return result;
     }
 
     private void saveHistory(String key, List<Map<String, Object>> history) {
