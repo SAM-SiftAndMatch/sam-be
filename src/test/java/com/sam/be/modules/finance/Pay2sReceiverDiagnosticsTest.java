@@ -118,12 +118,41 @@ class Pay2sReceiverDiagnosticsTest {
 
     @Test
     void reportsDifferentBankWithoutTreatingDiagnosticsAsReceiverValidation() {
-        respond(",\"qrList\":[{\"bank_id\":\"ACB\",\"account_number\":\"P2S99999999\"}]");
+        respond(",\"qrList\":[{\"bank_id\":\"ACB\",\"account_number\":\"876543212345\"}]");
         assertEquals(URL, create().url());
         String text = logs();
-        assertFalse(text.contains("P2S99999999"));
+        assertFalse(text.contains("876543212345"));
         assertTrue(text.contains("providerEnvironment=UNKNOWN providerIsDemo=UNKNOWN"));
+        assertTrue(text.contains("receivers=ACB:****2345 receiverMatch=DIFFERENT"));
+    }
+
+    @Test
+    void knownDemoAccountCannotBecomeLiveWhenProviderOmitsDemoFlags() {
+        respond(",\"qrList\":[{\"bank_id\":\"ACB\",\"account_number\":\"P2S99999999\"}]");
+        var failure = assertThrows(PaymentGatewayException.class, this::create);
+        assertEquals("ENVIRONMENT_MISMATCH", failure.diagnostics().get("reason"));
+        String text = logs();
+        assertFalse(text.contains("P2S99999999"));
         assertTrue(text.contains("receivers=ACB:REDACTED receiverMatch=DIFFERENT"));
+    }
+
+    @Test
+    void sandboxQrUrlCannotBecomeLiveOnCanonicalPaymentHost() {
+        respond(",\"qrList\":[{\"bank_id\":\"MBB\",\"account_number\":\"" + ACCOUNT
+                + "\",\"qrUrl\":\"https://sandbox-payment.pay2s.vn/quicklink?t=PRIVATE_QR\"}]");
+        var failure = assertThrows(PaymentGatewayException.class, this::create);
+        assertEquals("ENVIRONMENT_MISMATCH", failure.diagnostics().get("reason"));
+        logs();
+    }
+
+    @Test
+    void demoReceiverInMixedListIsRejectedEvenWhenFlagsClaimProduction() {
+        respond(",\"environment\":\"production\",\"isDemo\":false,\"qrList\":["
+                + "{\"bank_id\":\"MBB\",\"account_number\":\"" + ACCOUNT + "\"},"
+                + "{\"bank_id\":\"ACB\",\"account_number\":\"P2S99999999\"}]");
+        var failure = assertThrows(PaymentGatewayException.class, this::create);
+        assertEquals("ENVIRONMENT_MISMATCH", failure.diagnostics().get("reason"));
+        logs();
     }
 
     @Test
