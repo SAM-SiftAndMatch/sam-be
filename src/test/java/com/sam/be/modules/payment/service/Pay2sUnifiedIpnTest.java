@@ -54,7 +54,15 @@ class Pay2sUnifiedIpnTest {
         when(store.one(startsWith("SELECT id FROM payment_provider_events"), any(), any(), any()))
                 .thenReturn(Map.of("id", eventId));
         when(store.one(eq("SELECT * FROM payment_provider_events WHERE id=?"), eq(eventId)))
-                .thenAnswer(a -> { event.put("verifiedPayload", payload().put("amount",event.get("amountText").toString()).toString()); return event; });
+                .thenAnswer(
+                        a -> {
+                            event.put(
+                                    "verifiedPayload",
+                                    payload()
+                                            .put("amount", event.get("amountText").toString())
+                                            .toString());
+                            return event;
+                        });
         when(store.rows(startsWith("SELECT id FROM payment_provider_events"), eq(eventId)))
                 .thenReturn(List.of(Map.of("id", eventId)));
         when(provider.environment()).thenReturn("SANDBOX");
@@ -195,13 +203,64 @@ class Pay2sUnifiedIpnTest {
 
     @Test
     void cancellationDoesNotDowngradePaidOrder() {
+        order.put("status", "PAID");
+        event.put("resultCode", 2);
+        service.accept(payload().put("resultCode", 2));
+        verify(db, never())
+                .update(
+                        startsWith("UPDATE payment_checkouts SET status='CANCELLED'"),
+                        any(UUID.class));
+        verify(cases)
+                .open(
+                        contains("CANCEL_WITH_PAYMENT"),
+                        eq(id),
+                        eq(eventId),
+                        eq("CANCELLATION_WITH_PAYMENT"));
+    }
+
+    @Test
+    void signedCancellationOfUnpaidOrderAllowsReplacementWithoutAdmin() {
         event.put("resultCode", 2);
         service.accept(payload().put("resultCode", 2));
         verify(db)
                 .update(
-                        eq(
-                                "UPDATE payment_checkouts SET status='CANCELLED' WHERE id=? AND status IN ('CREATING','PENDING','UNKNOWN','EXPIRED')"),
+                        startsWith(
+                                "UPDATE payment_checkouts SET status='CANCELLED',replacement_allowed=true"),
                         eq(id));
+        verify(db).update(contains("resolution='PROVIDER_CANCELLED_UNPAID'"), eq(id));
+        verifyNoInteractions(cases, payments);
+    }
+
+    @Test
+    void cancellationCannotUnlockReplacementWhileVerifiedPaymentIsQueued() {
+        event.put("resultCode", 2);
+        when(store.rows(
+                        startsWith("SELECT id FROM payment_provider_events WHERE order_reference="),
+                        any()))
+                .thenReturn(List.of(Map.of("id", UUID.randomUUID())));
+        service.accept(payload().put("resultCode", 2));
+        verify(db, never())
+                .update(
+                        startsWith("UPDATE payment_checkouts SET status='CANCELLED'"),
+                        any(UUID.class));
+        verify(cases)
+                .open(
+                        contains("CANCEL_WITH_PAYMENT"),
+                        eq(id),
+                        eq(eventId),
+                        eq("CANCELLATION_WITH_PAYMENT"));
+    }
+
+    @Test
+    void wrongCancellationAmountRequiresReviewRatherThanReplacement() {
+        event.put("resultCode", 2);
+        event.put("amountText", "1");
+        service.accept(payload().put("resultCode", 2).put("amount", 1));
+        verify(db, never())
+                .update(
+                        startsWith("UPDATE payment_checkouts SET status='CANCELLED'"),
+                        any(UUID.class));
+        verify(cases).open(anyString(), eq(id), eq(eventId), eq("CANCELLATION_AMOUNT_MISMATCH"));
     }
 
     @Test

@@ -1248,3 +1248,11 @@ trường nào hoặc worker đang giữ lease. Đây là phân loại thủ cô
 hai người duyệt, không phải kết luận tự động từ HTTP 404 và không phải hủy/hoàn tiền
 tại Pay2S. Lịch sử môi trường/giá/khóa idempotency giữ nguyên, khoản tiền tới muộn vẫn
 vào đối soát. Không có migration mới cho thao tác này; vẫn cần V41 đã mô tả ở trên.
+
+### 22.5. Dashboard quản trị và khôi phục tự động thông thường — 09/11/2026
+
+Không yêu cầu hai admin cho mọi lần hủy. IPN hủy hợp lệ đúng danh tính/số tiền, không có receipt hoặc IPN thành công, tự cho phép thay thế; không mở hồ sơ vận hành cho lần hủy thông thường. Đơn hết hạn dùng cancel Pay2S được xác nhận rồi mới cho phép thay thế. Timeout/404, đơn bất định, tiền đã về hoặc lỗi demo/LIVE tiếp tục cần đối soát bằng chứng và kiểm soát hai người khi kết luận thủ công.
+
+Web thêm `POST /api/v1/checkouts/{id}/retry`: một nút tạo lại liên kết ngay tại `/payment/return`, tái sử dụng đầy đủ kiểm tra nghiệp vụ của gói/hợp đồng/cọc/bảo trì/tiện ích. Giữ API đóng đơn cũ cho mobile tương thích. Không tạo lại đơn từ tham số giá trên giao diện, không tự chuyển môi trường và không chỉnh dữ liệu idempotency bất biến.
+
+Admin chuyển sang sidebar có các route tổng quan, doanh thu, người dùng và các mục vận hành hiện có. Báo cáo doanh thu chỉ lấy sổ cái LIVE `live:platform-revenue`, không cộng ký quỹ hoặc khoản chờ đối soát. V42 thêm index; không cần biến env mới. Phạm vi, API, cách tính, kiểm thử và điều kiện triển khai được ghi tại [Dashboard admin và khôi phục thanh toán](ADMIN_DASHBOARD_AND_CHECKOUT_RECOVERY.md).
