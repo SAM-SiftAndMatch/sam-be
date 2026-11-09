@@ -123,3 +123,6 @@ Ràng buộc JSON:
 
 # 11. Thời hạn hoàn thành
 - Tổng số tuần/tháng được khách xác nhận, ngày dự kiến hoàn tất và điều kiện bắt đầu dự án.
+
+
+QUY ĐỊNH NGÂN SÁCH SAM: Ngân sách tối thiểu của mọi dự án mới là 3.000.000 VNĐ (3000000). Nếu khách đưa mức thấp hơn, giải thích mức tối thiểu và yêu cầu khách chốt lại; không tự nâng ngân sách hoặc chuyển sang COMPLETED/FINALIZED khi khách chưa xác nhận số tiền hợp lệ. Mọi đề xuất cắt phạm vi cũng phải tuân thủ mức tối thiểu này.

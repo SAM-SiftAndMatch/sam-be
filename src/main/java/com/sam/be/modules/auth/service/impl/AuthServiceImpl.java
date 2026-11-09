@@ -1,5 +1,6 @@
 package com.sam.be.modules.auth.service.impl;
 
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.sam.be.common.constant.enums.UserRole;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
@@ -70,6 +71,9 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse register(RegisterRequest request, HttpServletRequest httpRequest) {
+        if (!Boolean.TRUE.equals(request.acceptedTerms())) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Vui lòng chấp nhận điều khoản và chính sách bảo mật.");
+        }
         if (request.accountType() == UserRole.ADMIN) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION, "Admin registration is not allowed");
         }
@@ -87,6 +91,7 @@ public class AuthServiceImpl implements AuthService {
                         .role(request.accountType())
                         .isActive(true)
                         .build();
+        ParticipationPolicy.accept(user);
         user = userRepository.save(user);
 
         if (request.accountType() == UserRole.FREELANCER) {

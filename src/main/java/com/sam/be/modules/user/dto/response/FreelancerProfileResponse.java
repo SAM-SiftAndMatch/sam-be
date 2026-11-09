@@ -21,6 +21,11 @@ public class FreelancerProfileResponse {
     private String fullName;
 
     private String email;
+    private String contractName;
+    private String contactEmail;
+    private String phoneNumber;
+    private java.time.Instant policyAcceptedAt;
+    private String policyVersion;
 
     private String headline;
 
