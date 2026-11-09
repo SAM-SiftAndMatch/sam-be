@@ -363,6 +363,7 @@ public class Pay2sClient {
                                                                 .toLowerCase(Locale.ROOT));
                                 boolean providerDemo =
                                         result.path("isDemo").asBoolean(false)
+                                                || hasDemoReceiver(result)
                                                 || Set.of("demo", "sandbox", "test")
                                                         .contains(
                                                                 result.path("environment")
@@ -450,6 +451,25 @@ public class Pay2sClient {
         } catch (Exception ex) {
             return "invalid";
         }
+    }
+
+    /** Recognize explicit sandbox evidence even when the response omits its environment flags. */
+    private static boolean hasDemoReceiver(JsonNode result) {
+        JsonNode receivers = result.path("qrList");
+        if (!receivers.isArray()) return false;
+        for (JsonNode receiver : receivers) {
+            // This exact account is documented by Pay2S for its demo bank. ACB itself is a
+            // real bank and must never be treated as evidence of a sandbox transaction.
+            if ("P2S99999999".equalsIgnoreCase(receiver.path("account_number").asText().strip()))
+                return true;
+            try {
+                URI qr = URI.create(receiver.path("qrUrl").asText());
+                if ("sandbox-payment.pay2s.vn".equalsIgnoreCase(qr.getHost())) return true;
+            } catch (IllegalArgumentException ignored) {
+                // A malformed QR URL is not proof of an environment. Never log QR payloads.
+            }
+        }
+        return false;
     }
 
     /**
