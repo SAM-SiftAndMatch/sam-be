@@ -1,5 +1,6 @@
 package com.sam.be.modules.job.service;
 
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
@@ -97,6 +98,7 @@ public class JobInvitationService {
         if (invitation.getStatus() == JobInvitation.Status.ACCEPTED
                 || invitation.getStatus() == JobInvitation.Status.SELECTED) return toResponse(invitation);
         requirePendingOpen(invitation, job);
+        ParticipationPolicy.requireCompleteProfile(invitation.getFreelancer());
         invitation.setStatus(JobInvitation.Status.ACCEPTED);
         invitation.setRespondedAt(LocalDateTime.now());
         syncLegacy(invitation, true);
@@ -113,6 +115,7 @@ public class JobInvitationService {
         if (!job.getClient().getId().equals(clientId)) throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         JobInvitation invitation = requireInvitation(invitationId);
         requirePendingOpen(invitation, job);
+        ParticipationPolicy.requireCompleteProfile(invitation.getFreelancer());
         invitation.setStatus(JobInvitation.Status.ACCEPTED);
         invitation.setRespondedAt(LocalDateTime.now());
         syncLegacy(invitation, true);

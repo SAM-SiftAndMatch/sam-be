@@ -1,5 +1,7 @@
 package com.sam.be.modules.job.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
@@ -19,9 +21,15 @@ public class JobCreateRequest {
 
     @NotBlank private String description;
 
-    @NotNull private BigDecimal budgetMin;
+    @NotNull
+    @DecimalMin("3000000")
+    @Digits(integer = 15, fraction = 0)
+    private BigDecimal budgetMin;
 
-    @NotNull private BigDecimal budgetMax;
+    @NotNull
+    @DecimalMin("3000000")
+    @Digits(integer = 15, fraction = 0)
+    private BigDecimal budgetMax;
 
     @NotNull private BigDecimal estimatedDurationMonths;
 

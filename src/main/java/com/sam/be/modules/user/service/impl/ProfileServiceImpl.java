@@ -1,5 +1,6 @@
 package com.sam.be.modules.user.service.impl;
 
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
@@ -86,6 +87,15 @@ public class ProfileServiceImpl implements ProfileService {
                 freelancerProfileRepository
                         .findByUserId(userId)
                         .orElse(FreelancerProfile.builder().user(user).build());
+
+        if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Vui lòng chấp nhận điều khoản và chính sách bảo mật.");
+        }
+        user.setContractName(request.getContractName().trim());
+        user.setContactEmail(request.getContactEmail().trim().toLowerCase(java.util.Locale.ROOT));
+        user.setPhoneNumber(request.getPhoneNumber().trim());
+        ParticipationPolicy.accept(user);
+        userRepository.save(user);
 
         profile.setHeadline(request.getHeadline());
         profile.setBio(request.getBio());
@@ -182,6 +192,15 @@ public class ProfileServiceImpl implements ProfileService {
                         .findByUserId(userId)
                         .orElse(ClientProfile.builder().user(user).build());
 
+        if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Vui lòng chấp nhận điều khoản và chính sách bảo mật.");
+        }
+        user.setContractName(request.getContractName().trim());
+        user.setContactEmail(request.getContactEmail().trim().toLowerCase(java.util.Locale.ROOT));
+        user.setPhoneNumber(request.getPhoneNumber().trim());
+        ParticipationPolicy.accept(user);
+        userRepository.save(user);
+
         profile.setCompanyName(request.getCompanyName());
         profile.setIndustry(request.getIndustry());
         profile.setWebsiteUrl(request.getWebsiteUrl());
@@ -212,6 +231,11 @@ public class ProfileServiceImpl implements ProfileService {
                 .userId(user.getId())
                 .fullName(user.getFullName())
                 .email(user.getEmail())
+                .contractName(user.getContractName())
+                .contactEmail(user.getContactEmail())
+                .phoneNumber(user.getPhoneNumber())
+                .policyAcceptedAt(user.getPolicyAcceptedAt())
+                .policyVersion(user.getPolicyVersion())
                 .headline(profile.getHeadline())
                 .bio(profile.getBio())
                 .hourlyRate(profile.getHourlyRate())
@@ -227,6 +251,11 @@ public class ProfileServiceImpl implements ProfileService {
                 .userId(user.getId())
                 .fullName(user.getFullName())
                 .email(user.getEmail())
+                .contractName(user.getContractName())
+                .contactEmail(user.getContactEmail())
+                .phoneNumber(user.getPhoneNumber())
+                .policyAcceptedAt(user.getPolicyAcceptedAt())
+                .policyVersion(user.getPolicyVersion())
                 .companyName(profile.getCompanyName())
                 .industry(profile.getIndustry())
                 .websiteUrl(profile.getWebsiteUrl())
