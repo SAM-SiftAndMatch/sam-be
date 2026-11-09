@@ -72,6 +72,8 @@ public class PaymentReconciliationService {
                         "NOTE",
                         "PROPOSE_PROVIDER_CLOSED",
                         "APPROVE_PROVIDER_CLOSED",
+                        "PROPOSE_DEMO_MISMATCH",
+                        "APPROVE_DEMO_MISMATCH",
                         "RETRY_EVENT",
                         "PROPOSE_LATE_ALLOCATION",
                         "APPROVE_LATE_ALLOCATION")
@@ -86,15 +88,28 @@ public class PaymentReconciliationService {
                     actor,
                     id,
                     actor);
-        if ("APPROVE_PROVIDER_CLOSED".equals(action)) {
+        boolean demoMismatch = Set.of("PROPOSE_DEMO_MISMATCH", "APPROVE_DEMO_MISMATCH").contains(action);
+        if (demoMismatch) {
+            if (checkout == null) throw FinanceStore.invalid("Hồ sơ không có checkout");
+            var candidate = store.one("SELECT * FROM payment_checkouts WHERE id=?", checkout);
+            if (!"LIVE".equals(candidate.get("environment"))
+                    || !Set.of("EXPIRED", "UNKNOWN", "CANCELLED").contains(candidate.get("status")))
+                throw FinanceStore.invalid("Chỉ xử lý đơn thử nghiệm bị ghi LIVE đã hết hạn hoặc chưa rõ kết quả; đơn đang hoạt động/đã nhận tiền cần quy trình khác");
+        }
+        if ("APPROVE_PROVIDER_CLOSED".equals(action) || "APPROVE_DEMO_MISMATCH".equals(action)) {
             if (checkout == null) throw FinanceStore.invalid("Hồ sơ không có checkout");
             var proposal =
                     store.rows(
-                            "SELECT actor_id FROM payment_reconciliation_events WHERE case_id=? AND action='PROPOSE_PROVIDER_CLOSED' ORDER BY created_at DESC LIMIT 1",
-                            id);
+                            "SELECT actor_id FROM payment_reconciliation_events WHERE case_id=? AND action=? ORDER BY created_at DESC LIMIT 1",
+                            id,
+                            demoMismatch ? "PROPOSE_DEMO_MISMATCH" : "PROPOSE_PROVIDER_CLOSED");
             if (proposal.isEmpty() || actor.equals(FinanceStore.id(proposal.getFirst(), "actorId")))
                 throw FinanceStore.invalid("Cần đề nghị từ một admin khác");
             var c = store.one("SELECT * FROM payment_checkouts WHERE id=?", checkout);
+            if (demoMismatch && !store.rows(
+                    "SELECT id FROM payment_provider_events WHERE order_reference=? AND result_code=0",
+                    checkout.toString().replace("-", "")).isEmpty())
+                throw FinanceStore.invalid("Đã có thông báo nhận tiền; phải đối soát khoản tiền trước khi đóng đơn thử nghiệm");
             if (!store.rows("SELECT id FROM payment_provider_events WHERE environment=? AND order_reference=? AND result_code=0",c.get("environment"),checkout.toString().replace("-","")).isEmpty()) throw FinanceStore.invalid("Đã có thông báo nhận tiền, cần đối soát trước");
             if ("PAID".equals(c.get("status"))
                     || "REVIEW".equals(c.get("status"))
@@ -115,7 +130,8 @@ public class PaymentReconciliationService {
                     "UPDATE payment_checkouts SET status='CANCELLED',replacement_allowed=true WHERE id=?",
                     checkout);
             store.jdbc().update(
-                    "UPDATE payment_reconciliation_cases SET state='RESOLVED',resolution='PROVIDER_CLOSED_NO_PAYMENT',resolved_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=?",
+                    "UPDATE payment_reconciliation_cases SET state='RESOLVED',resolution=?,resolved_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=?",
+                    demoMismatch ? "DEMO_MISMATCH_NO_PAYMENT" : "PROVIDER_CLOSED_NO_PAYMENT",
                     id);
         }
         if ("APPROVE_LATE_ALLOCATION".equals(action)) {
