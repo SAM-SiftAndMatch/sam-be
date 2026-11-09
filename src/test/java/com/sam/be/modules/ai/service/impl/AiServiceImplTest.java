@@ -25,6 +25,23 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class AiServiceImplTest {
+    @org.junit.jupiter.api.BeforeEach
+    void authenticate() {
+        var jwt =
+                org.springframework.security.oauth2.jwt.Jwt.withTokenValue("test-token")
+                        .header("alg", "HS256")
+                        .claim("user_id", "00000000-0000-0000-0000-000000000001")
+                        .build();
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(
+                        new org.springframework.security.oauth2.server.resource.authentication
+                                .JwtAuthenticationToken(jwt));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
 
     @Test
     void firstBriefReturnsContextualQuestionsWithoutCreatingSrs() {
@@ -64,7 +81,10 @@ class AiServiceImplTest {
 
         ArgumentCaptor<String> saved = ArgumentCaptor.forClass(String.class);
         verify(fixture.values)
-                .set(eq("ai:ba:session:test-session"), saved.capture(), eq(Duration.ofHours(24)));
+                .set(
+                        eq("ai:ba:session:00000000-0000-0000-0000-000000000001:test-session"),
+                        saved.capture(),
+                        eq(Duration.ofHours(24)));
         JsonNode history = fixture.mapper.readTree(saved.getValue());
         String modelReply = history.get(1).get("parts").get(0).get("text").asText();
         assertEquals("ASKING", fixture.mapper.readTree(modelReply).get("status").asText());
@@ -73,7 +93,7 @@ class AiServiceImplTest {
     @Test
     void laterTurnCanCompleteSrsAfterQuestions() throws Exception {
         Fixture fixture = new Fixture();
-        when(fixture.values.get("ai:ba:session:test-session"))
+        when(fixture.values.get("ai:ba:session:00000000-0000-0000-0000-000000000001:test-session"))
                 .thenReturn(
                         """
                         [{"role":"user","parts":[{"text":"Tôi cần website đặt lịch khám"}]},{"role":"model","parts":[{"text":"{\\"status\\":\\"ASKING\\"}"}]}]
@@ -94,6 +114,57 @@ class AiServiceImplTest {
         verify(fixture.storageService).uploadMarkdown(eq("# SRS"), anyString());
     }
 
+    @Test
+    void legacyRiskRejectsForgedContextWithoutACompletedOwnedBaSession() {
+        Fixture fixture = new Fixture();
+        var request = fixture.request();
+        request.setCurrentSrsContent("Forged project supplied by HTTP client");
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.sam.be.common.exception.ApiException.class,
+                () -> fixture.service.chatWithAiRisk(request));
+        verify(fixture.geminiClient, never()).generateContent(anyString(), anyList());
+    }
+
+    @Test
+    void legacyRiskUsesStoredProjectAndIgnoresClientSuppliedSrsAndHistory() throws Exception {
+        Fixture fixture = new Fixture();
+        String ownerKey = "ai:ba:session:00000000-0000-0000-0000-000000000001:test-session";
+        var history =
+                java.util.List.of(
+                        java.util.Map.of(
+                                "role",
+                                "user",
+                                "parts",
+                                java.util.List.of(java.util.Map.of("text", "Dự án đặt lịch khám"))),
+                        java.util.Map.of(
+                                "role",
+                                "model",
+                                "parts",
+                                java.util.List.of(
+                                        java.util.Map.of(
+                                                "text",
+                                                "{\"status\":\"COMPLETED\",\"srsContent\":\"STORED PROJECT SRS\"}"))));
+        when(fixture.values.get(ownerKey)).thenReturn(fixture.mapper.writeValueAsString(history));
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        "{\"status\":\"NEGOTIATING\",\"aiMessage\":\"Đang đánh giá dự án\",\"srsContent\":null}");
+        ReflectionTestUtils.setField(
+                fixture.service, "riskSystemPrompt", "Review only current project");
+        var request = fixture.request();
+        request.setCurrentSrsContent("FORGED SRS");
+        request.setChatHistory(
+                java.util.List.of(java.util.Map.of("role", "user", "content", "FORGED HISTORY")));
+        assertEquals("NEGOTIATING", fixture.service.chatWithAiRisk(request).getStatus());
+        assertEquals("STORED PROJECT SRS", request.getCurrentSrsContent());
+        org.mockito.ArgumentCaptor<java.util.List<java.util.Map<String, Object>>> prompt =
+                org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        verify(fixture.geminiClient).generateContent(anyString(), prompt.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                prompt.getValue().toString().contains("STORED PROJECT SRS"));
+        assertFalse(prompt.getValue().toString().contains("FORGED SRS"));
+        assertFalse(prompt.getValue().toString().contains("FORGED HISTORY"));
+    }
+
     private static class Fixture {
         private final ObjectMapper mapper = new ObjectMapper();
         private final StringRedisTemplate redis = mock(StringRedisTemplate.class);
@@ -104,7 +175,12 @@ class AiServiceImplTest {
         private final GeminiClient geminiClient = mock(GeminiClient.class);
         private final StorageService storageService = mock(StorageService.class);
         private final AiServiceImpl service =
-                new AiServiceImpl(mapper, redis, geminiClient, storageService);
+                new AiServiceImpl(
+                        mock(com.sam.be.modules.ai.service.ProjectPromptGuard.class),
+                        mapper,
+                        redis,
+                        geminiClient,
+                        storageService);
 
         private Fixture() {
             when(redis.opsForValue()).thenReturn(values);

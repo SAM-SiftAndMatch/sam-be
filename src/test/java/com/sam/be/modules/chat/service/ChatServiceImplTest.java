@@ -70,6 +70,7 @@ class ChatServiceImplTest {
                 .thenReturn(List.of(newest, older, extra));
         var service =
                 new ChatServiceImpl(
+                        mock(com.sam.be.modules.chat.service.ChatAttachmentService.class),
                         rooms,
                         messages,
                         mock(UserRepository.class),
@@ -104,6 +105,7 @@ class ChatServiceImplTest {
                 .thenReturn(List.of());
         var service =
                 new ChatServiceImpl(
+                        mock(com.sam.be.modules.chat.service.ChatAttachmentService.class),
                         rooms,
                         messages,
                         mock(UserRepository.class),
@@ -130,6 +132,7 @@ class ChatServiceImplTest {
         when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
         var service =
                 new ChatServiceImpl(
+                        mock(com.sam.be.modules.chat.service.ChatAttachmentService.class),
                         rooms,
                         messages,
                         mock(UserRepository.class),
@@ -165,12 +168,24 @@ class ChatServiceImplTest {
                         .content("Last message")
                         .createdAt(LocalDateTime.now())
                         .build();
-        Contract contract = Contract.builder().job(job).freelancer(freelancer).status(ContractStatus.ACTIVE).build();
+        Contract contract =
+                Contract.builder()
+                        .job(job)
+                        .freelancer(freelancer)
+                        .status(ContractStatus.ACTIVE)
+                        .build();
         when(rooms.findAllByMemberId(userId)).thenReturn(List.of(room));
         when(messages.findLatestForRooms(List.of(room.getId()))).thenReturn(List.of(last));
         when(contracts.findAllByJobIdIn(List.of(job.getId()))).thenReturn(List.of(contract));
 
-        var service = new ChatServiceImpl(rooms, messages, mock(UserRepository.class), mock(UserNotificationService.class), contracts);
+        var service =
+                new ChatServiceImpl(
+                        mock(com.sam.be.modules.chat.service.ChatAttachmentService.class),
+                        rooms,
+                        messages,
+                        mock(UserRepository.class),
+                        mock(UserNotificationService.class),
+                        contracts);
         var result = service.getMyRooms(userId);
 
         assertEquals("Last message", result.getFirst().getLastMessage());
@@ -189,15 +204,100 @@ class ChatServiceImplTest {
         User selected = User.builder().id(UUID.randomUUID()).build();
         User other = User.builder().id(UUID.randomUUID()).fullName("Other").build();
         Job job = Job.builder().id(UUID.randomUUID()).title("Job").status(JobStatus.OPEN).build();
-        ChatRoom otherRoom = ChatRoom.builder().id(UUID.randomUUID()).job(job).client(client).freelancer(other).build();
-        Contract contract = Contract.builder().job(job).freelancer(selected).status(ContractStatus.ACTIVE).build();
+        ChatRoom otherRoom =
+                ChatRoom.builder()
+                        .id(UUID.randomUUID())
+                        .job(job)
+                        .client(client)
+                        .freelancer(other)
+                        .build();
+        Contract contract =
+                Contract.builder()
+                        .job(job)
+                        .freelancer(selected)
+                        .status(ContractStatus.ACTIVE)
+                        .build();
         when(rooms.findAllByMemberId(client.getId())).thenReturn(List.of(otherRoom));
         when(messages.findLatestForRooms(List.of(otherRoom.getId()))).thenReturn(List.of());
         when(contracts.findAllByJobIdIn(List.of(job.getId()))).thenReturn(List.of(contract));
 
-        var service = new ChatServiceImpl(rooms, messages, mock(UserRepository.class), mock(UserNotificationService.class), contracts);
+        var service =
+                new ChatServiceImpl(
+                        mock(com.sam.be.modules.chat.service.ChatAttachmentService.class),
+                        rooms,
+                        messages,
+                        mock(UserRepository.class),
+                        mock(UserNotificationService.class),
+                        contracts);
         var result = service.getMyRooms(client.getId());
 
         assertNull(result.getFirst().getContractStatus());
+    }
+
+    @Test
+    void attachmentOnlyMessagesArePersistedOnceAndReturnedOnRetry() {
+        var rooms = mock(ChatRoomRepository.class);
+        var messages = mock(ChatMessageRepository.class);
+        var users = mock(UserRepository.class);
+        var attachmentService = mock(com.sam.be.modules.chat.service.ChatAttachmentService.class);
+        var notifications = mock(UserNotificationService.class);
+        UUID senderId = UUID.randomUUID();
+        User sender = User.builder().id(senderId).fullName("Client").build();
+        User recipient = User.builder().id(UUID.randomUUID()).build();
+        ChatRoom room =
+                ChatRoom.builder()
+                        .id(UUID.randomUUID())
+                        .client(sender)
+                        .freelancer(recipient)
+                        .job(Job.builder().id(UUID.randomUUID()).title("Website").build())
+                        .build();
+        var attachment =
+                com.sam.be.modules.chat.entity.ChatAttachment.builder()
+                        .id(UUID.randomUUID())
+                        .room(room)
+                        .ownerId(senderId)
+                        .fileName("photo.png")
+                        .contentType("image/png")
+                        .sizeBytes(100)
+                        .build();
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        when(users.findById(senderId)).thenReturn(Optional.of(sender));
+        when(attachmentService.claim(room.getId(), senderId, List.of(attachment.getId())))
+                .thenReturn(List.of(attachment));
+        when(messages.save(any(ChatMessage.class)))
+                .thenAnswer(
+                        invocation -> {
+                            ChatMessage message = invocation.getArgument(0);
+                            message.setId(UUID.randomUUID());
+                            return message;
+                        });
+        var service =
+                new ChatServiceImpl(
+                        attachmentService,
+                        rooms,
+                        messages,
+                        users,
+                        notifications,
+                        mock(ContractRepository.class));
+        var payload = new com.sam.be.modules.chat.dto.SendMessagePayload();
+        payload.setSenderId(senderId);
+        payload.setContent("");
+        payload.setAttachmentIds(List.of(attachment.getId()));
+        payload.setClientMessageId(UUID.randomUUID());
+        var result = service.saveAndBroadcastMessage(room.getId(), payload);
+        assertEquals(1, result.getAttachments().size());
+        assertEquals("photo.png", result.getAttachments().getFirst().fileName());
+        when(messages.findByRoomIdAndSenderIdAndClientMessageId(
+                        room.getId(), senderId, payload.getClientMessageId()))
+                .thenReturn(Optional.of(attachment.getMessage()));
+        assertEquals(
+                result.getId(), service.saveAndBroadcastMessage(room.getId(), payload).getId());
+        org.mockito.Mockito.verify(messages, org.mockito.Mockito.times(1))
+                .save(any(ChatMessage.class));
+        org.mockito.Mockito.verify(attachmentService, org.mockito.Mockito.times(1))
+                .claim(any(), any(), any());
+        payload.setContent("Different content with same id");
+        assertThrows(
+                ApiException.class, () -> service.saveAndBroadcastMessage(room.getId(), payload));
     }
 }

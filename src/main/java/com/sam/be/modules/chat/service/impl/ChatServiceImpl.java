@@ -13,8 +13,8 @@ import com.sam.be.modules.chat.entity.ChatRoom;
 import com.sam.be.modules.chat.repository.ChatMessageRepository;
 import com.sam.be.modules.chat.repository.ChatRoomRepository;
 import com.sam.be.modules.chat.service.ChatService;
-import com.sam.be.modules.notification.service.UserNotificationService;
 import com.sam.be.modules.job.entity.Job;
+import com.sam.be.modules.notification.service.UserNotificationService;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
 
+    private final com.sam.be.modules.chat.service.ChatAttachmentService attachmentService;
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
@@ -148,9 +149,38 @@ public class ChatServiceImpl implements ChatService {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
         if (room.getJob().getSelectedFreelancer() != null
-                && !room.getJob().getSelectedFreelancer().getId().equals(room.getFreelancer().getId())) {
+                && !room.getJob()
+                        .getSelectedFreelancer()
+                        .getId()
+                        .equals(room.getFreelancer().getId())) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
+
+        String content = payload.getContent() == null ? "" : payload.getContent().trim();
+        List<UUID> attachmentIds =
+                payload.getAttachmentIds() == null ? List.of() : payload.getAttachmentIds();
+        if (content.length() > 8000 || (content.isBlank() && attachmentIds.isEmpty()))
+            throw new ApiException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Tin nhắn cần nội dung hoặc tệp đính kèm; nội dung tối đa 8.000 ký tự.");
+        if (payload.getClientMessageId() != null) {
+            var existing =
+                    chatMessageRepository.findByRoomIdAndSenderIdAndClientMessageId(
+                            roomId, sender.getId(), payload.getClientMessageId());
+            if (existing.isPresent()) {
+                ChatMessage previous = existing.get();
+                if (!previous.getContent().equals(content)
+                        || !previous.getAttachments().stream()
+                                .map(com.sam.be.modules.chat.entity.ChatAttachment::getId)
+                                .collect(java.util.stream.Collectors.toSet())
+                                .equals(new java.util.HashSet<>(attachmentIds)))
+                    throw new ApiException(
+                            ErrorCode.DUPLICATE_RESOURCE,
+                            "Mã gửi tin đã được sử dụng cho nội dung khác.");
+                return toDto(roomId, previous);
+            }
+        }
+        var attachments = attachmentService.claim(roomId, sender.getId(), attachmentIds);
 
         // Lưu DB
         ChatMessage savedMsg =
@@ -158,16 +188,26 @@ public class ChatServiceImpl implements ChatService {
                         ChatMessage.builder()
                                 .room(room)
                                 .sender(sender)
-                                .content(payload.getContent())
+                                .content(content)
+                                .clientMessageId(payload.getClientMessageId())
                                 .build());
 
+        attachments.forEach(attachment -> attachment.setMessage(savedMsg));
+        savedMsg.getAttachments().addAll(attachments);
         room.setUpdatedAt(LocalDateTime.now());
         chatRoomRepository.save(room);
 
-        UUID recipientId = room.getClient().getId().equals(sender.getId())
-                ? room.getFreelancer().getId() : room.getClient().getId();
-        userNotificationService.upsertChatMessage(recipientId, sender.getId(), sender.getFullName(),
-                room.getId(), room.getJob().getId(), room.getJob().getTitle());
+        UUID recipientId =
+                room.getClient().getId().equals(sender.getId())
+                        ? room.getFreelancer().getId()
+                        : room.getClient().getId();
+        userNotificationService.upsertChatMessage(
+                recipientId,
+                sender.getId(),
+                sender.getFullName(),
+                room.getId(),
+                room.getJob().getId(),
+                room.getJob().getTitle());
 
         return toDto(room.getId(), savedMsg);
     }
@@ -217,6 +257,10 @@ public class ChatServiceImpl implements ChatService {
                 .content(msg.getContent())
                 .createdAt(msg.getCreatedAt())
                 .system(system)
+                .attachments(
+                        msg.getAttachments().stream()
+                                .map(com.sam.be.modules.chat.service.ChatAttachmentService::dto)
+                                .toList())
                 .build();
     }
 
@@ -272,7 +316,8 @@ public class ChatServiceImpl implements ChatService {
                                 toRoomDto(
                                         room,
                                         latestByRoom.get(room.getId()),
-                                        contractStatusForRoom(room, contractByJob.get(room.getJob().getId()))))
+                                        contractStatusForRoom(
+                                                room, contractByJob.get(room.getJob().getId()))))
                 .toList();
     }
 
@@ -293,7 +338,8 @@ public class ChatServiceImpl implements ChatService {
         List<ChatRoom> rooms = chatRoomRepository.findByJobIdAndMemberId(jobId, userId);
         if (rooms.isEmpty()) throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND);
         if (rooms.size() > 1) {
-            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án có nhiều phòng chat; hãy mở bằng roomId.");
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED, "Dự án có nhiều phòng chat; hãy mở bằng roomId.");
         }
         ChatRoom room = rooms.getFirst();
         return toRoomDto(room, userId);
@@ -340,7 +386,8 @@ public class ChatServiceImpl implements ChatService {
 
     private com.sam.be.common.constant.enums.ContractStatus contractStatusForRoom(
             ChatRoom room, com.sam.be.modules.contract.entity.Contract contract) {
-        return contract != null && contract.getFreelancer().getId().equals(room.getFreelancer().getId())
+        return contract != null
+                        && contract.getFreelancer().getId().equals(room.getFreelancer().getId())
                 ? contract.getStatus()
                 : null;
     }
@@ -359,7 +406,12 @@ public class ChatServiceImpl implements ChatService {
                 .clientName(room.getClient().getFullName())
                 .freelancerId(room.getFreelancer().getId())
                 .freelancerName(room.getFreelancer().getFullName())
-                .lastMessage(last != null ? last.getContent() : null)
+                .lastMessage(
+                        last != null
+                                ? (last.getContent().isBlank()
+                                        ? "Đã gửi tệp đính kèm"
+                                        : last.getContent())
+                                : null)
                 .lastMessageAt(last != null ? last.getCreatedAt() : null)
                 .createdAt(room.getCreatedAt())
                 .build();
