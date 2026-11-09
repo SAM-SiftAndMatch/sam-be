@@ -307,12 +307,40 @@ class CheckoutRecoveryPostgresTest {
     }
 
     private UUID expiredCheckout() {
+        return expiredCheckout("SANDBOX");
+    }
+
+    private UUID expiredCheckout(String environment) {
         UUID id = UUID.randomUUID();
         String memo = Pay2sClient.transferMemo(id.toString().replace("-", ""), "SUBSCRIPTION");
-        db.update("INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at,support_code,merchant_scope) VALUES (?,'SUBSCRIPTION',?,?,149000,'SANDBOX','EXPIRED',?,clock_timestamp()-INTERVAL '1 minute',?,'merchant')",
-                id, object, owner, memo, memo);
+        db.update("INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at,support_code,merchant_scope) VALUES (?,'SUBSCRIPTION',?,?,149000,?,'EXPIRED',?,clock_timestamp()-INTERVAL '1 minute',?,'merchant')",
+                id, object, owner, environment, memo, memo);
         db.update("INSERT INTO payment_creation_tasks(checkout_id,return_url,state) VALUES (?,'https://sam.example/payment/return','DONE')", id);
         return id;
+    }
+
+    @Test
+    void verifiedLegacyDemoCanBeArchivedAndReplacedWithoutCancellingWithLiveKeys() {
+        when(provider.environment()).thenReturn("LIVE");
+        UUID old = expiredCheckout("LIVE");
+        UUID first = UUID.randomUUID(), second = UUID.randomUUID();
+        db.update("INSERT INTO users VALUES (?),(?)", first, second);
+        cases.open("checkout:" + old + ":DEMO_MISMATCH", old, null, "LEGACY_UNCERTAIN");
+        UUID caseId = db.queryForObject("SELECT id FROM payment_reconciliation_cases WHERE checkout_id=?", UUID.class, old);
+        tx.executeWithoutResult(t -> cases.action(first, caseId, "PROPOSE_DEMO_MISMATCH", "fixture:demo QR, verified no real receipt"));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> tx.executeWithoutResult(t -> cases.action(first, caseId, "APPROVE_DEMO_MISMATCH", "fixture:same admin")));
+        tx.executeWithoutResult(t -> cases.action(second, caseId, "APPROVE_DEMO_MISMATCH", "fixture:independent verification"));
+        assertEquals("DEMO_MISMATCH_NO_PAYMENT", db.queryForObject("SELECT resolution FROM payment_reconciliation_cases WHERE id=?", String.class, caseId));
+        assertEquals("LIVE", db.queryForObject("SELECT environment FROM payment_checkouts WHERE id=?", String.class, old));
+        assertEquals("CANCELLED", service.get(owner, old).paymentStatus());
+        var replacement = intent();
+        assertNotEquals(old, replacement.orderId());
+        assertEquals("LIVE", replacement.environment());
+        verify(provider, never()).cancel(anyString());
+        ipn.accept(payload(old));
+        assertEquals("REVIEW", db.queryForObject("SELECT disposition FROM payment_checkout_receipts WHERE checkout_id=?", String.class, old));
+        assertEquals("CREATING", service.get(owner, replacement.orderId()).paymentStatus());
     }
 
     @Test

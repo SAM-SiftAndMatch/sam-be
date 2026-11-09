@@ -100,17 +100,28 @@ API cancel production có thể trả 404 vì đơn nằm ngoài phạm vi khóa
 404 hoặc việc không thấy đơn ở danh sách production không tự chứng minh đã đóng
 đơn hay chưa có tiền; không tự cho phép thay thế dựa riêng vào các dấu hiệu này.
 
-Đối chiếu mã đơn trong tài khoản demo đã tạo nó hoặc nhờ Pay2S xác nhận môi trường
-và trạng thái. Đóng đơn demo nếu còn chờ thanh toán. Khi có bằng chứng đóng đơn
-và chưa thu tiền, vào **Tài chính & bảo trì → Hồ sơ sự cố thanh toán** của SAM:
+Trường hợp này có thể xảy ra dù merchant dùng khóa LIVE ngay từ đầu nhưng Pay2S
+trả QR/tài khoản demo. Không yêu cầu tìm một bộ khóa demo khác nếu merchant chưa
+từng dùng bộ khóa đó. Cần đối chiếu bằng chứng phản hồi/trang thanh toán demo ứng
+với đúng mã đơn và chưa nhận tiền thật; có thể nhờ Pay2S xác minh khi thiếu dấu vết.
+
+Với bản ghi LIVE ở trạng thái EXPIRED, UNKNOWN hoặc CANCELLED và chưa có thông tin
+nhận tiền, vào **Tài chính & bảo trì → Hồ sơ sự cố thanh toán** của SAM:
 
 1. Tìm hồ sơ ứng với checkout cũ, ghi mã bằng chứng đối chiếu demo/production.
-2. Admin thứ nhất chọn **Đề nghị xác nhận Pay2S đã đóng, chưa nhận tiền**.
-3. Admin khác chọn **Admin thứ hai duyệt xác nhận chưa nhận tiền**.
+2. Admin thứ nhất chọn **Đề nghị đóng đơn thử nghiệm bị ghi LIVE, chưa nhận tiền**.
+3. Admin khác đối chiếu độc lập rồi chọn **Admin thứ hai duyệt đóng đơn thử nghiệm bị ghi LIVE**.
 4. Khách quay lại trang mua gói và chọn thanh toán để tạo checkout mới bằng cấu
    hình LIVE đang chạy. Backend vẫn kiểm tra receipt, IPN, lease và điều kiện mua.
 
-Đây là quy trình duyệt đã có của SAM, không phải yêu cầu phê duyệt mới của Pay2S.
+Hai thao tác có mã `PROPOSE_DEMO_MISMATCH` / `APPROVE_DEMO_MISMATCH`, dùng cùng
+cơ chế hai admin, xác thực lại mật khẩu và rate limit của màn đối soát hiện có.
+Kết quả `DEMO_MISMATCH_NO_PAYMENT` chỉ ghi nhận admin đã phân loại và đóng bản ghi
+thử nghiệm tại SAM; không báo Pay2S đã hủy, không gọi cancel production và không
+hoàn tiền. Thông báo nhận tiền ở bất kỳ môi trường nào, receipt hoặc lease đang
+chạy đều chặn nhánh đóng này. Đơn PAID/REVIEW hoặc đang CREATING/PENDING không đủ
+điều kiện. Mã 404 hoặc mô tả miệng chưa được đối chiếu không thay thế bằng chứng.
+
 Không xóa lịch sử, đổi nhãn môi trường trên đơn cũ hay tạm chuyển backend production
 về sandbox. Đơn có thông báo nhận tiền vẫn cần đối soát, không đi theo nhánh chưa thu.
 

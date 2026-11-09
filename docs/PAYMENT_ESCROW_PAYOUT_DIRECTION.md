@@ -1236,3 +1236,15 @@ Các bài PostgreSQL chỉ chạy khi có `FINANCE_TEST_DATABASE_URL`; CI hiện
 Bổ sung kiểm thử hủy đơn đúng chữ ký, phản hồi sai mã đơn/merchant/request, timeout, tiền tới trong lúc hủy, hai yêu cầu khôi phục song song và cùng key sau khi đóng đơn. Luồng hợp đồng chọn và tính trạng thái góp tiền theo môi trường hiện tại; không chuyển dữ liệu SANDBOX thành LIVE.
 
 Luồng khôi phục cần migration V41 để cho phép EXPIRED chuyển sang CANCELLED trong trigger PostgreSQL. V41 giữ các kiểm soát định danh bất biến, đơn PAID và quyền lợi APPLIED; không sửa lịch sử hoặc V40 đã áp dụng. Bản ghi idempotency giữ nguyên liên kết tới đơn gốc; lần mua lặp chỉ tìm checkout thay thế của cùng đối tượng nghiệp vụ/môi trường sau khi đơn gốc đã được phép thay thế, không UPDATE hoặc DELETE bằng chứng idempotency. Bộ test migration tái hiện lỗi trên V40, nâng cấp dữ liệu cũ lên V41 và kiểm tra các chuyển trạng thái trái phép vẫn bị chặn.
+
+### 22.4. Đơn thử nghiệm bị ghi nhầm LIVE trong giai đoạn tích hợp
+
+Nếu Pay2S từng trả QR/tài khoản demo dù SAM dùng khóa LIVE, không mặc định merchant
+có bộ khóa demo khác để hủy. Sau khi đối chiếu đúng đơn thử nghiệm và chưa nhận tiền
+thật, hai admin có thể dùng `PROPOSE_DEMO_MISMATCH` / `APPROVE_DEMO_MISMATCH` để đóng
+bản ghi lỗi tại SAM và cho phép checkout thay thế. Chỉ áp dụng bản ghi LIVE ở trạng
+thái EXPIRED/UNKNOWN/CANCELLED, không có receipt, thông báo thành công ở bất kỳ môi
+trường nào hoặc worker đang giữ lease. Đây là phân loại thủ công có bằng chứng và
+hai người duyệt, không phải kết luận tự động từ HTTP 404 và không phải hủy/hoàn tiền
+tại Pay2S. Lịch sử môi trường/giá/khóa idempotency giữ nguyên, khoản tiền tới muộn vẫn
+vào đối soát. Không có migration mới cho thao tác này; vẫn cần V41 đã mô tả ở trên.
