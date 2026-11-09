@@ -177,15 +177,47 @@ public class Pay2sIpnService {
         }
         int code = ((Number) event.get("resultCode")).intValue();
         if (code == 2) {
-            store.jdbc().update(
-                    "UPDATE payment_checkouts SET status='CANCELLED' WHERE id=? AND status IN ('CREATING','PENDING','UNKNOWN','EXPIRED')",
-                    checkout);
-            if (!"PAID".equals(row.get("status")))
+            BigDecimal cancelledAmount;
+            try {
+                cancelledAmount = new BigDecimal(event.get("amountText").toString());
+            } catch (NumberFormatException ex) {
+                review(eventId, checkout, "INVALID_CANCELLATION_AMOUNT");
+                return;
+            }
+            if (cancelledAmount.compareTo(FinanceStore.money(row, "amount")) != 0) {
+                review(eventId, checkout, "CANCELLATION_AMOUNT_MISMATCH");
+                return;
+            }
+            if ("PAID".equals(row.get("status"))
+                    || "REVIEW".equals(row.get("status"))
+                    || !store.rows(
+                                    "SELECT id FROM payment_checkout_receipts WHERE checkout_id=?",
+                                    checkout)
+                            .isEmpty()
+                    || !store.rows(
+                                    "SELECT id FROM payment_provider_events WHERE order_reference=? AND result_code=0",
+                                    order)
+                            .isEmpty()) {
                 cases.open(
-                        "checkout:" + checkout + ":CANCELLED",
+                        "checkout:" + checkout + ":CANCEL_WITH_PAYMENT",
                         checkout,
                         eventId,
-                        "PROVIDER_CANCELLED");
+                        "CANCELLATION_WITH_PAYMENT");
+                applied(eventId);
+                return;
+            }
+            store.jdbc()
+                    .update(
+                            "UPDATE payment_checkouts SET status='CANCELLED',replacement_allowed=true WHERE id=? AND status IN ('CREATING','PENDING','UNKNOWN','EXPIRED','CANCELLED')",
+                            checkout);
+            store.jdbc()
+                    .update(
+                            "UPDATE payment_creation_tasks SET state='REJECTED',generation=generation+1,locked_until=NULL,updated_at=clock_timestamp() WHERE checkout_id=?",
+                            checkout);
+            store.jdbc()
+                    .update(
+                            "UPDATE payment_reconciliation_cases SET state='RESOLVED',resolution='PROVIDER_CANCELLED_UNPAID',resolved_at=clock_timestamp(),updated_at=clock_timestamp() WHERE checkout_id=? AND state<>'RESOLVED' AND reason IN ('PROVIDER_CANCELLED','CHECKOUT_EXPIRED','CREATE_UNKNOWN','CREATE_STUCK','LEGACY_UNCERTAIN')",
+                            checkout);
             applied(eventId);
             return;
         }
