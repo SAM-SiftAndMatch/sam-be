@@ -110,6 +110,59 @@ class CheckoutRecoveryPostgresTest {
     }
 
     @Test
+    void verifiedCancellationUnlocksOneReplacementWithoutAdminAndLateMoneyStillRequiresReview()
+            throws Exception {
+        var old = intent();
+        var cancelled = payload(old.orderId()).put("resultCode", 2);
+        assertTrue(ipn.accept(cancelled).get("success"));
+        assertTrue(ipn.accept(cancelled).get("success"));
+        assertEquals("CANCELLED", service.get(owner, old.orderId()).paymentStatus());
+        assertEquals(
+                Boolean.TRUE,
+                db.queryForObject(
+                        "SELECT replacement_allowed FROM payment_checkouts WHERE id=?",
+                        Boolean.class,
+                        old.orderId()));
+        assertEquals(
+                0,
+                db.queryForObject(
+                        "SELECT count(*) FROM payment_reconciliation_cases WHERE state<>'RESOLVED'",
+                        Integer.class));
+        var pool = Executors.newFixedThreadPool(2);
+        var start = new CountDownLatch(1);
+        UUID replacement;
+        try {
+            Callable<UUID> buy =
+                    () -> {
+                        start.await();
+                        return intent().orderId();
+                    };
+            var first = pool.submit(buy);
+            var second = pool.submit(buy);
+            start.countDown();
+            replacement = first.get(10, TimeUnit.SECONDS);
+            assertEquals(replacement, second.get(10, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
+        assertNotEquals(old.orderId(), replacement);
+        assertEquals(2, db.queryForObject("SELECT count(*) FROM payment_checkouts", Integer.class));
+        assertTrue(ipn.accept(payload(old.orderId())).get("success"));
+        assertEquals(
+                "REVIEW",
+                db.queryForObject(
+                        "SELECT disposition FROM payment_checkout_receipts WHERE checkout_id=?",
+                        String.class,
+                        old.orderId()));
+        assertEquals("CREATING", service.get(owner, replacement).paymentStatus());
+        assertEquals(
+                1,
+                db.queryForObject(
+                        "SELECT count(*) FROM payment_reconciliation_cases WHERE reason='LATE_OR_DUPLICATE_PAYMENT'",
+                        Integer.class));
+    }
+
+    @Test
     void businessIntentAndTaskCommitBeforeExternalCall() {
         var order = intent();
         assertEquals("CREATING", order.paymentStatus());

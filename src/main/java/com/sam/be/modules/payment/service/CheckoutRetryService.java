@@ -39,13 +39,13 @@ public class CheckoutRetryService {
                     store.jdbc()
                             .update(
                                     "UPDATE payment_creation_tasks SET"
-                                        + " state='REJECTED',generation=generation+1,locked_until=NULL,updated_at=clock_timestamp()"
-                                        + " WHERE checkout_id=?",
+                                            + " state='REJECTED',generation=generation+1,locked_until=NULL,updated_at=clock_timestamp()"
+                                            + " WHERE checkout_id=?",
                                     id);
                     store.jdbc()
                             .update(
                                     "UPDATE payment_checkouts SET"
-                                        + " status='CANCELLED',replacement_allowed=true WHERE id=?",
+                                            + " status='CANCELLED',replacement_allowed=true WHERE id=?",
                                     id);
                     String key = "checkout:" + id + ":CHECKOUT_EXPIRED";
                     cases.open(key, id, null, "CHECKOUT_EXPIRED");
@@ -53,14 +53,14 @@ public class CheckoutRetryService {
                             FinanceStore.id(
                                     store.one(
                                             "SELECT id FROM payment_reconciliation_cases WHERE"
-                                                + " case_key=? FOR UPDATE",
+                                                    + " case_key=? FOR UPDATE",
                                             key),
                                     "id");
                     store.jdbc()
                             .update(
                                     "INSERT INTO"
-                                        + " payment_reconciliation_events(id,case_id,actor_id,action,evidence_reference)"
-                                        + " VALUES (?,?,?,'PROVIDER_CLOSED_FOR_RETRY',?)",
+                                            + " payment_reconciliation_events(id,case_id,actor_id,action,evidence_reference)"
+                                            + " VALUES (?,?,?,'PROVIDER_CLOSED_FOR_RETRY',?)",
                                     UUID.randomUUID(),
                                     caseId,
                                     owner,
@@ -68,8 +68,8 @@ public class CheckoutRetryService {
                     store.jdbc()
                             .update(
                                     "UPDATE payment_reconciliation_cases SET"
-                                        + " state='RESOLVED',resolution='PROVIDER_CLOSED_NO_PAYMENT',resolved_at=clock_timestamp(),updated_at=clock_timestamp()"
-                                        + " WHERE id=?",
+                                            + " state='RESOLVED',resolution='PROVIDER_CLOSED_NO_PAYMENT',resolved_at=clock_timestamp(),updated_at=clock_timestamp()"
+                                            + " WHERE id=?",
                                     caseId);
                 });
         return checkouts.get(owner, id);
@@ -79,32 +79,33 @@ public class CheckoutRetryService {
         Map<String, Object> row =
                 store.one(
                         "SELECT *,expires_at<=clock_timestamp() AS expired_now FROM"
-                            + " payment_checkouts WHERE id=? FOR UPDATE",
+                                + " payment_checkouts WHERE id=? FOR UPDATE",
                         id);
         if (!owner.equals(FinanceStore.id(row, "ownerId"))) throw FinanceStore.forbidden();
-        if (!provider.environment().equals(row.get("environment"))
-                || !provider.merchantScope().equals(row.get("merchantScope")))
-            throw FinanceStore.invalid(
-                    "Đơn thuộc cấu hình thanh toán cũ; cần hỗ trợ đối soát trước khi tạo lại");
         boolean closed =
                 "CANCELLED".equals(row.get("status"))
                         && Boolean.TRUE.equals(row.get("replacementAllowed"));
+        if (!provider.environment().equals(row.get("environment"))
+                || !closed && !provider.merchantScope().equals(row.get("merchantScope")))
+            throw FinanceStore.invalid(
+                    "Đơn thuộc cấu hình thanh toán cũ; cần hỗ trợ đối soát trước khi tạo lại");
         if (!closed
-                && (!Set.of("PENDING", "EXPIRED").contains(row.get("status"))
-                        || !Boolean.TRUE.equals(row.get("expiredNow"))))
+                && (!Set.of("PENDING", "EXPIRED", "CANCELLED").contains(row.get("status"))
+                        || !"CANCELLED".equals(row.get("status"))
+                                && !Boolean.TRUE.equals(row.get("expiredNow"))))
             throw FinanceStore.invalid("Chỉ khôi phục được liên kết đã hết hạn và chưa có tiền");
         if (!store.rows("SELECT id FROM payment_checkout_receipts WHERE checkout_id=?", id)
                         .isEmpty()
                 || !store.rows(
                                 "SELECT id FROM payment_provider_events WHERE order_reference=? AND"
-                                    + " result_code=0",
+                                        + " result_code=0",
                                 id.toString().replace("-", ""))
                         .isEmpty())
             throw FinanceStore.invalid(
                     "Đã có thông tin nhận tiền; không thanh toán lại, hãy liên hệ hỗ trợ");
         if (!store.rows(
                         "SELECT checkout_id FROM payment_creation_tasks WHERE checkout_id=? AND"
-                            + " state='LEASED' AND locked_until>clock_timestamp()",
+                                + " state='LEASED' AND locked_until>clock_timestamp()",
                         id)
                 .isEmpty())
             throw FinanceStore.invalid("Đơn đang được xử lý, vui lòng kiểm tra lại sau");

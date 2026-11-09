@@ -96,6 +96,27 @@ class CheckoutRetryServiceTest {
     }
 
     @Test
+    void cancelledOrderWithoutEarlierProviderProofCanConfirmClosureAutomatically() {
+        row.put("status", "CANCELLED");
+        row.put("expiredNow", false);
+        retries.prepare(owner, id);
+        verify(provider).cancel(id.toString().replace("-", ""));
+        assertEquals(true, row.get("replacementAllowed"));
+    }
+
+    @Test
+    void
+            alreadyApprovedClosureCanRecoverAfterMerchantRotationWithoutCallingNewKeysToCancelOldOrder() {
+        row.put("status", "CANCELLED");
+        row.put("replacementAllowed", true);
+        row.put("merchantScope", "previous-merchant");
+        retries.prepare(owner, id);
+        verify(provider, never()).cancel(any());
+        row.put("environment", "SANDBOX");
+        assertThrows(ResponseStatusException.class, () -> retries.prepare(owner, id));
+    }
+
+    @Test
     void onlyOwnerCanCloseTheirOrder() {
         assertThrows(ResponseStatusException.class, () -> retries.prepare(UUID.randomUUID(), id));
         verify(provider, never()).cancel(any());
