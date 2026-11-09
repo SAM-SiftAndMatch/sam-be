@@ -1,5 +1,6 @@
 package com.sam.be.modules.job.service.impl;
 
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.constant.enums.RecommendationStatus;
@@ -97,6 +98,9 @@ public class JobServiceImpl implements JobService {
                 userRepository
                         .findById(clientId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        ParticipationPolicy.requireCompleteProfile(client);
+        ParticipationPolicy.validateBudget(request.getBudgetMin(), request.getBudgetMax());
 
         String srsContent = request.getSrsContent();
         if (srsContent == null || srsContent.isBlank()) {

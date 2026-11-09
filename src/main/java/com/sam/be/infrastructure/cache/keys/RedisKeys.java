@@ -71,8 +71,8 @@ public final class RedisKeys {
     // ==========================================
     // MODULE: USER / PROFILE
     // ==========================================
-    private static final String PREFIX_PROFILE_FREELANCER = "profile:freelancer:";
-    private static final String PREFIX_PROFILE_CLIENT = "profile:client:";
+    private static final String PREFIX_PROFILE_FREELANCER = "profile:freelancer:v2:";
+    private static final String PREFIX_PROFILE_CLIENT = "profile:client:v2:";
 
     public static String freelancerProfile(UUID userId) {
         return PREFIX_PROFILE_FREELANCER + userId;

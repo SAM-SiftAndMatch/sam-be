@@ -28,6 +28,21 @@ public class User extends AbstractAuditEntity {
     @Column(name = "full_name", nullable = false)
     private String fullName;
 
+    @Column(name = "contract_name")
+    private String contractName;
+
+    @Column(name = "contact_email")
+    private String contactEmail;
+
+    @Column(name = "phone_number")
+    private String phoneNumber;
+
+    @Column(name = "policy_accepted_at")
+    private java.time.Instant policyAcceptedAt;
+
+    @Column(name = "policy_version")
+    private String policyVersion;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserRole role;

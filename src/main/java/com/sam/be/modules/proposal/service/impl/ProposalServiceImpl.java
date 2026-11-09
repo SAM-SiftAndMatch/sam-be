@@ -1,5 +1,6 @@
 package com.sam.be.modules.proposal.service.impl;
 
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.constant.enums.ProposalStatus;
 import com.sam.be.common.exception.ApiException;
@@ -77,6 +78,7 @@ public class ProposalServiceImpl implements ProposalService {
                 userRepository
                         .findById(freelancerId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        ParticipationPolicy.requireCompleteProfile(freelancer);
 
         Proposal saved =
                 proposalRepository.save(

@@ -1,5 +1,6 @@
 package com.sam.be.modules.auth.service;
 
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.be.common.constant.enums.UserRole;
@@ -261,6 +262,8 @@ public class GoogleOAuthService {
                                 .fullName(pending.name())
                                 .role(role)
                                 .isActive(true)
+                                .policyVersion(ParticipationPolicy.VERSION)
+                                .policyAcceptedAt(java.time.Instant.now())
                                 .build());
         if (role == UserRole.CLIENT) {
             clients.save(ClientProfile.builder().user(user).build());

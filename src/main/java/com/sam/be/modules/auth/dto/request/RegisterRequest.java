@@ -1,6 +1,7 @@
 package com.sam.be.modules.auth.dto.request;
 
 import com.sam.be.common.constant.enums.UserRole;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -16,5 +17,6 @@ public record RegisterRequest(
         @NotBlank(message = "Full name is required")
                 @Size(max = 255, message = "Full name must not exceed 255 characters")
                 String fullName,
-        @NotNull(message = "Account type is required (FREELANCER or CLIENT)")
-                UserRole accountType) {}
+        @NotNull(message = "Account type is required (FREELANCER or CLIENT)") UserRole accountType,
+        @NotNull @AssertTrue(message = "Bạn phải chấp nhận điều khoản và chính sách bảo mật")
+                Boolean acceptedTerms) {}

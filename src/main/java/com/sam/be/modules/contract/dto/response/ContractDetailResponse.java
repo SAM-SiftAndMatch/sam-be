@@ -25,6 +25,13 @@ public class ContractDetailResponse {
     private Boolean freelancerKeepConfirmed;
     private UUID clientId;
     private String clientName;
+    private String clientEmail;
+    private String clientPhone;
+    private String freelancerEmail;
+    private String freelancerPhone;
+    private java.time.LocalDate contractDate;
+    private String policyVersion;
+    private String platformTerms;
     private UUID freelancerId;
     private String freelancerName;
 }

@@ -40,6 +40,17 @@ public class Contract {
     @JoinColumn(name = "client_id", nullable = false)
     private User client;
 
+    private String clientName;
+    private String clientEmail;
+    private String clientPhone;
+    private String freelancerName;
+    private String freelancerEmail;
+    private String freelancerPhone;
+    private java.time.LocalDate contractDate;
+    private String policyVersion;
+    @Column(columnDefinition = "TEXT")
+    private String platformTerms;
+
     @Column(name = "agreed_amount", nullable = false)
     private BigDecimal agreedAmount;
 
