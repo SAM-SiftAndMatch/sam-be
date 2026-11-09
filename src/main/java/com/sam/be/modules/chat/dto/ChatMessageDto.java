@@ -15,4 +15,5 @@ public class ChatMessageDto {
     private String content;
     private LocalDateTime createdAt;
     private Boolean system;
+    @Builder.Default private java.util.List<ChatAttachmentDto> attachments = java.util.List.of();
 }

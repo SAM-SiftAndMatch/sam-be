@@ -29,6 +29,12 @@ public class AiController {
         return ApiResponse.<List<AiQuestion>>builder().result(response).build();
     }
 
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "ai_project_chat",
+            limit = 10,
+            duration = 60,
+            failClosed = true)
     @PostMapping("/ba-chat")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(summary = "Chat with AI BA to generate SRS")
@@ -37,6 +43,12 @@ public class AiController {
         return ApiResponse.<AiChatResponse>builder().result(response).build();
     }
 
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "ai_project_chat",
+            limit = 10,
+            duration = 60,
+            failClosed = true)
     @PostMapping("/risk-chat")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(summary = "Chat with AI Risk Assessor to negotiate SRS/Budget/Deadline")

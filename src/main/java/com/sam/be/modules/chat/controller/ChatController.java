@@ -97,9 +97,9 @@ public class ChatController {
     }
 
     public record RestChatInput(
-            @jakarta.validation.constraints.NotBlank
-                    @jakarta.validation.constraints.Size(max = 8000)
-                    String content) {}
+            @jakarta.validation.constraints.Size(max = 8000) String content,
+            @jakarta.validation.constraints.Size(max = 5) java.util.List<UUID> attachmentIds,
+            UUID clientMessageId) {}
 
     @org.springframework.web.bind.annotation.PostMapping("/rooms/{roomId}/messages")
     @com.sam.be.common.security.annotation.RateLimit(
@@ -114,6 +114,8 @@ public class ChatController {
         SendMessagePayload payload = new SendMessagePayload();
         payload.setSenderId(SecurityUtils.getCurrentUserId());
         payload.setContent(input.content());
+        payload.setAttachmentIds(input.attachmentIds());
+        payload.setClientMessageId(input.clientMessageId());
         ChatMessageDto result = chatService.saveAndBroadcastMessage(roomId, payload);
         messagingTemplate.convertAndSend("/topic/chat/" + roomId, result);
         return ApiResponse.<ChatMessageDto>builder().result(result).build();
@@ -121,14 +123,15 @@ public class ChatController {
 
     // WEBSOCKET ENDPOINT: FE bắn tin nhắn vào đây
     // URL phía FE sẽ gọi: /app/chat/{roomId}/send
+    @com.sam.be.common.security.annotation.RateLimit(
+            type = com.sam.be.common.security.annotation.RateLimit.Type.USER_ID,
+            action = "chat_send",
+            limit = 30,
+            duration = 60,
+            failClosed = true)
     @MessageMapping("/chat/{roomId}/send")
     public void sendMessage(@DestinationVariable UUID roomId, @Payload SendMessagePayload payload) {
         payload.setSenderId(SecurityUtils.getCurrentUserId());
-        if (payload.getContent() == null
-                || payload.getContent().isBlank()
-                || payload.getContent().length() > 8000)
-            throw new com.sam.be.common.exception.ApiException(
-                    com.sam.be.common.exception.ErrorCode.VALIDATION_ERROR);
         ChatMessageDto savedMessage = chatService.saveAndBroadcastMessage(roomId, payload);
 
         // Phát thanh tin nhắn vừa lưu xuống kênh của phòng này

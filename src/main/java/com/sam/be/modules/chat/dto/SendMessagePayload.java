@@ -7,4 +7,6 @@ import lombok.Data;
 public class SendMessagePayload {
     private UUID senderId;
     private String content;
+    private java.util.List<UUID> attachmentIds;
+    private UUID clientMessageId;
 }

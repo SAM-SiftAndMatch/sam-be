@@ -14,21 +14,35 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> {
-    @Query(value = "SELECT COUNT(*) FROM ("
-            + "SELECT m.id FROM chat_rooms r JOIN chat_messages m ON m.room_id = r.id "
-            + "WHERE r.client_id = :userId AND m.sender_id IS NOT NULL AND m.sender_id <> :userId "
-            + "AND COALESCE(m.is_system, FALSE) = FALSE AND m.created_at > r.client_last_read_at "
-            + "UNION ALL SELECT m.id FROM chat_rooms r JOIN chat_messages m ON m.room_id = r.id "
-            + "WHERE r.freelancer_id = :userId AND m.sender_id IS NOT NULL AND m.sender_id <> :userId "
-            + "AND COALESCE(m.is_system, FALSE) = FALSE AND m.created_at > r.freelancer_last_read_at"
-            + ") unread_messages", nativeQuery = true)
+    @Query(
+            value =
+                    "SELECT COUNT(*) FROM ("
+                            + "SELECT m.id FROM chat_rooms r JOIN chat_messages m ON m.room_id = r.id "
+                            + "WHERE r.client_id = :userId AND m.sender_id IS NOT NULL AND m.sender_id <> :userId "
+                            + "AND COALESCE(m.is_system, FALSE) = FALSE AND m.created_at > r.client_last_read_at "
+                            + "UNION ALL SELECT m.id FROM chat_rooms r JOIN chat_messages m ON m.room_id = r.id "
+                            + "WHERE r.freelancer_id = :userId AND m.sender_id IS NOT NULL AND m.sender_id <> :userId "
+                            + "AND COALESCE(m.is_system, FALSE) = FALSE AND m.created_at > r.freelancer_last_read_at"
+                            + ") unread_messages",
+            nativeQuery = true)
     long countUnreadMessagesForUser(@Param("userId") UUID userId);
+
+    @EntityGraph(attributePaths = "sender")
+    @Query(
+            "select m from ChatMessage m where m.room.id = :roomId and m.sender is not null "
+                    + "and (m.isSystem = false or m.isSystem is null) "
+                    + "and (lower(m.content) like '%https://%' or lower(m.content) like '%http://%' or lower(m.content) like '%www.%')")
+    org.springframework.data.domain.Page<ChatMessage> findSharedLinks(
+            @Param("roomId") UUID roomId, Pageable pageable);
 
     // Lấy tin nhắn theo phòng, sắp xếp cũ nhất lên trước (như Messenger)
     @EntityGraph(attributePaths = "sender")
     List<ChatMessage> findByRoomIdOrderByCreatedAtAsc(UUID roomId);
 
     Optional<ChatMessage> findTopByRoomIdOrderByCreatedAtDesc(UUID roomId);
+
+    Optional<ChatMessage> findByRoomIdAndSenderIdAndClientMessageId(
+            UUID roomId, UUID senderId, UUID clientMessageId);
 
     @Query(
             "SELECT m FROM ChatMessage m LEFT JOIN FETCH m.sender WHERE m.room.id IN :roomIds "
