@@ -61,6 +61,15 @@ public class ProjectWorkflowController {
                 .build();
     }
 
+    @GetMapping("/{jobId}/settlement")
+    @Operation(summary = "Get the settlement recorded when the project was accepted")
+    public ApiResponse<com.sam.be.modules.wallet.dto.response.ProjectSettlementResponse> getSettlement(
+            @PathVariable UUID jobId) {
+        return ApiResponse.<com.sam.be.modules.wallet.dto.response.ProjectSettlementResponse>builder()
+                .result(workflowService.getSettlement(SecurityUtils.getCurrentUserId(), jobId))
+                .build();
+    }
+
     @GetMapping("/{jobId}/deliveries")
     @Operation(summary = "List product delivery versions")
     public ApiResponse<List<ProjectDeliveryResponse>> getDeliveries(@PathVariable UUID jobId) {

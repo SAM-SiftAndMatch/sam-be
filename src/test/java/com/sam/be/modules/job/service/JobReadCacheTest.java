@@ -100,6 +100,7 @@ class JobReadCacheTest {
                 null,
                 null,
                 cache,
+                null,
                 null);
     }
 }

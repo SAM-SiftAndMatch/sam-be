@@ -78,6 +78,15 @@ class SubscriptionVerifiedPaymentTest {
     }
 
     @Test
+    void activationMessageReadsNaturallyWithoutDuplicatingGoiPrefix() {
+        assertEquals(
+                "APPLIED", service.activateVerifiedPayment(id, "LIVE", new BigDecimal("149000")));
+        verify(notifications)
+                .sendSubscriptionNotification(
+                        eq(owner), eq(id), eq("SUBSCRIPTION_ACTIVE"), eq("Gói PRO DEV đã được kích hoạt."));
+    }
+
+    @Test
     void sandboxMoneyCannotActivateLiveBenefits() {
         assertEquals(
                 "REVIEW", service.activateVerifiedPayment(id, "SANDBOX", new BigDecimal("149000")));

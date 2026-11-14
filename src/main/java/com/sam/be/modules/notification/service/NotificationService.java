@@ -23,6 +23,8 @@ public interface NotificationService {
     void sendPaymentNotification(
             UUID userId,
             UUID contractId,
+            UUID jobId,
+            String jobTitle,
             UUID paymentId,
             BigDecimal amount,
             String type,
@@ -47,4 +49,7 @@ public interface NotificationService {
             UUID userId, UUID jobId, String jobTitle, UUID proposalId, String type, String message);
     void sendProposalNotification(UUID userId, UUID actorUserId, String actorName, UUID jobId,
             String jobTitle, UUID proposalId, String type, String message);
+
+    void sendWorkflowNotification(UUID userId, UUID actorUserId, String actorName, UUID jobId,
+            String jobTitle, String type, String message);
 }

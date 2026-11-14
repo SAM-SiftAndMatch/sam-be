@@ -77,6 +77,8 @@ public class NotificationServiceImpl implements NotificationService {
     public void sendPaymentNotification(
             UUID userId,
             UUID contractId,
+            UUID jobId,
+            String jobTitle,
             UUID paymentId,
             BigDecimal amount,
             String type,
@@ -85,6 +87,8 @@ public class NotificationServiceImpl implements NotificationService {
                 NotificationMessage.builder()
                         .type(type)
                         .contractId(contractId)
+                        .jobId(jobId)
+                        .jobTitle(jobTitle)
                         .paymentId(paymentId)
                         .amount(amount)
                         .message(message)
@@ -182,6 +186,29 @@ public class NotificationServiceImpl implements NotificationService {
                         .jobId(jobId)
                         .jobTitle(jobTitle)
                         .proposalId(proposalId)
+                        .message(message)
+                        .timestamp(LocalDateTime.now())
+                        .build();
+
+        userNotificationService.persistAndPublish(userId, payload);
+    }
+
+    @Override
+    public void sendWorkflowNotification(
+            UUID userId,
+            UUID actorUserId,
+            String actorName,
+            UUID jobId,
+            String jobTitle,
+            String type,
+            String message) {
+        NotificationMessage payload =
+                NotificationMessage.builder()
+                        .type(type)
+                        .actorUserId(actorUserId)
+                        .actorName(actorName)
+                        .jobId(jobId)
+                        .jobTitle(jobTitle)
                         .message(message)
                         .timestamp(LocalDateTime.now())
                         .build();

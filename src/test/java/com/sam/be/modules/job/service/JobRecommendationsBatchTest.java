@@ -84,6 +84,7 @@ class JobRecommendationsBatchTest {
                         null,
                         null,
                         cache,
+                        null,
                         null);
         List<AiRecommendationResponse> result = service.getJobRecommendations(clientId, jobId);
 

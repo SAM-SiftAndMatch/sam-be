@@ -165,6 +165,91 @@ class AiServiceImplTest {
         assertFalse(prompt.getValue().toString().contains("FORGED HISTORY"));
     }
 
+    @Test
+    void contractReviewAcceptsDocumentWhenOnlyPlatformManagedIssuesRemain() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":12000000,"textMatchesField":true,"changedFromInitial":false,
+                         "issues":["Hợp đồng thiếu chữ ký của bên A và bên B","Thiếu thông tin định danh bên B"],
+                         "verdict":"NEEDS_CONFIRM","chatMessage":"Cần bổ sung chữ ký"}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("12000000"));
+
+        assertEquals("OK", review.getVerdict());
+        assertEquals(java.util.List.of(), review.getIssues());
+        assertEquals(
+                "AI đã thẩm định xong: hợp đồng hợp lệ, số tiền khớp. Hai bên nạp tiền để dự án bắt đầu nhé!",
+                review.getChatMessage());
+    }
+
+    @Test
+    void contractReviewStillNeedsConfirmWhenAmountDiffers() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":10000000,"textMatchesField":true,"changedFromInitial":false,
+                         "issues":[],"verdict":"OK","chatMessage":null}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("12000000"));
+
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+    }
+
+    @Test
+    void contractReviewStillNeedsConfirmOnRealCommercialIssue() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":12000000,"textMatchesField":true,"changedFromInitial":false,
+                         "issues":["Điều khoản bảo hành không nêu thời hạn cụ thể"],
+                         "verdict":"OK","chatMessage":null}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("12000000"));
+
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        assertEquals(
+                java.util.List.of("Điều khoản bảo hành không nêu thời hạn cụ thể"),
+                review.getIssues());
+    }
+
+    @Test
+    void contractReviewNeedsConfirmWhenAmountChangedFromAiSuggestion() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":12000000,"textMatchesField":true,"changedFromInitial":true,
+                         "issues":[],"verdict":"OK","chatMessage":null}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("10000000"));
+
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+    }
+
     private static class Fixture {
         private final ObjectMapper mapper = new ObjectMapper();
         private final StringRedisTemplate redis = mock(StringRedisTemplate.class);

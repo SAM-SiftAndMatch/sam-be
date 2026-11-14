@@ -389,15 +389,31 @@ public class AiServiceImpl implements AiService {
 
         try {
             AiContractReview review = objectMapper.readValue(cleanedJson, AiContractReview.class);
+            String originalVerdict = review.getVerdict();
+            List<String> issues =
+                    review.getIssues() == null ? new ArrayList<>() : new ArrayList<>(review.getIssues());
+            boolean hasRealIssues = issues.stream().anyMatch(issue -> !isPlatformManagedIssue(issue));
+            if (!hasRealIssues) issues.clear();
+            review.setIssues(issues);
+            boolean amountMatches = amountMatches(review, agreedAmount);
+            boolean canAccept =
+                    amountMatches
+                            && !hasRealIssues
+                            && !Boolean.TRUE.equals(review.getChangedFromInitial());
+            // Chữ ký/định danh do hệ thống quản lý nên không được coi là lỗi hợp đồng.
+            if (canAccept) {
+                review.setVerdict("OK");
+                if (!"OK".equalsIgnoreCase(originalVerdict)) review.setChatMessage(null);
+            } else {
+                review.setVerdict("NEEDS_CONFIRM");
+            }
             // Chuẩn hóa verdict lạ về NEEDS_CONFIRM để 2 bên chốt tay cho chắc
             if (!"OK".equalsIgnoreCase(review.getVerdict())) {
-                review.setVerdict("NEEDS_CONFIRM");
                 if (review.getChatMessage() == null || review.getChatMessage().isBlank()) {
                     review.setChatMessage(
                             "AI phát hiện điểm cần xem lại trong hợp đồng. Hai bên kiểm tra kỹ: nếu giữ nguyên bản này thì bấm \"Giữ nguyên\", còn không thì sửa lại rồi ký lại để thẩm định tiếp.");
                 }
             } else {
-                review.setVerdict("OK");
                 if (review.getChatMessage() == null || review.getChatMessage().isBlank()) {
                     review.setChatMessage(
                             "AI đã thẩm định xong: hợp đồng hợp lệ, số tiền khớp. Hai bên nạp tiền để dự án bắt đầu nhé!");
@@ -413,6 +429,35 @@ public class AiServiceImpl implements AiService {
                     "AI tạm thời không thẩm định được (lỗi kỹ thuật). Hai bên tự kiểm tra kỹ số tiền và điều khoản: nếu giữ nguyên bản này thì bấm \"Giữ nguyên\", còn không thì sửa lại rồi ký lại.");
             return fallback;
         }
+    }
+
+    private static boolean amountMatches(AiContractReview review, BigDecimal agreedAmount) {
+        if (review.getExtractedAmount() != null && agreedAmount != null) {
+            return review.getExtractedAmount()
+                            .subtract(agreedAmount)
+                            .abs()
+                            .compareTo(new BigDecimal("1000"))
+                    <= 0;
+        }
+        return Boolean.TRUE.equals(review.getTextMatchesField());
+    }
+
+    /** Chữ ký và thông tin định danh do nền tảng thu thập, không nằm trong văn bản hợp đồng. */
+    private static boolean isPlatformManagedIssue(String issue) {
+        if (issue == null || issue.isBlank()) return false;
+        String text = issue.toLowerCase(java.util.Locale.ROOT);
+        boolean signature =
+                text.contains("chữ ký")
+                        || text.contains("chu ky")
+                        || text.contains("ký xác nhận")
+                        || text.contains("chưa ký");
+        boolean identity =
+                text.contains("định danh")
+                        || text.contains("thông tin bên a")
+                        || text.contains("thông tin bên b")
+                        || text.contains("thông tin của bên")
+                        || text.contains("thông tin liên hệ");
+        return signature || identity;
     }
 
     private String cleanJson(String raw) {

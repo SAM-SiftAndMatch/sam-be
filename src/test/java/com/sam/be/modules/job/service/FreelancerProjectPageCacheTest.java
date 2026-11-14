@@ -83,6 +83,7 @@ class FreelancerProjectPageCacheTest {
                 null,
                 null,
                 cache,
+                null,
                 null);
     }
 }

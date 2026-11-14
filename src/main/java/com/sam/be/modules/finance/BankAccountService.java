@@ -104,6 +104,9 @@ public class BankAccountService {
         String normalizedCode = code.trim().toUpperCase(Locale.ROOT);
         String number = account.replace(" ", "");
         String name = holder.trim().replaceAll("\\s+", " ");
+        if (name.matches(".*[@\\d].*"))
+            throw invalid(
+                    "Tên chủ tài khoản phải là tên người thụ hưởng đăng ký tại ngân hàng, không dùng email hoặc số");
         if (!normalizedCode.matches("[A-Z0-9]{2,20}")
                 || !number.matches("[A-Za-z0-9]{4,40}")
                 || name.length() < 2
