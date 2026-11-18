@@ -103,7 +103,7 @@ public class BankAccountService {
     private String[] normalize(String code, String account, String holder) {
         String normalizedCode = code.trim().toUpperCase(Locale.ROOT);
         String number = account.replace(" ", "");
-        String name = holder.trim().replaceAll("\\s+", " ");
+        String name = holder.trim().replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
         if (name.matches(".*[@\\d].*"))
             throw invalid(
                     "Tên chủ tài khoản phải là tên người thụ hưởng đăng ký tại ngân hàng, không dùng email hoặc số");
@@ -130,7 +130,7 @@ public class BankAccountService {
                                 "bank:" + owner + ":" + record));
         return code.equals(row.get("bankCode"))
                 && account.equals(details.accountNumber())
-                && holder.equals(details.accountHolder());
+                && holder.equalsIgnoreCase(details.accountHolder());
     }
 
     @Transactional
