@@ -398,7 +398,8 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         manualQaPlanService.getByDeliveryId(deliveryId);
 
         delivery.setStatus(DeliveryStatus.ACCEPTED);
-        delivery.setReviewedAt(LocalDateTime.now());
+        delivery.setReviewedAt(
+                LocalDateTime.ofInstant(financeStore.now(), java.time.ZoneOffset.UTC));
         ProjectDelivery savedDelivery = deliveryRepository.save(delivery);
         List<ProjectTimelineTask> tasks =
                 taskRepository.findAllByJobIdOrderByWeekNumberAscSortOrderAsc(jobId);
@@ -482,14 +483,16 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
                         .weekNumber(middleWeek)
                         .sortOrder(2)
                         .title("Thực hiện và cập nhật tiến độ")
-                        .description("Freelancer cập nhật tiến độ, báo cáo vướng mắc và bàn giao từng phần.")
+                        .description(
+                                "Freelancer cập nhật tiến độ, báo cáo vướng mắc và bàn giao từng phần.")
                         .build(),
                 ProjectTimelineTask.builder()
                         .job(job)
                         .weekNumber(totalWeeks)
                         .sortOrder(3)
                         .title("Kiểm thử, nghiệm thu và bàn giao")
-                        .description("Khách hàng nghiệm thu sản phẩm và hai bên hoàn tất thanh toán.")
+                        .description(
+                                "Khách hàng nghiệm thu sản phẩm và hai bên hoàn tất thanh toán.")
                         .build());
     }
 

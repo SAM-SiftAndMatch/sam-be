@@ -179,7 +179,8 @@ class AiServiceImplTest {
 
         var review =
                 fixture.service.reviewContractTerms(
-                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
                         new java.math.BigDecimal("12000000"));
 
         assertEquals("OK", review.getVerdict());
@@ -202,7 +203,8 @@ class AiServiceImplTest {
 
         var review =
                 fixture.service.reviewContractTerms(
-                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
                         new java.math.BigDecimal("12000000"));
 
         assertEquals("NEEDS_CONFIRM", review.getVerdict());
@@ -222,7 +224,8 @@ class AiServiceImplTest {
 
         var review =
                 fixture.service.reviewContractTerms(
-                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
                         new java.math.BigDecimal("12000000"));
 
         assertEquals("NEEDS_CONFIRM", review.getVerdict());
@@ -244,10 +247,93 @@ class AiServiceImplTest {
 
         var review =
                 fixture.service.reviewContractTerms(
-                        "Hợp đồng ...", new java.math.BigDecimal("12000000"),
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
                         new java.math.BigDecimal("10000000"));
 
         assertEquals("NEEDS_CONFIRM", review.getVerdict());
+    }
+
+    @Test
+    void commercialIssuesMentioningSignaturesOrIdentityStillRequireConfirmation() throws Exception {
+        for (String issue :
+                java.util.List.of(
+                        "Điều khoản thanh toán mâu thuẫn: phải trả trước khi ký xác nhận nghiệm thu nhưng điều khác yêu cầu trả sau",
+                        "Thiếu chữ ký nghiệm thu làm thay đổi thời điểm thanh toán",
+                        "Thiếu thông tin định danh bên B và thiếu điều khoản bảo hành",
+                        "Thông tin bên A mâu thuẫn với điều khoản trách nhiệm")) {
+            var review = reviewWithIssues(java.util.List.of(issue));
+            assertEquals("NEEDS_CONFIRM", review.getVerdict(), issue);
+            assertEquals(java.util.List.of(issue), review.getIssues());
+        }
+    }
+
+    @Test
+    void mixedIssuesRemoveOnlyUnambiguousMissingPlatformFields() throws Exception {
+        String commercial = "Điều khoản bảo hành không nêu thời hạn cụ thể";
+        var review =
+                reviewWithIssues(
+                        java.util.List.of("Hợp đồng thiếu chữ ký của bên A và bên B", commercial));
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        assertEquals(java.util.List.of(commercial), review.getIssues());
+    }
+
+    @Test
+    void missingAmountAndUnknownVerdictsCannotBePromotedToOk() {
+        for (String json :
+                java.util.List.of(
+                        "{\"extractedAmount\":null,\"textMatchesField\":true,\"issues\":[],\"verdict\":\"OK\"}",
+                        "{\"extractedAmount\":12000000,\"textMatchesField\":true,\"issues\":[],\"verdict\":\"UNKNOWN\"}",
+                        "{\"extractedAmount\":12000000,\"textMatchesField\":true,\"issues\":[],\"verdict\":\"NEEDS_CONFIRM\"}")) {
+            Fixture f = new Fixture();
+            when(f.geminiClient.generateContent(anyString(), anyList())).thenReturn(json);
+            ReflectionTestUtils.setField(f.service, "amountReviewPrompt", "Review");
+            var review =
+                    f.service.reviewContractTerms(
+                            "Contract", new java.math.BigDecimal("12000000"), null);
+            assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        }
+    }
+
+    @Test
+    void initialPriceChangeIsDetectedEvenWhenAiReportsFalse() {
+        Fixture f = new Fixture();
+        when(f.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        "{\"extractedAmount\":12000000,\"textMatchesField\":true,\"changedFromInitial\":false,\"issues\":[],\"verdict\":\"OK\",\"chatMessage\":\"Hợp đồng hợp lệ\"}");
+        ReflectionTestUtils.setField(f.service, "amountReviewPrompt", "Review");
+        var review =
+                f.service.reviewContractTerms(
+                        "Contract",
+                        new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("10000000"));
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        assertEquals(true, review.getChangedFromInitial());
+        assertFalse(review.getChatMessage().equals("Hợp đồng hợp lệ"));
+    }
+
+    private com.sam.be.modules.ai.dto.response.AiContractReview reviewWithIssues(
+            java.util.List<String> issues) throws Exception {
+        Fixture f = new Fixture();
+        String json =
+                f.mapper.writeValueAsString(
+                        java.util.Map.of(
+                                "extractedAmount",
+                                12000000,
+                                "textMatchesField",
+                                true,
+                                "changedFromInitial",
+                                false,
+                                "issues",
+                                issues,
+                                "verdict",
+                                "NEEDS_CONFIRM"));
+        when(f.geminiClient.generateContent(anyString(), anyList())).thenReturn(json);
+        ReflectionTestUtils.setField(f.service, "amountReviewPrompt", "Review");
+        return f.service.reviewContractTerms(
+                "Contract",
+                new java.math.BigDecimal("12000000"),
+                new java.math.BigDecimal("12000000"));
     }
 
     private static class Fixture {

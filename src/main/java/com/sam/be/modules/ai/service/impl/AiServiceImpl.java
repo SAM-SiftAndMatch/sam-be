@@ -390,22 +390,39 @@ public class AiServiceImpl implements AiService {
         try {
             AiContractReview review = objectMapper.readValue(cleanedJson, AiContractReview.class);
             String originalVerdict = review.getVerdict();
+            List<String> originalIssues =
+                    review.getIssues() == null ? List.of() : review.getIssues();
             List<String> issues =
-                    review.getIssues() == null ? new ArrayList<>() : new ArrayList<>(review.getIssues());
-            boolean hasRealIssues = issues.stream().anyMatch(issue -> !isPlatformManagedIssue(issue));
-            if (!hasRealIssues) issues.clear();
+                    originalIssues.stream()
+                            .filter(issue -> !isPlatformManagedIssue(issue))
+                            .toList();
             review.setIssues(issues);
             boolean amountMatches = amountMatches(review, agreedAmount);
+            review.setTextMatchesField(amountMatches);
+            boolean amountChanged =
+                    initialAmount != null
+                            && review.getExtractedAmount() != null
+                            && review.getExtractedAmount()
+                                            .subtract(initialAmount)
+                                            .abs()
+                                            .compareTo(new BigDecimal("1000"))
+                                    > 0;
+            review.setChangedFromInitial(amountChanged);
+            boolean onlyManagedIssues = !originalIssues.isEmpty() && issues.isEmpty();
             boolean canAccept =
                     amountMatches
-                            && !hasRealIssues
-                            && !Boolean.TRUE.equals(review.getChangedFromInitial());
+                            && issues.isEmpty()
+                            && !amountChanged
+                            && ("OK".equalsIgnoreCase(originalVerdict)
+                                    || ("NEEDS_CONFIRM".equalsIgnoreCase(originalVerdict)
+                                            && onlyManagedIssues));
             // Chữ ký/định danh do hệ thống quản lý nên không được coi là lỗi hợp đồng.
             if (canAccept) {
                 review.setVerdict("OK");
                 if (!"OK".equalsIgnoreCase(originalVerdict)) review.setChatMessage(null);
             } else {
                 review.setVerdict("NEEDS_CONFIRM");
+                if ("OK".equalsIgnoreCase(originalVerdict)) review.setChatMessage(null);
             }
             // Chuẩn hóa verdict lạ về NEEDS_CONFIRM để 2 bên chốt tay cho chắc
             if (!"OK".equalsIgnoreCase(review.getVerdict())) {
@@ -439,25 +456,27 @@ public class AiServiceImpl implements AiService {
                             .compareTo(new BigDecimal("1000"))
                     <= 0;
         }
-        return Boolean.TRUE.equals(review.getTextMatchesField());
+        return false;
     }
 
     /** Chữ ký và thông tin định danh do nền tảng thu thập, không nằm trong văn bản hợp đồng. */
     private static boolean isPlatformManagedIssue(String issue) {
         if (issue == null || issue.isBlank()) return false;
-        String text = issue.toLowerCase(java.util.Locale.ROOT);
-        boolean signature =
-                text.contains("chữ ký")
-                        || text.contains("chu ky")
-                        || text.contains("ký xác nhận")
-                        || text.contains("chưa ký");
-        boolean identity =
-                text.contains("định danh")
-                        || text.contains("thông tin bên a")
-                        || text.contains("thông tin bên b")
-                        || text.contains("thông tin của bên")
-                        || text.contains("thông tin liên hệ");
-        return signature || identity;
+        String text =
+                java.text.Normalizer.normalize(issue, java.text.Normalizer.Form.NFD)
+                        .replaceAll("\\p{M}", "")
+                        .replace('đ', 'd')
+                        .replace('Đ', 'D')
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .strip()
+                        .replaceAll("\\s+", " ");
+        // Only a whole, unambiguous missing-field statement may be ignored. Mixed or
+        // commercial statements (e.g. signatures required for payment) stay for manual review.
+        return text.matches(
+                "(?:hop dong )?(?:thieu|chua co|khong co) "
+                        + "(?:khoi chu ky|chu ky(?: dien tu)?|thong tin dinh danh|thong tin lien he)"
+                        + "(?: (?:cua )?(?:ben [ab](?: (?:va|&) ben [ab])?|hai ben|cac ben|2 ben))?"
+                        + "[.!]?");
     }
 
     private String cleanJson(String raw) {

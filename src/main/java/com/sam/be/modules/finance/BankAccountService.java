@@ -71,13 +71,23 @@ public class BankAccountService {
         var normalized = normalize(code, account, holder);
         String normalizedCode = normalized[0], number = normalized[1], name = normalized[2];
         String fingerprint = cipher.fingerprint(owner + ":" + normalizedCode + ":" + number);
+        // MBB was suggested by the old UI. Search both fingerprints so an alias-only
+        // change cannot duplicate a verified beneficiary or bypass its verification state.
         var existing =
-                store.rows(
-                        "SELECT "
-                                + PUBLIC
-                                + " FROM finance_bank_accounts WHERE owner_id=? AND fingerprint=? AND status IN ('PENDING','VERIFIED')",
-                        owner,
-                        fingerprint);
+                "MB".equals(normalizedCode)
+                        ? store.rows(
+                                "SELECT "
+                                        + PUBLIC
+                                        + " FROM finance_bank_accounts WHERE owner_id=? AND fingerprint IN (?,?) AND status IN ('PENDING','VERIFIED')",
+                                owner,
+                                fingerprint,
+                                cipher.fingerprint(owner + ":MBB:" + number))
+                        : store.rows(
+                                "SELECT "
+                                        + PUBLIC
+                                        + " FROM finance_bank_accounts WHERE owner_id=? AND fingerprint=? AND status IN ('PENDING','VERIFIED')",
+                                owner,
+                                fingerprint);
         if (!existing.isEmpty()) {
             var row = existing.getFirst();
             if (!sameDetails(owner, id(row, "id"), normalizedCode, number, name))
@@ -87,22 +97,25 @@ public class BankAccountService {
         }
         UUID id = UUID.randomUUID();
         String encoded = encode(new Details(number, name));
-        store.jdbc().update(
-                "INSERT INTO finance_bank_accounts(id,owner_id,bank_code,details_encrypted,last_four,fingerprint,created_at) VALUES (?,?,?,?,?,?,?)",
-                id,
-                owner,
-                normalizedCode,
-                cipher.encrypt(encoded, "bank:" + owner + ":" + id),
-                number.substring(number.length() - 4),
-                fingerprint,
-                store.time(store.now()));
+        store.jdbc()
+                .update(
+                        "INSERT INTO finance_bank_accounts(id,owner_id,bank_code,details_encrypted,last_four,fingerprint,created_at) VALUES (?,?,?,?,?,?,?)",
+                        id,
+                        owner,
+                        normalizedCode,
+                        cipher.encrypt(encoded, "bank:" + owner + ":" + id),
+                        number.substring(number.length() - 4),
+                        fingerprint,
+                        store.time(store.now()));
         store.audit(owner, owner, id, "BANK_ADDED", "Tài khoản chờ xác minh");
         return store.one("SELECT " + PUBLIC + " FROM finance_bank_accounts WHERE id=?", id);
     }
 
     private String[] normalize(String code, String account, String holder) {
-        String normalizedCode = code.trim().toUpperCase(Locale.ROOT);
-        String number = account.replace(" ", "");
+        String normalizedCode = BankCodes.canonical(code);
+        if (!BankCodes.isSupported(normalizedCode))
+            throw invalid("Ngân hàng nhận tiền không được hỗ trợ; vui lòng chọn trong danh sách");
+        String number = account.replaceAll("[\\s\\p{Z}]+", "");
         String name = holder.trim().replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
         if (name.matches(".*[@\\d].*"))
             throw invalid(
@@ -128,7 +141,7 @@ public class BankAccountService {
                         cipher.decrypt(
                                 row.get("detailsEncrypted").toString(),
                                 "bank:" + owner + ":" + record));
-        return code.equals(row.get("bankCode"))
+        return code.equals(BankCodes.canonical(row.get("bankCode").toString()))
                 && account.equals(details.accountNumber())
                 && holder.equalsIgnoreCase(details.accountHolder());
     }
@@ -161,19 +174,22 @@ public class BankAccountService {
                     previous,
                     owner);
         Long active =
-                store.jdbc().queryForObject(
-                        "SELECT COUNT(*) FROM finance_withdrawals WHERE bank_account_id=? AND status IN ('REQUESTED','APPROVED','PROCESSING','RECONCILIATION_REQUIRED')",
-                        Long.class,
-                        previous);
+                store.jdbc()
+                        .queryForObject(
+                                "SELECT COUNT(*) FROM finance_withdrawals WHERE bank_account_id=? AND status IN ('REQUESTED','APPROVED','PROCESSING','RECONCILIATION_REQUIRED')",
+                                Long.class,
+                                previous);
         if (active != null && active > 0)
             throw invalid(
                     "Tài khoản đang gắn với lệnh chi chưa kết thúc. Hãy thêm tài khoản mới hoặc chờ lệnh chi được xử lý");
-        store.jdbc().update("UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=?", previous);
+        store.jdbc()
+                .update("UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=?", previous);
         var replacement = add(owner, normalized[0], normalized[1], normalized[2]);
-        store.jdbc().update(
-                "UPDATE finance_bank_accounts SET replaced_by=? WHERE id=?",
-                id(replacement, "id"),
-                previous);
+        store.jdbc()
+                .update(
+                        "UPDATE finance_bank_accounts SET replaced_by=? WHERE id=?",
+                        id(replacement, "id"),
+                        previous);
         store.audit(
                 owner,
                 owner,
@@ -188,10 +204,11 @@ public class BankAccountService {
     @Transactional
     public void disable(UUID owner, UUID id) {
         store.lockOwner(owner);
-        if (store.jdbc().update(
-                        "UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=? AND owner_id=?",
-                        id,
-                        owner)
+        if (store.jdbc()
+                        .update(
+                                "UPDATE finance_bank_accounts SET status='DISABLED' WHERE id=? AND owner_id=?",
+                                id,
+                                owner)
                 != 1) throw missing();
         store.audit(owner, owner, id, "BANK_DISABLED", "Ngừng sử dụng; lịch sử giữ nguyên");
     }
@@ -209,13 +226,14 @@ public class BankAccountService {
         if (!"PENDING".equals(bank.get("status")))
             throw invalid("Tài khoản không còn chờ xác minh");
         if (actor.equals(owner)) throw forbidden();
-        store.jdbc().update(
-                "UPDATE finance_bank_accounts SET status=?,verification_note=?,verified_by=?,verified_at=? WHERE id=?",
-                approved ? "VERIFIED" : "REJECTED",
-                note,
-                actor,
-                store.time(store.now()),
-                id);
+        store.jdbc()
+                .update(
+                        "UPDATE finance_bank_accounts SET status=?,verification_note=?,verified_by=?,verified_at=? WHERE id=?",
+                        approved ? "VERIFIED" : "REJECTED",
+                        note,
+                        actor,
+                        store.time(store.now()),
+                        id);
         store.audit(actor, owner, id, approved ? "BANK_VERIFIED" : "BANK_REJECTED", note);
     }
 
