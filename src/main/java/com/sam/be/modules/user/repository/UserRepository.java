@@ -18,4 +18,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM User u WHERE u.id = :id")
     Optional<User> findByIdForPasswordSetup(@Param("id") UUID id);
+
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.id = :id")
+    Optional<User> findByIdForFeedbackSubmission(@Param("id") UUID id);
 }
