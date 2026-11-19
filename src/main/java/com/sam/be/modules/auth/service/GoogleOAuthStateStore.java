@@ -6,6 +6,7 @@ import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,31 @@ public class GoogleOAuthStateStore {
 
     public record PendingIdentity(
             String issuer, String subject, String email, String name, boolean authoritativeEmail) {}
+
+    public record PasswordSetupGrant(UUID userId) {}
+
+    public void savePasswordSetupGrant(String ticket, UUID userId) {
+        put(
+                "google:oauth:password-setup:",
+                ticket,
+                new PasswordSetupGrant(userId),
+                Duration.ofMinutes(5));
+    }
+
+    public Optional<PasswordSetupGrant> getPasswordSetupGrant(String ticket) {
+        if (ticket == null || ticket.isBlank()) return Optional.empty();
+        String json = redis.opsForValue().get("google:oauth:password-setup:" + ticket);
+        if (json == null) return Optional.empty();
+        try {
+            return Optional.of(mapper.readValue(json, PasswordSetupGrant.class));
+        } catch (JsonProcessingException e) {
+            throw new ApiException(ErrorCode.GOOGLE_AUTH_FAILED);
+        }
+    }
+
+    public Optional<PasswordSetupGrant> takePasswordSetupGrant(String ticket) {
+        return take("google:oauth:password-setup:", ticket, PasswordSetupGrant.class);
+    }
 
     public void saveAttempt(String state, Attempt attempt) {
         put("google:oauth:attempt:", state, attempt, ATTEMPT_TTL);
