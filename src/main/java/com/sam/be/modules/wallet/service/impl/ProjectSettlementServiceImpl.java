@@ -107,6 +107,8 @@ public class ProjectSettlementServiceImpl implements ProjectSettlementService {
         notificationService.sendPaymentNotification(
                 contract.getFreelancer().getId(),
                 contract.getId(),
+                contract.getJob().getId(),
+                contract.getJob().getTitle(),
                 fund.getId(),
                 payout.add(depositRefund),
                 "PROJECT_SETTLEMENT_POSTED",
@@ -114,6 +116,8 @@ public class ProjectSettlementServiceImpl implements ProjectSettlementService {
         notificationService.sendPaymentNotification(
                 contract.getClient().getId(),
                 contract.getId(),
+                contract.getJob().getId(),
+                contract.getJob().getTitle(),
                 fund.getId(),
                 gross,
                 "PROJECT_SETTLEMENT_POSTED",

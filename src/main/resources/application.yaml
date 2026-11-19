@@ -109,6 +109,7 @@ payments:
   allowed-return-origins: ${PAYMENTS_ALLOWED_RETURN_ORIGINS:}
   provider: ${PAYMENTS_PROVIDER:pay2s}
   environment: ${PAYMENTS_ENVIRONMENT:SANDBOX}
+  demo-simulation-enabled: ${PAYMENTS_DEMO_SIMULATION_ENABLED:false}
 pay2s:
   base-url: ${PAY2S_BASE_URL:https://payment.pay2s.vn}
   access-key: ${PAY2S_ACCESS_KEY:}

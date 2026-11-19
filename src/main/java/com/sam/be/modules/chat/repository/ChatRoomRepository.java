@@ -32,6 +32,18 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, UUID> {
     Optional<WorkspaceSummaryDto> findWorkspaceSummary(
             @Param("roomId") UUID roomId, @Param("userId") UUID userId);
 
+    @Query(
+            "SELECT new com.sam.be.modules.chat.dto.WorkspaceSummaryDto("
+                    + "r.id, j.id, j.title, j.status, j.selectedFreelancer.id, client.id, client.fullName, "
+                    + "freelancer.id, freelancer.fullName, contract.id, contract.status, "
+                    + "contract.agreedAmount, contract.reviewStatus) "
+                    + "FROM ChatRoom r JOIN r.job j JOIN r.client client "
+                    + "JOIN r.freelancer freelancer LEFT JOIN Contract contract ON contract.job = j AND contract.freelancer = freelancer "
+                    + "WHERE j.id = :jobId AND (client.id = :userId OR freelancer.id = :userId) "
+                    + "ORDER BY CASE WHEN contract.id IS NULL THEN 1 ELSE 0 END, r.updatedAt DESC")
+    List<WorkspaceSummaryDto> findWorkspaceSummariesByJob(
+            @Param("jobId") UUID jobId, @Param("userId") UUID userId);
+
     @EntityGraph(attributePaths = {"job", "client", "freelancer"})
     @Query("SELECT r FROM ChatRoom r WHERE r.id = :roomId")
     Optional<ChatRoom> findDetailById(@Param("roomId") UUID roomId);

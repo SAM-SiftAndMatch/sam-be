@@ -155,11 +155,21 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         subscription.setEndDate(subscription.getStartDate().plusDays(30));
         userSubscriptionRepository.save(subscription);
         cacheInvalidationService.subscriptionChanged(subscription.getUser().getId());
+        String packageName =
+                subscription.getServicePackage().getName() == null
+                        ? ""
+                        : subscription.getServicePackage().getName().trim();
+        String packageLabel =
+                packageName.isEmpty()
+                        ? "Gói dịch vụ"
+                        : packageName.toLowerCase().startsWith("gói")
+                                ? packageName
+                                : "Gói " + packageName;
         notificationService.sendSubscriptionNotification(
                 subscription.getUser().getId(),
                 id,
                 "SUBSCRIPTION_ACTIVE",
-                "Gói " + subscription.getServicePackage().getName() + " đã được kích hoạt.");
+                packageLabel + " đã được kích hoạt.");
         return "APPLIED";
     }
 

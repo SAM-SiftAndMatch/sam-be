@@ -11,6 +11,8 @@ import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
+import com.sam.be.modules.chat.repository.ChatRoomRepository;
+import com.sam.be.modules.chat.service.ChatService;
 import com.sam.be.modules.contract.entity.Contract;
 import com.sam.be.modules.contract.repository.ContractRepository;
 import com.sam.be.modules.job.entity.Job;
@@ -40,8 +42,11 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -56,6 +61,10 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
     private final ManualQaPlanService manualQaPlanService;
     private final com.sam.be.modules.finance.FinanceStore financeStore;
     private final com.sam.be.modules.wallet.service.ProjectSettlementService settlementService;
+    private final com.sam.be.modules.notification.service.NotificationService notificationService;
+    private final ChatRoomRepository chatRoomRepository;
+    private final ChatService chatService;
+    private final SimpMessagingTemplate messaging;
     private final RedisCacheService redisCacheService;
     private final CacheInvalidationService cacheInvalidationService;
 
@@ -154,7 +163,7 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
 
         ProjectTimelineTask task =
                 taskRepository
-                        .findByIdAndJobId(taskId, jobId)
+                        .findByIdAndJobIdForUpdate(taskId, jobId)
                         .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
         User reporter =
                 userRepository
@@ -271,6 +280,22 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         manualQaPlanService.generateForDelivery(savedDelivery, job.getSrsContent(), tasks);
         cacheInvalidationService.deliveriesChanged(jobId);
         cacheInvalidationService.qaPlanChanged(savedDelivery.getId());
+        notificationService.sendWorkflowNotification(
+                contract.getClient().getId(),
+                contract.getFreelancer().getId(),
+                contract.getFreelancer().getFullName(),
+                jobId,
+                job.getTitle(),
+                "DELIVERY_SUBMITTED",
+                "Freelancer đã nộp bàn giao phiên bản "
+                        + savedDelivery.getVersionNumber()
+                        + " cho dự án. Vui lòng kiểm tra và nghiệm thu.");
+        announceChat(
+                jobId,
+                contract.getFreelancer().getId(),
+                "Freelancer đã nộp bàn giao phiên bản "
+                        + savedDelivery.getVersionNumber()
+                        + ". Khách hàng vui lòng kiểm tra website và checklist nghiệm thu.");
         return toDeliveryResponse(savedDelivery);
     }
 
@@ -313,7 +338,26 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         delivery.setRevisionReason(request.getReason().trim());
         delivery.setReviewedAt(LocalDateTime.now());
         cacheInvalidationService.deliveriesChanged(jobId);
-        return toDeliveryResponse(deliveryRepository.save(delivery));
+        ProjectDelivery saved = deliveryRepository.save(delivery);
+        notificationService.sendWorkflowNotification(
+                contract.getFreelancer().getId(),
+                clientId,
+                contract.getClient().getFullName(),
+                jobId,
+                job.getTitle(),
+                "DELIVERY_REVISION_REQUESTED",
+                "Khách hàng yêu cầu chỉnh sửa phiên bản "
+                        + delivery.getVersionNumber()
+                        + ": "
+                        + delivery.getRevisionReason());
+        announceChat(
+                jobId,
+                contract.getFreelancer().getId(),
+                "Khách hàng yêu cầu chỉnh sửa phiên bản "
+                        + delivery.getVersionNumber()
+                        + ": "
+                        + delivery.getRevisionReason());
+        return toDeliveryResponse(saved);
     }
 
     @Override
@@ -357,28 +401,99 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         delivery.setReviewedAt(
                 LocalDateTime.ofInstant(financeStore.now(), java.time.ZoneOffset.UTC));
         ProjectDelivery savedDelivery = deliveryRepository.save(delivery);
+        List<ProjectTimelineTask> tasks =
+                taskRepository.findAllByJobIdOrderByWeekNumberAscSortOrderAsc(jobId);
+        for (ProjectTimelineTask task : tasks) {
+            if (task.getStatus() != ProjectTaskStatus.ACCEPTED) {
+                task.setStatus(ProjectTaskStatus.ACCEPTED);
+            }
+        }
+        taskRepository.saveAll(tasks);
         cacheInvalidationService.deliveriesChanged(jobId);
         cacheInvalidationService.timelineChanged(jobId);
+        var settlement = settlementService.settle(contract.getId(), savedDelivery);
+        notificationService.sendWorkflowNotification(
+                contract.getFreelancer().getId(),
+                clientId,
+                contract.getClient().getFullName(),
+                jobId,
+                job.getTitle(),
+                "PROJECT_DELIVERY_ACCEPTED",
+                "Khách hàng đã nghiệm thu sản phẩm. Khoản thanh toán được ghi nhận vào công nợ của bạn.");
+        announceChat(
+                jobId,
+                contract.getFreelancer().getId(),
+                "Khách hàng đã nghiệm thu phiên bản "
+                        + savedDelivery.getVersionNumber()
+                        + ". Dự án hoàn thành và chuyển sang giai đoạn bảo trì.");
         return DeliveryAcceptanceResponse.builder()
                 .delivery(toDeliveryResponse(savedDelivery))
-                .settlement(settlementService.settle(contract.getId(), savedDelivery))
+                .settlement(settlement)
                 .build();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public com.sam.be.modules.wallet.dto.response.ProjectSettlementResponse getSettlement(
+            UUID userId, UUID jobId) {
+        getAccessibleJob(userId, jobId);
+        Contract contract = requireContract(jobId);
+        return settlementService.getByContract(userId, contract.getId());
+    }
+
     private List<ProjectTimelineTask> initializeTimeline(Job job) {
-        List<ProjectTimelineTask> tasks =
-                SrsTimelineParser.parse(job.getSrsContent()).stream()
-                        .map(
-                                parsed ->
-                                        ProjectTimelineTask.builder()
-                                                .job(job)
-                                                .weekNumber(parsed.weekNumber())
-                                                .sortOrder(parsed.sortOrder())
-                                                .title(parsed.title())
-                                                .description(parsed.description())
-                                                .build())
-                        .toList();
+        String srs = job.getSrsContent();
+        List<ProjectTimelineTask> tasks;
+        if (srs == null || srs.isBlank()) {
+            tasks = defaultTimelineTasks(job);
+        } else {
+            tasks =
+                    SrsTimelineParser.parse(srs).stream()
+                            .map(
+                                    parsed ->
+                                            ProjectTimelineTask.builder()
+                                                    .job(job)
+                                                    .weekNumber(parsed.weekNumber())
+                                                    .sortOrder(parsed.sortOrder())
+                                                    .title(parsed.title())
+                                                    .description(parsed.description())
+                                                    .build())
+                            .toList();
+        }
         return taskRepository.saveAll(tasks);
+    }
+
+    private List<ProjectTimelineTask> defaultTimelineTasks(Job job) {
+        int months =
+                job.getEstimatedDurationMonths() != null
+                        ? Math.max(1, job.getEstimatedDurationMonths().intValue())
+                        : 3;
+        int totalWeeks = Math.max(3, months * 4);
+        int middleWeek = Math.max(2, totalWeeks / 2);
+        return List.of(
+                ProjectTimelineTask.builder()
+                        .job(job)
+                        .weekNumber(1)
+                        .sortOrder(1)
+                        .title("Khởi động: thống nhất phạm vi và kế hoạch làm việc")
+                        .description("Hai bên chốt phạm vi, mốc bàn giao và cách phối hợp.")
+                        .build(),
+                ProjectTimelineTask.builder()
+                        .job(job)
+                        .weekNumber(middleWeek)
+                        .sortOrder(2)
+                        .title("Thực hiện và cập nhật tiến độ")
+                        .description(
+                                "Freelancer cập nhật tiến độ, báo cáo vướng mắc và bàn giao từng phần.")
+                        .build(),
+                ProjectTimelineTask.builder()
+                        .job(job)
+                        .weekNumber(totalWeeks)
+                        .sortOrder(3)
+                        .title("Kiểm thử, nghiệm thu và bàn giao")
+                        .description(
+                                "Khách hàng nghiệm thu sản phẩm và hai bên hoàn tất thanh toán.")
+                        .build());
     }
 
     private ProjectTimelineResponse toTimelineResponse(Job job, List<ProjectTimelineTask> tasks) {
@@ -528,6 +643,24 @@ public class ProjectWorkflowServiceImpl implements ProjectWorkflowService {
         return contractRepository
                 .findByJobId(jobId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    private void announceChat(UUID jobId, UUID freelancerId, String text) {
+        chatRoomRepository
+                .findByJobIdAndFreelancerId(jobId, freelancerId)
+                .ifPresent(
+                        room -> {
+                            UUID roomId = room.getId();
+                            var message = chatService.saveSystemMessage(roomId, text);
+                            TransactionSynchronizationManager.registerSynchronization(
+                                    new TransactionSynchronization() {
+                                        @Override
+                                        public void afterCommit() {
+                                            messaging.convertAndSend(
+                                                    "/topic/chat/" + roomId, message);
+                                        }
+                                    });
+                        });
     }
 
     private String blankToNull(String value) {

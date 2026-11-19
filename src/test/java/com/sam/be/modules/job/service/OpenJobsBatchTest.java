@@ -59,6 +59,7 @@ class OpenJobsBatchTest {
                         null,
                         null,
                         cache,
+                        null,
                         null);
 
         List<JobResponse> response = service.getAllOpenJobs();

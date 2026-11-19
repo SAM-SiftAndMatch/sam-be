@@ -715,20 +715,54 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private void pushPaymentEvent(Contract contract, Payment payment, String type, String message) {
+        UUID jobId = contract.getJob() != null ? contract.getJob().getId() : null;
+        String jobTitle = contract.getJob() != null ? contract.getJob().getTitle() : null;
+        String clientMessage = message;
+        String freelancerMessage = message;
+        if (payment != null && payment.getPaymentType() != null) {
+            String amountText = formatVnd(payment.getAmount());
+            switch (payment.getPaymentType()) {
+                case CONTRACT_FUND -> {
+                    clientMessage = "Bạn đã nạp " + amountText + " vào escrow cho dự án.";
+                    freelancerMessage = "Khách hàng đã nạp " + amountText + " vào escrow.";
+                }
+                case SECURITY_DEPOSIT -> {
+                    clientMessage = "Freelancer đã đặt cọc cam kết " + amountText + ".";
+                    freelancerMessage = "Bạn đã đặt cọc cam kết " + amountText + " vào escrow.";
+                }
+                case MAINTENANCE_FUND -> {
+                    clientMessage = "Bạn đã thanh toán " + amountText + " cho đơn bảo trì.";
+                    freelancerMessage = "Khách hàng đã thanh toán " + amountText + " cho đơn bảo trì.";
+                }
+            }
+        }
         notificationService.sendPaymentNotification(
                 contract.getClient().getId(),
                 contract.getId(),
+                jobId,
+                jobTitle,
                 payment != null ? payment.getId() : null,
                 payment != null ? payment.getAmount() : null,
                 type,
-                message);
+                clientMessage);
         notificationService.sendPaymentNotification(
                 contract.getFreelancer().getId(),
                 contract.getId(),
+                jobId,
+                jobTitle,
                 payment != null ? payment.getId() : null,
                 payment != null ? payment.getAmount() : null,
                 type,
-                message);
+                freelancerMessage);
+    }
+
+    private static String formatVnd(java.math.BigDecimal amount) {
+        if (amount == null) return "0đ";
+        java.text.DecimalFormat format =
+                new java.text.DecimalFormat(
+                        "#,##0",
+                        java.text.DecimalFormatSymbols.getInstance(java.util.Locale.of("vi", "VN")));
+        return format.format(amount) + "đ";
     }
 
     private PaymentResponse toResponse(Payment payment, String checkoutUrl) {

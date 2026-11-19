@@ -30,6 +30,7 @@ import com.sam.be.modules.job.repository.JobSkillRepository;
 import com.sam.be.modules.job.service.JobInvitationService;
 import com.sam.be.modules.job.service.JobService;
 import com.sam.be.modules.notification.service.NotificationService;
+import com.sam.be.modules.review.repository.ReviewRepository;
 import com.sam.be.modules.skill.dto.response.SkillResponse;
 import com.sam.be.modules.skill.entity.Skill;
 import com.sam.be.modules.skill.repository.SkillRepository;
@@ -84,6 +85,7 @@ public class JobServiceImpl implements JobService {
     private final JobInvitationService invitationService;
     private final RedisCacheService redisCacheService;
     private final CacheInvalidationService cacheInvalidationService;
+    private final ReviewRepository reviewRepository;
 
     @Override
     @Transactional
@@ -546,6 +548,20 @@ public class JobServiceImpl implements JobService {
                                                             new ApiException(
                                                                     ErrorCode.RESOURCE_NOT_FOUND));
                             JobResponse loaded = mapToResponse(job);
+                            UUID clientId = job.getClient().getId();
+                            loaded.setClientJoinedAt(job.getClient().getCreatedAt());
+                            loaded.setClientJobCount(jobRepository.countByClientId(clientId));
+                            List<Object[]> stats = reviewRepository.ratingStats(clientId);
+                            if (!stats.isEmpty()) {
+                                Object[] row = stats.getFirst();
+                                long reviewCount =
+                                        row[1] == null ? 0L : ((Number) row[1]).longValue();
+                                loaded.setClientReviewCount(reviewCount);
+                                if (reviewCount > 0 && row[0] != null)
+                                    loaded.setClientRating(
+                                            Math.round(((Number) row[0]).doubleValue() * 10.0)
+                                                    / 10.0);
+                            }
                             // Không ghi cache chung nếu người gọi không được xem job tuyển gấp.
                             assertVisible(loaded);
                             return loaded;

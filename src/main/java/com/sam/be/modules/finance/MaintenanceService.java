@@ -221,7 +221,7 @@ public class MaintenanceService {
                                     : store.time(instant(row, "fixSubmittedAt")),
                     ticket);
         event(actor, ticket, action, content);
-        announce(actor, row, ticket, "Cập nhật ticket: " + action);
+        announce(actor, row, ticket, "Cập nhật ticket: " + actionLabel(action));
         if ("ESCALATE".equals(action)) notifyAdmins(id(row, "jobId"), ticket);
         return detail(actor, ticket, 0);
     }
@@ -230,7 +230,7 @@ public class MaintenanceService {
     public void recordOrderEvent(UUID actor, UUID ticket, String action, String content) {
         var row = accessibleTicket(actor, ticket, true);
         event(actor, ticket, action, content);
-        announce(actor, row, ticket, "Cập nhật đơn bảo trì: " + action);
+        announce(actor, row, ticket, "Cập nhật đơn bảo trì: " + actionLabel(action));
         if ("ORDER_ESCALATE".equals(action)) notifyAdmins(id(row, "jobId"), ticket);
     }
 
@@ -267,12 +267,33 @@ public class MaintenanceService {
                 store.time(store.now()));
     }
 
+    private static String actionLabel(String action) {
+        String code = action.startsWith("ORDER_") ? action.substring("ORDER_".length()) : action;
+        return switch (code) {
+            case "COMMENT" -> "Trao đổi thêm";
+            case "START" -> "Freelancer đã tiếp nhận xử lý";
+            case "NEED_INFORMATION" -> "Freelancer cần khách hàng bổ sung thông tin";
+            case "SUBMIT_FIX" -> "Freelancer đã gửi bản vá";
+            case "ACCEPT_FIX", "ACCEPT" -> "Khách hàng xác nhận đã sửa";
+            case "REJECT_FIX", "REJECT" -> "Khách hàng báo lỗi vẫn còn";
+            case "WITHDRAW" -> "Khách hàng đã rút ticket";
+            case "ESCALATE" -> "Ticket được chuyển admin hỗ trợ";
+            case "ADMIN_RESOLVE" -> "Admin kết luận đã giải quyết";
+            case "ADMIN_OUT_OF_SCOPE" -> "Admin kết luận ngoài phạm vi bảo hành";
+            case "ADMIN_EXTENDED" -> "Admin gia hạn xử lý";
+            case "QUOTE_CREATED" -> "Freelancer đã gửi báo giá bảo trì";
+            case "QUOTE_ACCEPTED" -> "Khách hàng chấp thuận báo giá";
+            default -> action;
+        };
+    }
+
     private void announce(UUID actor, Map<String, Object> p, UUID ticket, String text) {
         UUID owner = id(p, "ownerId"), client = id(p, "clientId"), job = id(p, "jobId");
+        String jobTitle = (String) store.one("SELECT title FROM jobs WHERE id=?", job).get("title");
         var room = rooms.findByJobIdAndFreelancerId(job, owner);
         if (room.isPresent()) {
             UUID roomId = room.get().getId();
-            ChatMessageDto message = chat.saveSystemMessage(roomId, text + " [" + ticket + "]");
+            ChatMessageDto message = chat.saveSystemMessage(roomId, text);
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
                         @Override
@@ -288,6 +309,7 @@ public class MaintenanceService {
                         NotificationMessage.builder()
                                 .type("MAINTENANCE_TICKET_UPDATED")
                                 .jobId(job)
+                                .jobTitle(jobTitle)
                                 .roomId(room.map(r -> r.getId()).orElse(null))
                                 .message(text)
                                 .build());
@@ -295,6 +317,7 @@ public class MaintenanceService {
     }
 
     private void notifyAdmins(UUID job, UUID ticket) {
+        String jobTitle = (String) store.one("SELECT title FROM jobs WHERE id=?", job).get("title");
         for (var admin :
                 store.rows(
                         "SELECT id FROM users WHERE role='ADMIN' AND is_active=true ORDER BY id LIMIT 100"))
@@ -303,7 +326,8 @@ public class MaintenanceService {
                     NotificationMessage.builder()
                             .type("MAINTENANCE_ESCALATED")
                             .jobId(job)
-                            .message("Ticket bảo trì cần admin hỗ trợ: " + ticket)
+                            .jobTitle(jobTitle)
+                            .message("Ticket bảo trì cần admin hỗ trợ: " + jobTitle)
                             .build());
     }
 

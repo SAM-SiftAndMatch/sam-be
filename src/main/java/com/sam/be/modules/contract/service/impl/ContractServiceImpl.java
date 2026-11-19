@@ -582,7 +582,7 @@ public class ContractServiceImpl implements ContractService {
             broadcastType = "COMPLETED";
             chatMsg =
                     "Cả 2 bên đã chốt giữ nguyên hợp đồng. Số tiền chốt: "
-                            + contract.getAgreedAmount()
+                            + formatVnd(contract.getAgreedAmount())
                             + ". Nạp tiền để dự án bắt đầu nhé!";
             aiAnnounce = true;
         }
@@ -634,6 +634,14 @@ public class ContractServiceImpl implements ContractService {
                 .clientKeepConfirmed(contract.getClientKeepConfirmed())
                 .freelancerKeepConfirmed(contract.getFreelancerKeepConfirmed())
                 .build();
+    }
+
+    private static String formatVnd(BigDecimal amount) {
+        if (amount == null) return "chưa xác định";
+        java.text.NumberFormat format =
+                java.text.NumberFormat.getNumberInstance(java.util.Locale.forLanguageTag("vi-VN"));
+        format.setMaximumFractionDigits(0);
+        return format.format(amount) + " đ";
     }
 
     @Override
