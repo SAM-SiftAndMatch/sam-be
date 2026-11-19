@@ -21,6 +21,8 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     @Query("SELECT j.status, COUNT(j) FROM Job j WHERE j.client.id = :clientId GROUP BY j.status")
     List<Object[]> countClientJobsByStatus(@Param("clientId") UUID clientId);
 
+    long countByClientId(UUID clientId);
+
     @Query("SELECT new com.sam.be.modules.job.dto.response.ClientDashboardProjectResponse("
             + "j.id, j.title, j.status, j.budgetMin, j.budgetMax, j.updatedAt, f.fullName) "
             + "FROM Job j LEFT JOIN j.selectedFreelancer f WHERE j.client.id = :clientId "

@@ -19,6 +19,10 @@ public class JobResponse {
     private UUID id;
     private UUID clientId;
     private String clientName;
+    private LocalDateTime clientJoinedAt;
+    private Long clientJobCount;
+    private Double clientRating;
+    private Long clientReviewCount;
     private String title;
     private String description;
     private BigDecimal budgetMin;

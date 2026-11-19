@@ -16,9 +16,15 @@ public class WorkspaceSummaryService {
     private final ChatRoomRepository chatRoomRepository;
 
     @Transactional(readOnly = true)
-    public WorkspaceSummaryDto getSummary(UUID roomId, UUID userId) {
+    public WorkspaceSummaryDto getSummary(UUID workspaceId, UUID userId) {
         return chatRoomRepository
-                .findWorkspaceSummary(roomId, userId)
+                .findWorkspaceSummary(workspaceId, userId)
+                .or(
+                        () ->
+                                chatRoomRepository
+                                        .findWorkspaceSummariesByJob(workspaceId, userId)
+                                        .stream()
+                                        .findFirst())
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 }

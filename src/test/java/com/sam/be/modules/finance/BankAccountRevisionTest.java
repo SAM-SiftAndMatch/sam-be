@@ -109,6 +109,43 @@ class BankAccountRevisionTest {
     }
 
     @Test
+    void legacyMbbCanBeUpdatedWithoutReplacingAnUnchangedBeneficiary() {
+        old.put("bankCode", "MBB");
+        when(store.one(startsWith("SELECT id,"), eq(oldId), eq(owner))).thenReturn(old);
+        when(db.queryForObject(anyString(), eq(Long.class), eq(oldId))).thenReturn(1L);
+
+        assertEquals(
+                oldId, service.replace(owner, oldId, " mb ", "00123456789", "user a").get("id"));
+
+        assertEquals("MBB", old.get("bankCode"));
+        verify(db, never()).update(anyString(), any(Object[].class));
+        verify(service, never()).add(any(), any(), any(), any());
+    }
+
+    @Test
+    void addingCanonicalMbReusesExistingVerifiedMbbFingerprint() {
+        old.put("bankCode", "MBB");
+        when(store.rows(contains("fingerprint IN"), eq(owner), anyString(), anyString()))
+                .thenReturn(List.of(old));
+
+        var result = service.add(owner, "MB", "00123456789", "USER A");
+
+        assertEquals(oldId, result.get("id"));
+        assertEquals("VERIFIED", result.get("status"));
+        verify(db, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void directApiRejectsUnknownBankCodes() {
+        var error =
+                assertThrows(
+                        org.springframework.web.server.ResponseStatusException.class,
+                        () -> service.add(owner, "NOTABANK", "00123456789", "USER A"));
+        assertTrue(error.getReason().contains("Ngân hàng nhận tiền không được hỗ trợ"));
+        verify(db, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
     void anotherOwnerCannotChangeOrProbeBankDetails() {
         UUID outsider = UUID.randomUUID();
         when(store.one(

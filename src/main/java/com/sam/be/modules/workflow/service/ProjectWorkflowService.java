@@ -39,4 +39,7 @@ public interface ProjectWorkflowService {
             UUID clientId, UUID jobId, UUID deliveryId, DeliveryRevisionRequest request);
 
     DeliveryAcceptanceResponse acceptDelivery(UUID clientId, UUID jobId, UUID deliveryId);
+
+    com.sam.be.modules.wallet.dto.response.ProjectSettlementResponse getSettlement(
+            UUID userId, UUID jobId);
 }

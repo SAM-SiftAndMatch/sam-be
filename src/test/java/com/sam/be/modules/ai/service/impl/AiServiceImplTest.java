@@ -165,6 +165,177 @@ class AiServiceImplTest {
         assertFalse(prompt.getValue().toString().contains("FORGED HISTORY"));
     }
 
+    @Test
+    void contractReviewAcceptsDocumentWhenOnlyPlatformManagedIssuesRemain() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":12000000,"textMatchesField":true,"changedFromInitial":false,
+                         "issues":["Hợp đồng thiếu chữ ký của bên A và bên B","Thiếu thông tin định danh bên B"],
+                         "verdict":"NEEDS_CONFIRM","chatMessage":"Cần bổ sung chữ ký"}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("12000000"));
+
+        assertEquals("OK", review.getVerdict());
+        assertEquals(java.util.List.of(), review.getIssues());
+        assertEquals(
+                "AI đã thẩm định xong: hợp đồng hợp lệ, số tiền khớp. Hai bên nạp tiền để dự án bắt đầu nhé!",
+                review.getChatMessage());
+    }
+
+    @Test
+    void contractReviewStillNeedsConfirmWhenAmountDiffers() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":10000000,"textMatchesField":true,"changedFromInitial":false,
+                         "issues":[],"verdict":"OK","chatMessage":null}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("12000000"));
+
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+    }
+
+    @Test
+    void contractReviewStillNeedsConfirmOnRealCommercialIssue() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":12000000,"textMatchesField":true,"changedFromInitial":false,
+                         "issues":["Điều khoản bảo hành không nêu thời hạn cụ thể"],
+                         "verdict":"OK","chatMessage":null}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("12000000"));
+
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        assertEquals(
+                java.util.List.of("Điều khoản bảo hành không nêu thời hạn cụ thể"),
+                review.getIssues());
+    }
+
+    @Test
+    void contractReviewNeedsConfirmWhenAmountChangedFromAiSuggestion() {
+        Fixture fixture = new Fixture();
+        when(fixture.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        """
+                        {"extractedAmount":12000000,"textMatchesField":true,"changedFromInitial":true,
+                         "issues":[],"verdict":"OK","chatMessage":null}
+                        """);
+        ReflectionTestUtils.setField(fixture.service, "amountReviewPrompt", "Review contract");
+
+        var review =
+                fixture.service.reviewContractTerms(
+                        "Hợp đồng ...",
+                        new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("10000000"));
+
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+    }
+
+    @Test
+    void commercialIssuesMentioningSignaturesOrIdentityStillRequireConfirmation() throws Exception {
+        for (String issue :
+                java.util.List.of(
+                        "Điều khoản thanh toán mâu thuẫn: phải trả trước khi ký xác nhận nghiệm thu nhưng điều khác yêu cầu trả sau",
+                        "Thiếu chữ ký nghiệm thu làm thay đổi thời điểm thanh toán",
+                        "Thiếu thông tin định danh bên B và thiếu điều khoản bảo hành",
+                        "Thông tin bên A mâu thuẫn với điều khoản trách nhiệm")) {
+            var review = reviewWithIssues(java.util.List.of(issue));
+            assertEquals("NEEDS_CONFIRM", review.getVerdict(), issue);
+            assertEquals(java.util.List.of(issue), review.getIssues());
+        }
+    }
+
+    @Test
+    void mixedIssuesRemoveOnlyUnambiguousMissingPlatformFields() throws Exception {
+        String commercial = "Điều khoản bảo hành không nêu thời hạn cụ thể";
+        var review =
+                reviewWithIssues(
+                        java.util.List.of("Hợp đồng thiếu chữ ký của bên A và bên B", commercial));
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        assertEquals(java.util.List.of(commercial), review.getIssues());
+    }
+
+    @Test
+    void missingAmountAndUnknownVerdictsCannotBePromotedToOk() {
+        for (String json :
+                java.util.List.of(
+                        "{\"extractedAmount\":null,\"textMatchesField\":true,\"issues\":[],\"verdict\":\"OK\"}",
+                        "{\"extractedAmount\":12000000,\"textMatchesField\":true,\"issues\":[],\"verdict\":\"UNKNOWN\"}",
+                        "{\"extractedAmount\":12000000,\"textMatchesField\":true,\"issues\":[],\"verdict\":\"NEEDS_CONFIRM\"}")) {
+            Fixture f = new Fixture();
+            when(f.geminiClient.generateContent(anyString(), anyList())).thenReturn(json);
+            ReflectionTestUtils.setField(f.service, "amountReviewPrompt", "Review");
+            var review =
+                    f.service.reviewContractTerms(
+                            "Contract", new java.math.BigDecimal("12000000"), null);
+            assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        }
+    }
+
+    @Test
+    void initialPriceChangeIsDetectedEvenWhenAiReportsFalse() {
+        Fixture f = new Fixture();
+        when(f.geminiClient.generateContent(anyString(), anyList()))
+                .thenReturn(
+                        "{\"extractedAmount\":12000000,\"textMatchesField\":true,\"changedFromInitial\":false,\"issues\":[],\"verdict\":\"OK\",\"chatMessage\":\"Hợp đồng hợp lệ\"}");
+        ReflectionTestUtils.setField(f.service, "amountReviewPrompt", "Review");
+        var review =
+                f.service.reviewContractTerms(
+                        "Contract",
+                        new java.math.BigDecimal("12000000"),
+                        new java.math.BigDecimal("10000000"));
+        assertEquals("NEEDS_CONFIRM", review.getVerdict());
+        assertEquals(true, review.getChangedFromInitial());
+        assertFalse(review.getChatMessage().equals("Hợp đồng hợp lệ"));
+    }
+
+    private com.sam.be.modules.ai.dto.response.AiContractReview reviewWithIssues(
+            java.util.List<String> issues) throws Exception {
+        Fixture f = new Fixture();
+        String json =
+                f.mapper.writeValueAsString(
+                        java.util.Map.of(
+                                "extractedAmount",
+                                12000000,
+                                "textMatchesField",
+                                true,
+                                "changedFromInitial",
+                                false,
+                                "issues",
+                                issues,
+                                "verdict",
+                                "NEEDS_CONFIRM"));
+        when(f.geminiClient.generateContent(anyString(), anyList())).thenReturn(json);
+        ReflectionTestUtils.setField(f.service, "amountReviewPrompt", "Review");
+        return f.service.reviewContractTerms(
+                "Contract",
+                new java.math.BigDecimal("12000000"),
+                new java.math.BigDecimal("12000000"));
+    }
+
     private static class Fixture {
         private final ObjectMapper mapper = new ObjectMapper();
         private final StringRedisTemplate redis = mock(StringRedisTemplate.class);

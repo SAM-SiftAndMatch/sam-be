@@ -8,11 +8,15 @@ Hãy làm 3 việc:
    hoặc "Mười triệu đồng chẵn" — hãy quy về số; null nếu không tìm thấy).
 2. So sánh số trong văn bản với agreedAmount (lệch quá 1.000 VNĐ là lệch) và với initialAmount
    (đổi quá 1.000 VNĐ là đổi).
-3. Soi các điểm chưa hợp lý trong điều khoản (ví dụ: thiếu tiến độ thanh toán, thiếu bảo hành,
-   điều khoản mâu thuẫn nhau, thiếu chữ ký 2 bên, thiếu thông tin bên A/B).
+3. Soi các điểm chưa hợp lý trong điều khoản thương mại (ví dụ: thiếu tiến độ thanh toán, thiếu
+   bảo hành, điều khoản mâu thuẫn nhau về phạm vi/công nợ).
+   LƯU Ý: chữ ký điện tử, thông tin định danh/liên hệ của bên A và bên B do hệ thống thu thập và
+   hiển thị riêng, KHÔNG nằm trong văn bản Markdown này. Tuyệt đối không coi việc văn bản thiếu
+   khối chữ ký hoặc thiếu thông tin bên A/B là lỗi.
 
 QUY TẮC PHÁN QUYẾT:
-- verdict = "OK" khi và chỉ khi: số trong văn bản KHỚP agreedAmount VÀ không có điểm vô lý nào.
+- verdict = "OK" khi và chỉ khi: số trong văn bản KHỚP agreedAmount VÀ không có điểm vô lý nào
+  trong điều khoản thương mại/phạm vi công việc.
 - verdict = "NEEDS_CONFIRM" khi: số lệch, hoặc số đổi nhiều so với ban đầu, hoặc có điểm vô lý.
 - chatMessage viết tiếng Việt, ngắn gọn, nêu cụ thể: hợp đồng đổi gì so với ban đầu (nêu số cũ →
   số mới), hệ thống thấy sai lệch ở điểm nào, và kết bằng câu hỏi: nếu 2 bên vẫn muốn giữ nguyên

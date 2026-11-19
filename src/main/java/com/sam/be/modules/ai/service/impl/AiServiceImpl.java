@@ -389,15 +389,48 @@ public class AiServiceImpl implements AiService {
 
         try {
             AiContractReview review = objectMapper.readValue(cleanedJson, AiContractReview.class);
+            String originalVerdict = review.getVerdict();
+            List<String> originalIssues =
+                    review.getIssues() == null ? List.of() : review.getIssues();
+            List<String> issues =
+                    originalIssues.stream()
+                            .filter(issue -> !isPlatformManagedIssue(issue))
+                            .toList();
+            review.setIssues(issues);
+            boolean amountMatches = amountMatches(review, agreedAmount);
+            review.setTextMatchesField(amountMatches);
+            boolean amountChanged =
+                    initialAmount != null
+                            && review.getExtractedAmount() != null
+                            && review.getExtractedAmount()
+                                            .subtract(initialAmount)
+                                            .abs()
+                                            .compareTo(new BigDecimal("1000"))
+                                    > 0;
+            review.setChangedFromInitial(amountChanged);
+            boolean onlyManagedIssues = !originalIssues.isEmpty() && issues.isEmpty();
+            boolean canAccept =
+                    amountMatches
+                            && issues.isEmpty()
+                            && !amountChanged
+                            && ("OK".equalsIgnoreCase(originalVerdict)
+                                    || ("NEEDS_CONFIRM".equalsIgnoreCase(originalVerdict)
+                                            && onlyManagedIssues));
+            // Chữ ký/định danh do hệ thống quản lý nên không được coi là lỗi hợp đồng.
+            if (canAccept) {
+                review.setVerdict("OK");
+                if (!"OK".equalsIgnoreCase(originalVerdict)) review.setChatMessage(null);
+            } else {
+                review.setVerdict("NEEDS_CONFIRM");
+                if ("OK".equalsIgnoreCase(originalVerdict)) review.setChatMessage(null);
+            }
             // Chuẩn hóa verdict lạ về NEEDS_CONFIRM để 2 bên chốt tay cho chắc
             if (!"OK".equalsIgnoreCase(review.getVerdict())) {
-                review.setVerdict("NEEDS_CONFIRM");
                 if (review.getChatMessage() == null || review.getChatMessage().isBlank()) {
                     review.setChatMessage(
                             "AI phát hiện điểm cần xem lại trong hợp đồng. Hai bên kiểm tra kỹ: nếu giữ nguyên bản này thì bấm \"Giữ nguyên\", còn không thì sửa lại rồi ký lại để thẩm định tiếp.");
                 }
             } else {
-                review.setVerdict("OK");
                 if (review.getChatMessage() == null || review.getChatMessage().isBlank()) {
                     review.setChatMessage(
                             "AI đã thẩm định xong: hợp đồng hợp lệ, số tiền khớp. Hai bên nạp tiền để dự án bắt đầu nhé!");
@@ -413,6 +446,37 @@ public class AiServiceImpl implements AiService {
                     "AI tạm thời không thẩm định được (lỗi kỹ thuật). Hai bên tự kiểm tra kỹ số tiền và điều khoản: nếu giữ nguyên bản này thì bấm \"Giữ nguyên\", còn không thì sửa lại rồi ký lại.");
             return fallback;
         }
+    }
+
+    private static boolean amountMatches(AiContractReview review, BigDecimal agreedAmount) {
+        if (review.getExtractedAmount() != null && agreedAmount != null) {
+            return review.getExtractedAmount()
+                            .subtract(agreedAmount)
+                            .abs()
+                            .compareTo(new BigDecimal("1000"))
+                    <= 0;
+        }
+        return false;
+    }
+
+    /** Chữ ký và thông tin định danh do nền tảng thu thập, không nằm trong văn bản hợp đồng. */
+    private static boolean isPlatformManagedIssue(String issue) {
+        if (issue == null || issue.isBlank()) return false;
+        String text =
+                java.text.Normalizer.normalize(issue, java.text.Normalizer.Form.NFD)
+                        .replaceAll("\\p{M}", "")
+                        .replace('đ', 'd')
+                        .replace('Đ', 'D')
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .strip()
+                        .replaceAll("\\s+", " ");
+        // Only a whole, unambiguous missing-field statement may be ignored. Mixed or
+        // commercial statements (e.g. signatures required for payment) stay for manual review.
+        return text.matches(
+                "(?:hop dong )?(?:thieu|chua co|khong co) "
+                        + "(?:khoi chu ky|chu ky(?: dien tu)?|thong tin dinh danh|thong tin lien he)"
+                        + "(?: (?:cua )?(?:ben [ab](?: (?:va|&) ben [ab])?|hai ben|cac ben|2 ben))?"
+                        + "[.!]?");
     }
 
     private String cleanJson(String raw) {
