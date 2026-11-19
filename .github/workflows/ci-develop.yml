@@ -46,8 +46,29 @@ jobs:
           java-version: '21'
           cache: 'maven'
 
-      - name: Make mvnw executable
-        run: chmod +x mvnw
+      - name: Cache Maven distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/wrapper/dists
+          key: ${{ runner.os }}-${{ runner.arch }}-maven-wrapper-${{ hashFiles('.mvn/wrapper/maven-wrapper.properties') }}
+
+      - name: Initialize Maven Wrapper
+        timeout-minutes: 5
+        env:
+          MVNW_VERBOSE: 'true'
+        run: |
+          chmod +x mvnw
+          for attempt in 1 2 3; do
+            if ./mvnw -B --version; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Maven Wrapper setup failed (attempt ${attempt}/3); retrying in 10 seconds."
+              sleep 10
+            fi
+          done
+          echo "::error::Maven Wrapper setup failed after 3 attempts."
+          exit 1
 
       - name: Compile, Test and Verify with Maven
         env:
