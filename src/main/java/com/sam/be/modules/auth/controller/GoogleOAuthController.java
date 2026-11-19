@@ -55,6 +55,7 @@ public class GoogleOAuthController {
     @GetMapping("/start")
     public ResponseEntity<Void> start(HttpServletResponse response) {
         GoogleOAuthService.Start start = google.startLogin();
+        authCookieService.setPasswordSetupFlow(response, false);
         writeCookie(response, PENDING_COOKIE, "", "/api/v1/auth/google", 0);
         writeCookie(response, STATE_COOKIE, start.state(), "/api/v1/auth/google/callback", 300);
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(start.url())).build();
@@ -66,40 +67,69 @@ public class GoogleOAuthController {
             @RequestParam(required = false) String state,
             @RequestParam(required = false) String error,
             @CookieValue(name = STATE_COOKIE, required = false) String browserState,
+            @CookieValue(name = AuthCookieService.PASSWORD_SETUP_FLOW_COOKIE, required = false)
+                    String passwordSetupFlow,
             HttpServletRequest request,
             HttpServletResponse response) {
         writeCookie(response, STATE_COOKIE, "", "/api/v1/auth/google/callback", 0);
         writeCookie(response, PENDING_COOKIE, "", "/api/v1/auth/google", 0);
+        boolean passwordSetup = "1".equals(passwordSetupFlow);
+        authCookieService.setPasswordSetupFlow(response, false);
         if (!properties.isConfigured()) {
             throw new ApiException(ErrorCode.GOOGLE_AUTH_NOT_CONFIGURED);
         }
         if (error != null) {
-            return redirect("/login?google_error=cancelled");
+            return redirect(
+                    passwordSetup
+                            ? "/account/password/setup?error=cancelled"
+                            : "/login?google_error=cancelled");
         }
         try {
-            GoogleOAuthService.Callback result = google.callback(code, state, browserState, request);
+            GoogleOAuthService.Callback result =
+                    google.callback(code, state, browserState, request);
             return switch (result.outcome()) {
                 case SIGNED_IN -> {
                     authCookieService.setRefreshToken(response, result.auth().refreshToken());
                     yield redirect("/auth/google/return");
                 }
                 case SIGN_UP -> {
-                    writeCookie(response, PENDING_COOKIE, result.pendingTicket(), "/api/v1/auth/google", 600);
+                    writeCookie(
+                            response,
+                            PENDING_COOKIE,
+                            result.pendingTicket(),
+                            "/api/v1/auth/google",
+                            600);
                     yield redirect("/auth/google/complete");
                 }
                 case LINK_REQUIRED -> {
-                    writeCookie(response, PENDING_COOKIE, result.pendingTicket(), "/api/v1/auth/google", 600);
+                    writeCookie(
+                            response,
+                            PENDING_COOKIE,
+                            result.pendingTicket(),
+                            "/api/v1/auth/google",
+                            600);
                     yield redirect("/login?google_link=1");
                 }
                 case LINKED -> redirect("/auth/google/return?linked=1");
+                case PASSWORD_SETUP_VERIFIED -> {
+                    authCookieService.setPasswordSetupProof(response, result.pendingTicket());
+                    yield redirect("/account/password/setup?verified=1");
+                }
             };
         } catch (Exception e) {
             log.warn("Google sign-in callback rejected: {}", e.getClass().getSimpleName());
-            return redirect("/login?google_error=failed");
+            return redirect(
+                    passwordSetup
+                            ? "/account/password/setup?error=failed"
+                            : "/login?google_error=failed");
         }
     }
 
-    @RateLimit(action = "google-complete", limit = 5, duration = 60, type = RateLimit.Type.IP_ADDRESS)
+    @RateLimit(
+            action = "google-complete",
+            limit = 5,
+            duration = 60,
+            type = RateLimit.Type.IP_ADDRESS)
     @PostMapping("/complete")
     public ApiResponse<PublicAuthResponse> complete(
             @RequestBody CompleteRequest body,
@@ -118,7 +148,11 @@ public class GoogleOAuthController {
                 .build();
     }
 
-    @RateLimit(action = "google-link-pending", limit = 5, duration = 60, type = RateLimit.Type.USER_ID)
+    @RateLimit(
+            action = "google-link-pending",
+            limit = 5,
+            duration = 60,
+            type = RateLimit.Type.USER_ID)
     @PostMapping("/link-pending")
     public ApiResponse<Void> linkPending(
             @AuthenticationPrincipal Jwt jwt,
@@ -151,6 +185,7 @@ public class GoogleOAuthController {
         }
         GoogleOAuthService.Start start =
                 google.startLink(UUID.fromString(jwt.getClaimAsString("user_id")), body.password());
+        authCookieService.setPasswordSetupFlow(response, false);
         writeCookie(response, PENDING_COOKIE, "", "/api/v1/auth/google", 0);
         writeCookie(response, STATE_COOKIE, start.state(), "/api/v1/auth/google/callback", 300);
         return ApiResponse.<LinkStartResponse>builder()
@@ -164,8 +199,9 @@ public class GoogleOAuthController {
             throw new ApiException(ErrorCode.UNAUTHENTICATED);
         }
         return ApiResponse.<LinkStatusResponse>builder()
-                .result(new LinkStatusResponse(
-                        google.isLinked(UUID.fromString(jwt.getClaimAsString("user_id")))))
+                .result(
+                        new LinkStatusResponse(
+                                google.isLinked(UUID.fromString(jwt.getClaimAsString("user_id")))))
                 .build();
     }
 

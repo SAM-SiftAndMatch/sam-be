@@ -86,7 +86,7 @@ public class FinanceController {
         var user = users.findById(user()).orElseThrow(FinanceStore::missing);
         if (user.getPasswordHash() == null)
             throw FinanceStore.invalid(
-                    "Hãy thiết lập mật khẩu tài khoản qua chức năng Quên mật khẩu trước khi thực hiện giao dịch tài chính");
+                    "Tài khoản Google chưa có mật khẩu SAM. Hãy chọn \"Thiết lập mật khẩu\" thay vì \"Quên mật khẩu\" để xác thực giao dịch tài chính.");
         if (!Boolean.TRUE.equals(user.getIsActive())
                 || !passwords.matches(password, user.getPasswordHash()))
             throw FinanceStore.forbidden();
