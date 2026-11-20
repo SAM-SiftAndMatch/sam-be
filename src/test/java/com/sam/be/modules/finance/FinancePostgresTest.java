@@ -355,13 +355,13 @@ class FinancePostgresTest {
 
     private UUID checkout() {
         UUID id = UUID.randomUUID();
+        // IPN processing checks expiry against PostgreSQL's clock, not the fixed finance clock.
         db.update(
-                "INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at) VALUES (?,'SUBSCRIPTION',?,?,149000,'SANDBOX','PENDING',?,?)",
+                "INSERT INTO payment_checkouts(id,purpose,object_id,owner_id,amount,environment,status,transfer_content,expires_at) VALUES (?,'SUBSCRIPTION',?,?,149000,'SANDBOX','PENDING',?,clock_timestamp()+INTERVAL '15 minutes')",
                 id,
                 UUID.randomUUID(),
                 owner,
-                "SAMGOI" + id.toString().replace("-", "").substring(0, 16),
-                store().time(now.plusSeconds(900)));
+                "SAMGOI" + id.toString().replace("-", "").substring(0, 16));
         return id;
     }
 
@@ -417,6 +417,16 @@ class FinancePostgresTest {
                         "SELECT count(*) FROM payment_checkout_receipts WHERE checkout_id=?",
                         Integer.class,
                         id));
+        assertEquals(
+                "ACCEPTED",
+                db.queryForObject(
+                        "SELECT disposition FROM payment_checkout_receipts WHERE checkout_id=?",
+                        String.class,
+                        id));
+        assertEquals(
+                "PAID",
+                db.queryForObject(
+                        "SELECT status FROM payment_checkouts WHERE id=?", String.class, id));
         assertEquals(
                 "PENDING",
                 db.queryForObject(
