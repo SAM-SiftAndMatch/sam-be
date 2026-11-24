@@ -126,3 +126,9 @@ finance:
   dual-control: ${FINANCE_DUAL_CONTROL:true}
   minimum-withdrawal: ${FINANCE_MINIMUM_WITHDRAWAL:50000}
   daily-withdrawal-limit: ${FINANCE_DAILY_WITHDRAWAL_LIMIT:100000000}
+
+ai:
+  crypto-key: ${AI_CRYPTO_KEY:}
+  gemini:
+    api-key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite,gemini-4-hydrogen,gemma-4-31b-it}
