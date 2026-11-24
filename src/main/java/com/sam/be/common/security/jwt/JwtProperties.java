@@ -14,6 +14,7 @@ public class JwtProperties {
     private String signerKeyBase64;
     private long accessExpiration;
     private long refreshExpiration;
+    private long sessionExpiration = 43200;
     private String issuer;
     private boolean cookieSecure;
 }

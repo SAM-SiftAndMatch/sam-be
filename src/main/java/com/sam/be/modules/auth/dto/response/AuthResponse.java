@@ -7,6 +7,8 @@ import lombok.Builder;
 public record AuthResponse(
         String accessToken,
         String refreshToken,
+        boolean rememberMe,
+        long refreshExpiresAt,
         String tokenType,
         long expiresIn,
         UUID userId,

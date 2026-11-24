@@ -75,11 +75,12 @@ server:
   port: ${BACKEND_PORT}
   forward-headers-strategy: framework
 
-# JWT Security Configuration thuần biến môi trường (không dùng fallback :default)
+# JWT Security Configuration
 jwt:
   signer-key-base64: ${JWT_SIGNER_KEY_BASE64}
   access-expiration: ${JWT_ACCESS_EXPIRATION}
   refresh-expiration: ${JWT_REFRESH_EXPIRATION}
+  session-expiration: ${JWT_SESSION_EXPIRATION:43200}
   issuer: ${JWT_ISSUER}
   cookie-secure: ${JWT_COOKIE_SECURE}
 

@@ -19,10 +19,16 @@ public class GoogleOAuthStateStore {
     private final StringRedisTemplate redis;
     private final ObjectMapper mapper;
 
-    public record Attempt(String verifier, String nonce, String intent, String userId) {}
+    public record Attempt(
+            String verifier, String nonce, String intent, String userId, boolean rememberMe) {}
 
     public record PendingIdentity(
-            String issuer, String subject, String email, String name, boolean authoritativeEmail) {}
+            String issuer,
+            String subject,
+            String email,
+            String name,
+            boolean authoritativeEmail,
+            boolean rememberMe) {}
 
     public record PasswordSetupGrant(UUID userId) {}
 
