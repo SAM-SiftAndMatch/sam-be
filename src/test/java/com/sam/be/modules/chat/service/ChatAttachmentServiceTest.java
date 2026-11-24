@@ -35,6 +35,22 @@ class ChatAttachmentServiceTest {
                     .job(Job.builder().build())
                     .build();
 
+    @Test
+    void validatesVideoContainersAndRejectsDisguisedVideo() {
+        byte[] mp4 = new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0};
+        assertEquals("video/mp4", ChatFilePolicy.validate("demo.mp4", mp4));
+        byte[] webm = new byte[] {0x1a, 0x45, (byte) 0xdf, (byte) 0xa3, 'w', 'e', 'b', 'm'};
+        assertEquals("video/webm", ChatFilePolicy.validate("demo.webm", webm));
+        assertThrows(
+                ApiException.class,
+                () -> ChatFilePolicy.validate("fake.mp4", "not video".getBytes()));
+        assertThrows(
+                ApiException.class,
+                () ->
+                        ChatFilePolicy.validate(
+                                "large.webm", new byte[(int) ChatFilePolicy.VIDEO_LIMIT + 1]));
+    }
+
     private void setupRoom() {
         when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
     }
@@ -172,7 +188,9 @@ class ChatAttachmentServiceTest {
         List<UUID> ids = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
             ChatAttachment attachment =
-                    attachment(clientId, room.getId(), ChatFilePolicy.FILE_LIMIT);
+                    attachment(clientId, room.getId(), ChatFilePolicy.VIDEO_LIMIT);
+            attachment.setContentType("video/mp4");
+            attachment.setFileName("demo.mp4");
             ids.add(attachment.getId());
             when(attachments.findForUpdate(attachment.getId())).thenReturn(Optional.of(attachment));
         }

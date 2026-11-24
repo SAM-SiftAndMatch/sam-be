@@ -41,8 +41,8 @@ public class ChatAttachmentService {
     public ChatAttachmentDto upload(UUID roomId, UUID userId, MultipartFile file) {
         ChatRoom room = requireRoom(roomId, userId, true);
         if (file == null || file.isEmpty()) throw ChatFilePolicy.invalid("File trống.");
-        if (file.getSize() > ChatFilePolicy.FILE_LIMIT)
-            throw ChatFilePolicy.invalid("File tối đa 10MB; ảnh tối đa 5MB.");
+        if (file.getSize() > ChatFilePolicy.VIDEO_LIMIT)
+            throw ChatFilePolicy.invalid("Video tối đa 50MB; file tối đa 10MB; ảnh tối đa 5MB.");
         String name = ChatFilePolicy.safeName(file.getOriginalFilename());
         try {
             byte[] bytes = file.getBytes();
@@ -105,7 +105,7 @@ public class ChatAttachmentService {
             result.add(attachment);
         }
         if (total > ChatFilePolicy.MESSAGE_LIMIT)
-            throw ChatFilePolicy.invalid("Tổng file trong một tin nhắn tối đa 25MB.");
+            throw ChatFilePolicy.invalid("Tổng file trong một tin nhắn tối đa 100MB.");
         return ids.stream()
                 .map(
                         id ->

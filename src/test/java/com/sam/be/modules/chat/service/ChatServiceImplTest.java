@@ -81,6 +81,9 @@ class ChatServiceImplTest {
 
         assertEquals("older", result.items().getFirst().getContent());
         assertEquals("newest", result.items().getLast().getContent());
+        assertEquals(
+                now.atZone(java.time.ZoneId.systemDefault()).toInstant(),
+                result.items().getLast().getCreatedAt().toInstant());
         assertEquals(older.getCreatedAt() + "|" + older.getId(), result.nextCursor());
         assertEquals(true, result.hasMore());
         verify(messages).findRecentByRoomId(eq(room.getId()), any());
