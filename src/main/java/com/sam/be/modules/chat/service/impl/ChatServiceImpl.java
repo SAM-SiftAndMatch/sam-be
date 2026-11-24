@@ -255,7 +255,13 @@ public class ChatServiceImpl implements ChatService {
                 .senderId(msg.getSender() != null ? msg.getSender().getId() : null)
                 .senderName(msg.getSender() != null ? msg.getSender().getFullName() : "SAM AI")
                 .content(msg.getContent())
-                .createdAt(msg.getCreatedAt())
+                .createdAt(
+                        msg.getCreatedAt() == null
+                                ? null
+                                : msg.getCreatedAt()
+                                        .atZone(java.time.ZoneId.systemDefault())
+                                        .toOffsetDateTime())
+                .clientMessageId(msg.getClientMessageId())
                 .system(system)
                 .attachments(
                         msg.getAttachments().stream()

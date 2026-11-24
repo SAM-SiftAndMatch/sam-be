@@ -12,7 +12,8 @@ public final class ChatFilePolicy {
     public static final int MAX_ATTACHMENTS = 5;
     public static final long IMAGE_LIMIT = 5L * 1024 * 1024;
     public static final long FILE_LIMIT = 10L * 1024 * 1024;
-    public static final long MESSAGE_LIMIT = 25L * 1024 * 1024;
+    public static final long VIDEO_LIMIT = 50L * 1024 * 1024;
+    public static final long MESSAGE_LIMIT = 100L * 1024 * 1024;
     private static final Map<String, String> TYPES =
             Map.ofEntries(
                     Map.entry("jpg", "image/jpeg"),
@@ -20,6 +21,8 @@ public final class ChatFilePolicy {
                     Map.entry("png", "image/png"),
                     Map.entry("gif", "image/gif"),
                     Map.entry("webp", "image/webp"),
+                    Map.entry("mp4", "video/mp4"),
+                    Map.entry("webm", "video/webm"),
                     Map.entry("pdf", "application/pdf"),
                     Map.entry("doc", "application/msword"),
                     Map.entry(
@@ -48,17 +51,40 @@ public final class ChatFilePolicy {
         String type = TYPES.get(extension);
         if (type == null)
             throw invalid(
-                    "Chỉ nhận ảnh JPG/PNG/GIF/WebP và file PDF, DOC/DOCX, XLS/XLSX, TXT, CSV, ZIP.");
+                    "Chỉ nhận ảnh JPG/PNG/GIF/WebP và video MP4/WebM, file PDF, DOC/DOCX, XLS/XLSX, TXT, CSV, ZIP.");
         if (bytes == null || bytes.length == 0) throw invalid("File trống.");
-        long limit = type.startsWith("image/") ? IMAGE_LIMIT : FILE_LIMIT;
+        long limit =
+                type.startsWith("video/")
+                        ? VIDEO_LIMIT
+                        : type.startsWith("image/") ? IMAGE_LIMIT : FILE_LIMIT;
         if (bytes.length > limit)
-            throw invalid(type.startsWith("image/") ? "Ảnh tối đa 5MB." : "File tối đa 10MB.");
+            throw invalid(
+                    type.startsWith("video/")
+                            ? "Video tối đa 50MB."
+                            : type.startsWith("image/") ? "Ảnh tối đa 5MB." : "File tối đa 10MB.");
         boolean valid =
                 switch (extension) {
                     case "jpg", "jpeg" -> starts(bytes, 0xff, 0xd8, 0xff);
                     case "png" -> starts(bytes, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
                     case "gif" -> ascii(bytes, 0, "GIF87a") || ascii(bytes, 0, "GIF89a");
                     case "webp" -> ascii(bytes, 0, "RIFF") && ascii(bytes, 8, "WEBP");
+                    case "mp4" ->
+                            bytes.length >= 16
+                                    && ascii(bytes, 4, "ftyp")
+                                    && (ascii(bytes, 8, "isom")
+                                            || ascii(bytes, 8, "iso2")
+                                            || ascii(bytes, 8, "mp41")
+                                            || ascii(bytes, 8, "mp42")
+                                            || ascii(bytes, 8, "avc1")
+                                            || ascii(bytes, 8, "M4V "));
+                    case "webm" ->
+                            starts(bytes, 0x1a, 0x45, 0xdf, 0xa3)
+                                    && new String(
+                                                    bytes,
+                                                    0,
+                                                    Math.min(bytes.length, 4096),
+                                                    StandardCharsets.ISO_8859_1)
+                                            .contains("webm");
                     case "pdf" -> ascii(bytes, 0, "%PDF-");
                     case "doc", "xls" ->
                             starts(bytes, 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1);
