@@ -1,6 +1,6 @@
 package com.sam.be.modules.chat.dto;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Data;
@@ -13,7 +13,8 @@ public class ChatMessageDto {
     private UUID senderId;
     private String senderName;
     private String content;
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
+    private UUID clientMessageId;
     private Boolean system;
     @Builder.Default private java.util.List<ChatAttachmentDto> attachments = java.util.List.of();
 }

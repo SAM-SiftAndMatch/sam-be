@@ -85,7 +85,7 @@ public class CloudinaryStorageServiceImpl implements StorageService {
             if (res.statusCode() < 200 || res.statusCode() >= 300 || res.body() == null) {
                 throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "Không tải được file.");
             }
-            if (res.body().length > 20 * 1024 * 1024) {
+            if (res.body().length > (uri.getPath().contains("/chat/") ? 50 : 20) * 1024 * 1024) {
                 throw new ApiException(ErrorCode.REQUEST_FAILED, "File quá lớn.");
             }
             String contentType =
