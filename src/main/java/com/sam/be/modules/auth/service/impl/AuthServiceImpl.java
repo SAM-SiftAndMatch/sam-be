@@ -1,6 +1,5 @@
 package com.sam.be.modules.auth.service.impl;
 
-import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.sam.be.common.constant.enums.UserRole;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
@@ -19,9 +18,11 @@ import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.ClientProfileRepository;
 import com.sam.be.modules.user.repository.FreelancerProfileRepository;
 import com.sam.be.modules.user.repository.UserRepository;
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -65,14 +66,17 @@ public class AuthServiceImpl implements AuthService {
             throw new ApiException(ErrorCode.ACCOUNT_DISABLED);
         }
 
-        return createSessionAndGenerateTokens(user, httpRequest);
+        return createSessionAndGenerateTokens(
+                user, httpRequest, Boolean.TRUE.equals(request.rememberMe()));
     }
 
     @Override
     @Transactional
     public AuthResponse register(RegisterRequest request, HttpServletRequest httpRequest) {
         if (!Boolean.TRUE.equals(request.acceptedTerms())) {
-            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Vui lòng chấp nhận điều khoản và chính sách bảo mật.");
+            throw new ApiException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Vui lòng chấp nhận điều khoản và chính sách bảo mật.");
         }
         if (request.accountType() == UserRole.ADMIN) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION, "Admin registration is not allowed");
@@ -102,7 +106,7 @@ public class AuthServiceImpl implements AuthService {
             clientProfileRepository.save(profile);
         }
 
-        return createSessionAndGenerateTokens(user, httpRequest);
+        return createSessionAndGenerateTokens(user, httpRequest, false);
     }
 
     @Override
@@ -116,6 +120,10 @@ public class AuthServiceImpl implements AuthService {
                 sessionRepository
                         .findByRefreshToken(refreshToken)
                         .orElseThrow(() -> new ApiException(ErrorCode.INVALID_REFRESH_TOKEN));
+
+        if (!oldSession.getExpiresAt().isAfter(LocalDateTime.now())) {
+            throw new ApiException(ErrorCode.SESSION_EXPIRED);
+        }
 
         // ⚠️ RFC 6819 Token Reuse Detection: Phát hiện token đã bị thu hồi trước đó nhưng lại được
         // dùng lại
@@ -145,12 +153,6 @@ public class AuthServiceImpl implements AuthService {
             throw new ApiException(ErrorCode.TOKEN_COMPROMISED);
         }
 
-        if (oldSession.getExpiresAt().isBefore(LocalDateTime.now())) {
-            oldSession.setIsRevoked(true);
-            sessionRepository.save(oldSession);
-            throw new ApiException(ErrorCode.SESSION_EXPIRED);
-        }
-
         User user = oldSession.getUser();
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             throw new ApiException(ErrorCode.ACCOUNT_DISABLED);
@@ -165,7 +167,9 @@ public class AuthServiceImpl implements AuthService {
         sessionCacheService.clearAuthz(oldSession.getId());
 
         // 2. Tạo session mới
-        AuthResponse response = createSessionAndGenerateTokens(user, httpRequest);
+        AuthResponse response =
+                createSessionAndGenerateTokens(
+                        user, httpRequest, oldSession.isRememberMe(), oldSession.getExpiresAt());
 
         // 3. Lưu response vào Grace Period (15 giây) để xử lý các request retry hoặc song song do
         // network/page reload
@@ -197,7 +201,8 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthResponse createSession(UUID userId, HttpServletRequest httpRequest) {
+    public AuthResponse createSession(
+            UUID userId, HttpServletRequest httpRequest, boolean rememberMe) {
         User user =
                 userRepository
                         .findById(userId)
@@ -205,13 +210,33 @@ public class AuthServiceImpl implements AuthService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             throw new ApiException(ErrorCode.ACCOUNT_DISABLED);
         }
-        return createSessionAndGenerateTokens(user, httpRequest);
+        return createSessionAndGenerateTokens(user, httpRequest, rememberMe);
     }
 
-    private AuthResponse createSessionAndGenerateTokens(User user, HttpServletRequest httpRequest) {
+    private AuthResponse createSessionAndGenerateTokens(
+            User user, HttpServletRequest httpRequest, boolean rememberMe) {
+        long lifetime =
+                rememberMe
+                        ? jwtProperties.getRefreshExpiration()
+                        : Math.min(
+                                jwtProperties.getSessionExpiration(),
+                                jwtProperties.getRefreshExpiration());
+        return createSessionAndGenerateTokens(
+                user, httpRequest, rememberMe, LocalDateTime.now().plusSeconds(lifetime));
+    }
+
+    private AuthResponse createSessionAndGenerateTokens(
+            User user,
+            HttpServletRequest httpRequest,
+            boolean rememberMe,
+            LocalDateTime expiresAt) {
+        long remainingSeconds = Duration.between(LocalDateTime.now(), expiresAt).toSeconds();
+        if (remainingSeconds <= 0) {
+            throw new ApiException(ErrorCode.SESSION_EXPIRED);
+        }
+        long accessLifetime = Math.min(jwtProperties.getAccessExpiration(), remainingSeconds);
         String clientIp = extractClientIp(httpRequest);
         String userAgent = httpRequest != null ? httpRequest.getHeader("User-Agent") : null;
-        LocalDateTime exp = LocalDateTime.now().plusSeconds(jwtProperties.getRefreshExpiration());
         String refreshToken = jwtTokenProvider.generateRefreshToken();
 
         Session session =
@@ -221,21 +246,29 @@ public class AuthServiceImpl implements AuthService {
                         .userAgent(userAgent)
                         .ipAddress(clientIp)
                         .isRevoked(false)
-                        .expiresAt(exp)
+                        .rememberMe(rememberMe)
+                        .expiresAt(expiresAt)
                         .build();
         session = sessionRepository.save(session);
 
         String accessToken =
                 jwtTokenProvider.generateAccessToken(
-                        user.getId(), user.getEmail(), session.getId(), user.getRole().name());
+                        user.getId(),
+                        user.getEmail(),
+                        session.getId(),
+                        user.getRole().name(),
+                        expiresAt.atZone(ZoneId.systemDefault()).toInstant());
 
-        sessionCacheService.markActive(session.getId(), Duration.ofSeconds(60));
+        sessionCacheService.markActive(
+                session.getId(), Duration.ofSeconds(Math.min(60, accessLifetime)));
 
         return AuthResponse.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
+                .rememberMe(rememberMe)
+                .refreshExpiresAt(expiresAt.atZone(ZoneId.systemDefault()).toEpochSecond())
                 .tokenType("Bearer")
-                .expiresIn(jwtProperties.getAccessExpiration())
+                .expiresIn(accessLifetime)
                 .userId(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())

@@ -29,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.stereotype.Service;
@@ -57,7 +58,7 @@ public class GoogleOAuthService {
     private final RestClient restClient;
     private final ObjectMapper mapper;
 
-    private final NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(JWKS_URL).build();
+    private final JwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(JWKS_URL).build();
 
     public record Start(String state, String url) {}
 
@@ -71,8 +72,8 @@ public class GoogleOAuthService {
 
     public record Callback(Outcome outcome, AuthResponse auth, String pendingTicket) {}
 
-    public Start startLogin() {
-        return start("LOGIN", null);
+    public Start startLogin(boolean rememberMe) {
+        return start("LOGIN", null, rememberMe);
     }
 
     public boolean isLinked(UUID userId) {
@@ -181,6 +182,10 @@ public class GoogleOAuthService {
     }
 
     private Start start(String intent, UUID userId) {
+        return start(intent, userId, false);
+    }
+
+    private Start start(String intent, UUID userId, boolean rememberMe) {
         requireConfigured();
         String state = randomToken();
         String nonce = randomToken();
@@ -189,7 +194,11 @@ public class GoogleOAuthService {
         stateStore.saveAttempt(
                 state,
                 new GoogleOAuthStateStore.Attempt(
-                        verifier, nonce, intent, userId == null ? null : userId.toString()));
+                        verifier,
+                        nonce,
+                        intent,
+                        userId == null ? null : userId.toString(),
+                        rememberMe));
 
         String url =
                 UriComponentsBuilder.fromUriString(AUTHORIZE_URL)
@@ -243,7 +252,9 @@ public class GoogleOAuthService {
         }
 
         if (linked.isPresent()) {
-            AuthResponse auth = authService.createSession(linked.get().getUser().getId(), request);
+            AuthResponse auth =
+                    authService.createSession(
+                            linked.get().getUser().getId(), request, attempt.rememberMe());
             return new Callback(Outcome.SIGNED_IN, auth, null);
         }
 
@@ -255,7 +266,15 @@ public class GoogleOAuthService {
             throw new ApiException(ErrorCode.GOOGLE_AUTH_FAILED);
         }
         String ticket = randomToken();
-        stateStore.savePending(ticket, googleIdentity);
+        stateStore.savePending(
+                ticket,
+                new GoogleOAuthStateStore.PendingIdentity(
+                        googleIdentity.issuer(),
+                        googleIdentity.subject(),
+                        googleIdentity.email(),
+                        googleIdentity.name(),
+                        googleIdentity.authoritativeEmail(),
+                        attempt.rememberMe()));
         return new Callback(outcome, null, ticket);
     }
 
@@ -334,7 +353,8 @@ public class GoogleOAuthService {
                 subject,
                 email,
                 cleanName.substring(0, Math.min(255, cleanName.length())),
-                authoritative);
+                authoritative,
+                false);
     }
 
     @Transactional
@@ -370,7 +390,7 @@ public class GoogleOAuthService {
             freelancers.save(FreelancerProfile.builder().user(user).build());
         }
         saveIdentity(user, pending);
-        return authService.createSession(user.getId(), request);
+        return authService.createSession(user.getId(), request, pending.rememberMe());
     }
 
     @Transactional

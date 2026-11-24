@@ -14,7 +14,7 @@ public interface AuthService {
 
     AuthResponse refresh(String refreshToken, HttpServletRequest httpRequest);
 
-    AuthResponse createSession(UUID userId, HttpServletRequest httpRequest);
+    AuthResponse createSession(UUID userId, HttpServletRequest httpRequest, boolean rememberMe);
 
     void logout(UUID sessionId);
 }

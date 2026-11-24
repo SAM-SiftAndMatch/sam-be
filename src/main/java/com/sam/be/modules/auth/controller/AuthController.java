@@ -45,7 +45,7 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
         AuthResponse response = authService.login(request, httpRequest);
-        authCookieService.setRefreshToken(httpResponse, response.refreshToken());
+        authCookieService.setRefreshToken(httpResponse, response);
 
         return ApiResponse.<PublicAuthResponse>builder()
                 .result(PublicAuthResponse.from(response))
@@ -60,7 +60,7 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
         AuthResponse response = authService.register(request, httpRequest);
-        authCookieService.setRefreshToken(httpResponse, response.refreshToken());
+        authCookieService.setRefreshToken(httpResponse, response);
 
         return ApiResponse.<PublicAuthResponse>builder()
                 .result(PublicAuthResponse.from(response))
@@ -70,13 +70,15 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public ApiResponse<PublicAuthResponse> refresh(
-            HttpServletRequest httpRequest,
-            HttpServletResponse httpResponse) {
-        if (!corsProperties.getAllowedOrigins().contains(httpRequest.getHeader(HttpHeaders.ORIGIN))) {
+            HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        if (!corsProperties
+                .getAllowedOrigins()
+                .contains(httpRequest.getHeader(HttpHeaders.ORIGIN))) {
             throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
         }
-        AuthResponse response = authService.refresh(extractRefreshTokenFromCookie(httpRequest), httpRequest);
-        authCookieService.setRefreshToken(httpResponse, response.refreshToken());
+        AuthResponse response =
+                authService.refresh(extractRefreshTokenFromCookie(httpRequest), httpRequest);
+        authCookieService.setRefreshToken(httpResponse, response);
 
         return ApiResponse.<PublicAuthResponse>builder()
                 .result(PublicAuthResponse.from(response))

@@ -46,6 +46,20 @@ public class JwtTokenProvider {
 
     public String generateAccessToken(
             UUID userId, String email, UUID sessionId, String accountType) {
+        return generateAccessToken(
+                userId,
+                email,
+                sessionId,
+                accountType,
+                Instant.now().plusSeconds(jwtProperties.getAccessExpiration()));
+    }
+
+    public String generateAccessToken(
+            UUID userId,
+            String email,
+            UUID sessionId,
+            String accountType,
+            Instant sessionExpiresAt) {
         Objects.requireNonNull(userId, "userId must not be null");
         Objects.requireNonNull(sessionId, "sessionId must not be null");
 
@@ -59,6 +73,7 @@ public class JwtTokenProvider {
         try {
             Instant now = Instant.now();
             Instant exp = now.plusSeconds(jwtProperties.getAccessExpiration());
+            if (sessionExpiresAt.isBefore(exp)) exp = sessionExpiresAt;
 
             JWTClaimsSet claimsSet =
                     new JWTClaimsSet.Builder()
