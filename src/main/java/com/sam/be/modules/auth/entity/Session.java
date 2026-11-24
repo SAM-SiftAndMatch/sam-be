@@ -49,6 +49,9 @@ public class Session {
     @Column(name = "is_revoked", nullable = false)
     private Boolean isRevoked = false;
 
+    @Column(name = "remember_me", nullable = false)
+    private boolean rememberMe;
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 

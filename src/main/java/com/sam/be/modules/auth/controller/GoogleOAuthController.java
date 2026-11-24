@@ -53,8 +53,10 @@ public class GoogleOAuthController {
 
     @RateLimit(action = "google-login", limit = 10, duration = 60, type = RateLimit.Type.IP_ADDRESS)
     @GetMapping("/start")
-    public ResponseEntity<Void> start(HttpServletResponse response) {
-        GoogleOAuthService.Start start = google.startLogin();
+    public ResponseEntity<Void> start(
+            @RequestParam(defaultValue = "false") boolean rememberMe,
+            HttpServletResponse response) {
+        GoogleOAuthService.Start start = google.startLogin(rememberMe);
         authCookieService.setPasswordSetupFlow(response, false);
         writeCookie(response, PENDING_COOKIE, "", "/api/v1/auth/google", 0);
         writeCookie(response, STATE_COOKIE, start.state(), "/api/v1/auth/google/callback", 300);
@@ -89,7 +91,7 @@ public class GoogleOAuthController {
                     google.callback(code, state, browserState, request);
             return switch (result.outcome()) {
                 case SIGNED_IN -> {
-                    authCookieService.setRefreshToken(response, result.auth().refreshToken());
+                    authCookieService.setRefreshToken(response, result.auth());
                     yield redirect("/auth/google/return");
                 }
                 case SIGN_UP -> {
@@ -142,7 +144,7 @@ public class GoogleOAuthController {
         }
         AuthResponse auth = google.completeRegistration(ticket, body.role(), request);
         writeCookie(response, PENDING_COOKIE, "", "/api/v1/auth/google", 0);
-        authCookieService.setRefreshToken(response, auth.refreshToken());
+        authCookieService.setRefreshToken(response, auth);
         return ApiResponse.<PublicAuthResponse>builder()
                 .result(PublicAuthResponse.from(auth))
                 .build();

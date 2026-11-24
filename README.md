@@ -35,6 +35,16 @@ cp .env.example .env
 ```
 *(Bạn có thể chỉnh sửa thông tin kết nối DB, Redis hoặc Port trong `.env` nếu cần).*
 
+`POST /api/v1/auth/login` nhận thêm `rememberMe` (mặc định `false`). Khi không chọn,
+refresh token dùng cookie theo phiên trình duyệt và phiên phía server có hạn tối đa
+`JWT_SESSION_EXPIRATION` giây (mặc định 43200, tức 12 giờ). Khi chọn, cookie được lưu
+với thời hạn `JWT_REFRESH_EXPIRATION` giây (mẫu cấu hình là 604800, tức 7 ngày).
+Refresh token giữ nguyên lựa chọn và hạn kết thúc ban đầu; đăng nhập Google nhận
+cùng lựa chọn qua tham số `rememberMe` của `/api/v1/auth/google/start`. Trình duyệt
+có tính năng khôi phục phiên có thể giữ lại cookie theo phiên khi mở lại.
+Triển khai backend với migration V51 trước frontend; các phiên đã tồn tại giữ chế
+độ duy trì đăng nhập đến hạn hiện có.
+
 ### 2. Cài đặt Git Hooks (Bắt buộc)
 Dự án sử dụng `pre-commit` để quét secret (Gitleaks), format code và chuẩn hóa commit message:
 ```bash

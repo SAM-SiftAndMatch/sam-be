@@ -1,7 +1,9 @@
 package com.sam.be.modules.auth.service;
 
 import com.sam.be.common.security.jwt.JwtProperties;
+import com.sam.be.modules.auth.dto.response.AuthResponse;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
@@ -14,8 +16,11 @@ public class AuthCookieService {
     public static final String PASSWORD_SETUP_FLOW_COOKIE = "sam_password_setup_flow";
     private final JwtProperties jwtProperties;
 
-    public void setRefreshToken(HttpServletResponse response, String refreshToken) {
-        writeRefreshCookie(response, refreshToken, jwtProperties.getRefreshExpiration());
+    public void setRefreshToken(HttpServletResponse response, AuthResponse auth) {
+        long remainingSeconds =
+                Math.max(0, auth.refreshExpiresAt() - Instant.now().getEpochSecond());
+        long maxAge = remainingSeconds == 0 ? 0 : auth.rememberMe() ? remainingSeconds : -1;
+        writeRefreshCookie(response, auth.refreshToken(), maxAge);
     }
 
     public void clearRefreshToken(HttpServletResponse response) {
