@@ -48,7 +48,12 @@ public class ChatAttachmentService {
             byte[] bytes = file.getBytes();
             String type = ChatFilePolicy.validate(name, bytes);
             UUID id = UUID.randomUUID();
-            String url = storage.uploadFile(bytes, id + "_" + name, "chat/" + roomId);
+            String storageName = id + "_" + name;
+            String folder = "chat/" + roomId;
+            String url =
+                    type.startsWith("video/")
+                            ? storage.uploadVideo(bytes, storageName, folder)
+                            : storage.uploadFile(bytes, storageName, folder);
             ChatAttachment attachment =
                     ChatAttachment.builder()
                             .id(id)

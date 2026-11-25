@@ -43,11 +43,13 @@ public class ChatAttachmentController {
             @RequestParam(defaultValue = "false") boolean download) {
         var attachment =
                 attachments.requireReadable(roomId, SecurityUtils.getCurrentUserId(), attachmentId);
-        var file = storage.downloadFile(attachment.getStorageUrl());
-        boolean inline =
-                !download
-                        && (attachment.getContentType().startsWith("image/")
-                                || "application/pdf".equals(attachment.getContentType()));
+        boolean pdf = "application/pdf".equals(attachment.getContentType());
+        byte[] content =
+                pdf || "application/zip".equals(attachment.getContentType())
+                        ? storage.downloadChatDocument(
+                                attachment.getStorageUrl(), roomId, attachment.getSizeBytes())
+                        : storage.downloadFile(attachment.getStorageUrl()).getContent();
+        boolean inline = !download && (attachment.getContentType().startsWith("image/") || pdf);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(attachment.getContentType()))
                 .header(
@@ -59,6 +61,6 @@ public class ChatAttachmentController {
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Content-Security-Policy", "sandbox")
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-                .body(file.getContent());
+                .body(content);
     }
 }

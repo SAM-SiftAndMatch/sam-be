@@ -5,10 +5,18 @@ import com.cloudinary.utils.ObjectUtils;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.exception.ErrorCode;
 import com.sam.be.common.storage.service.StorageService;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,26 +25,36 @@ import org.springframework.stereotype.Service;
 public class CloudinaryStorageServiceImpl implements StorageService {
 
     private final Cloudinary cloudinary;
+    private final HttpClient documentClient =
+            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     @org.springframework.beans.factory.annotation.Value("${CLOUDINARY_CLOUD_NAME}")
     private String cloudName;
 
     @Override
     public String uploadFile(byte[] content, String fileName, String folder) {
+        return upload(content, sanitizeFileName(fileName), folder, "raw");
+    }
+
+    @Override
+    public String uploadVideo(byte[] content, String fileName, String folder) {
+        String name = sanitizeFileName(fileName);
+        int extensionStart = name.lastIndexOf('.');
+        String publicName = extensionStart > 0 ? name.substring(0, extensionStart) : name;
+        return upload(content, publicName, folder, "video");
+    }
+
+    private String upload(byte[] content, String publicName, String folder, String resourceType) {
         try {
             String safeFolder = (folder == null || folder.isBlank()) ? "uploads" : folder.trim();
             Map<String, Object> params =
                     ObjectUtils.asMap(
                             "resource_type",
-                            "raw",
+                            resourceType,
                             "type",
                             "upload",
                             "public_id",
-                            safeFolder
-                                    + "/"
-                                    + System.currentTimeMillis()
-                                    + "_"
-                                    + sanitizeFileName(fileName));
+                            safeFolder + "/" + System.currentTimeMillis() + "_" + publicName);
             Map uploadResult = cloudinary.uploader().upload(content, params);
             return uploadResult.get("secure_url").toString();
         } catch (Exception e) {
@@ -55,6 +73,59 @@ public class CloudinaryStorageServiceImpl implements StorageService {
             safe = "file";
         }
         return safe.length() > 120 ? safe.substring(safe.length() - 120) : safe;
+    }
+
+    @Override
+    public byte[] downloadChatDocument(String storageUrl, UUID roomId, long sizeBytes) {
+        // Sign only the server-stored raw document in the authorized chat room.
+        String prefix = "https://res.cloudinary.com/" + cloudName + "/raw/upload/";
+        var path =
+                Pattern.compile(
+                                Pattern.quote(prefix)
+                                        + "v[0-9]+/(chat/"
+                                        + roomId
+                                        + "/[A-Za-z0-9._-]+\\.(?i:pdf|zip))")
+                        .matcher(storageUrl);
+        if (!path.matches() || sizeBytes <= 0 || sizeBytes > 10L * 1024 * 1024)
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED, "Thông tin tệp đính kèm không hợp lệ.");
+        try {
+            String url =
+                    cloudinary.privateDownload(
+                            path.group(1),
+                            null,
+                            ObjectUtils.asMap(
+                                    "resource_type",
+                                    "raw",
+                                    "type",
+                                    "upload",
+                                    "expires_at",
+                                    Instant.now().plusSeconds(60).getEpochSecond()));
+            var request =
+                    HttpRequest.newBuilder(URI.create(url))
+                            .timeout(Duration.ofSeconds(30))
+                            .GET()
+                            .build();
+            var response = documentClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            try (var stream = response.body()) {
+                if (response.statusCode() == 404)
+                    throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND);
+                if (response.statusCode() != 200)
+                    throw new ApiException(
+                            ErrorCode.REQUEST_FAILED, "Không tải được tệp đính kèm.");
+                byte[] content = stream.readNBytes((int) sizeBytes + 1);
+                if (content.length != sizeBytes)
+                    throw new ApiException(ErrorCode.REQUEST_FAILED, "Nội dung tệp không đầy đủ.");
+                return content;
+            }
+        } catch (ApiException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Yêu cầu tải tệp bị gián đoạn.");
+        } catch (Exception e) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Không tải được tệp đính kèm.");
+        }
     }
 
     @Override

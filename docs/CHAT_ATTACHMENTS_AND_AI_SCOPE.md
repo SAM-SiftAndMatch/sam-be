@@ -6,9 +6,10 @@ Client và freelancer có thể chọn ảnh/file hoặc dán ảnh từ clipboa
 
 Giới hạn áp dụng ở cả giao diện và backend:
 
-- Tối đa 5 tệp mỗi tin; tổng tối đa 25MB.
+- Tối đa 5 tệp mỗi tin và tổng dung lượng tối đa 100 MB.
 - Ảnh JPG, JPEG, PNG, GIF, WebP: tối đa 5MB mỗi ảnh.
 - PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, ZIP: tối đa 10MB mỗi file.
+- Video MP4 và WebM có giới hạn 50 MB mỗi tệp.
 - Nội dung văn bản: tối đa 8.000 ký tự.
 - Tải tệp: tối đa 30 lượt/phút/tài khoản; gửi tin: 30 lượt/phút/tài khoản.
 
@@ -20,11 +21,11 @@ Backend kiểm tra định dạng thực tế ngoài phần mở rộng. SVG, HT
 - `POST /api/v1/chat/rooms/{roomId}/messages`: nhận `content`, `attachmentIds` và `clientMessageId` (UUID). WebSocket cũng nhận các trường này. `content` có thể trống khi có tệp.
 - `GET /api/v1/chat/rooms/{roomId}/attachments/{attachmentId}/content`: lấy nội dung sau khi kiểm tra thành viên của phòng. `download=true` buộc tải về.
 
-File được lưu bằng dịch vụ Cloudinary hiện có, trong thư mục `chat/{roomId}`. URL Cloudinary không trả về client; web lấy blob bằng API có xác thực. Ảnh hiện trong tin nhắn và có chế độ mở lớn; PDF có xem trước; các loại tài liệu khác tải về để mở bằng ứng dụng phù hợp.
+Tệp được lưu vào thư mục `chat/{roomId}` trên Cloudinary. Video mới dùng `resource_type=video`. Web lấy nội dung qua API có xác thực. Ảnh và video có thể mở trong chat, PDF có xem trước và các tài liệu khác có thể tải xuống. Sau khi xác nhận quyền đọc trong phòng, backend tải PDF và ZIP bằng API Cloudinary có chữ ký ngắn hạn. Cách này áp dụng cả với các tệp đã gửi.
 
 Chỉ chủ tải lên mới được gửi tệp, vào đúng phòng của tệp. Tệp đã gắn tin không được dùng lại để gửi tin khác. Tệp chưa gửi quá 24 giờ không được nhận gửi nữa; không có tác vụ tự xóa file Cloudinary trong thay đổi này. Người nhận chỉ được đọc sau khi tệp đã gửi. Retry cùng mã tin trả tin đã lưu; dùng lại mã cho nội dung khác bị từ chối.
 
-Migration V44 tạo `chat_attachments` và chỉ mục mã gửi tin. Spring multipart cho phép file 10MB, request 11MB để đủ phần bao multipart. Reverse proxy bên ngoài cũng cần cho phép request ít nhất 11MB. Bản mobile tiếp tục gửi tin chữ qua REST/WebSocket; để hiển thị và gửi tệp, mobile cần dùng các trường/API mới.
+Migration V44 tạo `chat_attachments` và chỉ mục mã gửi tin. Migration V50 tăng giới hạn kích thước cho video. Spring multipart nhận tối đa 50 MB mỗi tệp và 51 MB mỗi request. Trên Nginx trước backend, đặt `client_max_body_size 51m;` ở cấu hình phục vụ `/api/v1/chat/rooms/{roomId}/attachments`, rồi chạy `nginx -t` trước khi tải lại cấu hình. Bản mobile tiếp tục gửi tin chữ qua REST/WebSocket. Để hiển thị và gửi tệp, mobile cần dùng các API trên.
 
 ## Nội dung đã chia sẻ trong workspace
 
