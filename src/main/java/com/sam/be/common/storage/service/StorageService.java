@@ -6,6 +6,10 @@ public interface StorageService {
     // Upload file nhị phân (PDF/DOC...) lên Cloudinary (raw), trả secure URL
     String uploadFile(byte[] content, String fileName, String folder);
 
+    String uploadVideo(byte[] content, String fileName, String folder);
+
+    byte[] downloadChatDocument(String storageUrl, java.util.UUID roomId, long sizeBytes);
+
     // Tải file qua BE (tránh lỗi ACL khi bấm link Cloudinary trực tiếp), trả kèm tên + loại file
     com.sam.be.common.storage.dto.response.FileData downloadFile(String url);
 }

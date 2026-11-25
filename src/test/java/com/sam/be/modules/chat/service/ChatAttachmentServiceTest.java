@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.cloudinary.Cloudinary;
+import com.cloudinary.Uploader;
 import com.sam.be.common.exception.ApiException;
 import com.sam.be.common.storage.service.StorageService;
+import com.sam.be.common.storage.service.impl.CloudinaryStorageServiceImpl;
 import com.sam.be.modules.chat.entity.*;
 import com.sam.be.modules.chat.repository.*;
 import com.sam.be.modules.job.entity.Job;
@@ -34,6 +37,25 @@ class ChatAttachmentServiceTest {
                     .freelancer(User.builder().id(freelancerId).build())
                     .job(Job.builder().build())
                     .build();
+
+    @Test
+    void rejectsSigningDocumentsOutsideTheAuthorizedRoom() {
+        Cloudinary cloudinary = mock(Cloudinary.class);
+        var documents = new CloudinaryStorageServiceImpl(cloudinary);
+        org.springframework.test.util.ReflectionTestUtils.setField(documents, "cloudName", "test");
+        String folder = "https://res.cloudinary.com/test/raw/upload/v123/chat/";
+        String ownRoom = folder + room.getId() + "/";
+        for (String url :
+                List.of(
+                        folder + UUID.randomUUID() + "/file.pdf",
+                        ownRoom + "../file.pdf",
+                        ownRoom + "file.txt",
+                        ownRoom + "file.pdf?other=1")) {
+            assertThrows(
+                    ApiException.class, () -> documents.downloadChatDocument(url, room.getId(), 8));
+        }
+        verifyNoInteractions(cloudinary);
+    }
 
     @Test
     void validatesVideoContainersAndRejectsDisguisedVideo() {
@@ -132,6 +154,44 @@ class ChatAttachmentServiceTest {
         assertEquals(
                 4,
                 com.sam.be.modules.chat.dto.ChatAttachmentDto.class.getRecordComponents().length);
+    }
+
+    @Test
+    void uploadsChatVideoToCloudinaryAsVideoWithAnExtensionlessPublicId() throws Exception {
+        setupRoom();
+        var cloudinary = mock(Cloudinary.class);
+        var uploader = mock(Uploader.class);
+        when(cloudinary.uploader()).thenReturn(uploader);
+        when(uploader.upload(any(byte[].class), anyMap()))
+                .thenReturn(
+                        Map.of(
+                                "secure_url",
+                                "https://res.cloudinary.com/cloud/video/upload/clip.mp4"));
+        when(attachments.save(any())).thenAnswer(i -> i.getArgument(0));
+        var chat =
+                new ChatAttachmentService(
+                        attachments, rooms, new CloudinaryStorageServiceImpl(cloudinary));
+        byte[] mp4 = new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0};
+        var result =
+                chat.upload(
+                        room.getId(),
+                        clientId,
+                        new MockMultipartFile("file", "clip.mp4", "video/mp4", mp4));
+
+        assertEquals("video/mp4", result.contentType());
+        assertEquals("clip.mp4", result.fileName());
+        verify(uploader)
+                .upload(
+                        any(byte[].class),
+                        argThat(
+                                params ->
+                                        "video".equals(params.get("resource_type"))
+                                                && params.get("public_id")
+                                                        .toString()
+                                                        .startsWith("chat/" + room.getId() + "/")
+                                                && params.get("public_id")
+                                                        .toString()
+                                                        .endsWith("_clip")));
     }
 
     @Test
