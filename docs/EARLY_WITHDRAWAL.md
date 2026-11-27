@@ -1,5 +1,7 @@
 # Yêu cầu rút tiền sớm
 
+> V53 bổ sung tải ảnh biên lai trực tiếp khi admin xác nhận đã chi. Xem [PAYOUT_RECEIPTS.md](PAYOUT_RECEIPTS.md).
+
 Triển khai trong sam-be và sam-fe, migration V52. Đây là ngoại lệ xét duyệt cho từng lệnh chi; không sửa `accepted_at`, `available_at` hoặc thời hạn tạo ticket bảo trì. Các lệnh cũ được phân loại `NORMAL`.
 
 Freelancer vào **Thu nhập & thanh toán → Số dư theo dự án**, chọn **Xin rút tiền sớm** ở dự án còn trong 168 giờ bảo trì. Điều kiện: dự án gốc đã nghiệm thu, nguồn LIVE đã xác minh, không có ticket bảo trì đang mở, không có yêu cầu rút sớm đang xử lý. Mỗi yêu cầu chỉ dùng một khoản công nợ. Chỉ rút phần thù lao sau phí còn lại; tiền hoàn cọc vẫn chờ luồng thông thường.

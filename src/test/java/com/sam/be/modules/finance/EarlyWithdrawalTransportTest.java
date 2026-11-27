@@ -60,4 +60,44 @@ class EarlyWithdrawalTransportTest {
             assertFalse(input.toString().contains("secret"));
         }
     }
+
+    @Test
+    void payoutReceiptMultipartIsNotTruncatedAndRequiresAnAdmin() throws Exception {
+        var request =
+                new MockHttpServletRequest(
+                        "POST",
+                        "/api/v1/finance/admin/withdrawals/"
+                                + UUID.randomUUID()
+                                + "/confirm-manual-payment");
+        request.setContentType("multipart/form-data; boundary=receipt");
+        request.setContent(new byte[50000]);
+        var response = new MockHttpServletResponse();
+        new FinancePrivacyFilter()
+                .doFilter(
+                        request,
+                        response,
+                        (incoming, outgoing) ->
+                                assertEquals(
+                                        50000, incoming.getInputStream().readAllBytes().length));
+        assertEquals("no-store, max-age=0", response.getHeader("Cache-Control"));
+        for (String name : List.of("finishWithImages", "payoutReceiptImage")) {
+            var method =
+                    Arrays.stream(FinanceController.class.getDeclaredMethods())
+                            .filter(m -> m.getName().equals(name))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(
+                    "hasRole('ADMIN')",
+                    method.getAnnotation(
+                                    org.springframework.security.access.prepost.PreAuthorize.class)
+                            .value());
+        }
+        assertEquals(
+                "hasRole('ADMIN')",
+                WithdrawalImageService.class
+                        .getMethod("readReceipt", UUID.class, UUID.class)
+                        .getAnnotation(
+                                org.springframework.security.access.prepost.PreAuthorize.class)
+                        .value());
+    }
 }
