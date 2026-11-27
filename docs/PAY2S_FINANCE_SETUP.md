@@ -165,7 +165,7 @@ Nhập lại cùng orderId. Giữ tunnel hoạt động, đợi worker kích ho�
 
 Chỉ với database mới chưa có khóa, chạy hai lần `openssl rand -base64 32`, dùng hai kết quả độc lập cho `FINANCE_BANK_KEYS` và `FINANCE_BANK_FINGERPRINT_KEY`. Dữ liệu ngân hàng mã hóa AES-256-GCM có AAD theo chủ sở hữu/bản ghi. Không thay đè khóa của database đang có dữ liệu; phải giữ key ID cũ khi xoay khóa. Mất khóa sẽ không đọc được dữ liệu cũ. Chi tiết API ở [FREELANCER_INCOME_BANK_API.md](FREELANCER_INCOME_BANK_API.md).
 
-Thu tiền tự động không đồng nghĩa chuyển tiền freelancer tự động. Sau nghiệm thu, giữ ít nhất 168 giờ; ticket hợp lệ còn mở tiếp tục chặn rút. Chỉ bật `FINANCE_LIVE_PAYOUTS_ENABLED=true` sau khi đã đối soát nguồn tiền, xác minh tài khoản và kiểm tra quy trình hai admin. Chuyển ngân hàng vẫn thủ công có chứng từ, kiểm soát kép và xác thực lại mật khẩu; không có API Pay2S chi hộ trong bản triển khai.
+Thu tiền tự động không đồng nghĩa chuyển tiền freelancer tự động. Mặc định sau nghiệm thu, giữ 168 giờ; ticket hợp lệ còn mở tiếp tục chặn rút. Ngoại lệ từ V52: freelancer có thể xin rút sớm thù lao sau phí kèm lý do và 1–5 ảnh bằng chứng để admin xét duyệt từng khoản; tiền hoàn cọc và thời hạn bảo trì vẫn giữ nguyên. Xem [yêu cầu rút sớm](EARLY_WITHDRAWAL.md). Chỉ bật `FINANCE_LIVE_PAYOUTS_ENABLED=true` sau khi đã đối soát nguồn tiền, xác minh tài khoản và kiểm tra quy trình hai admin. Chuyển ngân hàng vẫn thủ công có chứng từ, kiểm soát kép và xác thực lại mật khẩu; không có API Pay2S chi hộ trong bản triển khai.
 
 ## 8. Kiểm thử và chẩn đoán
 

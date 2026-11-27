@@ -112,7 +112,7 @@ public class ProjectSettlementServiceImpl implements ProjectSettlementService {
                 fund.getId(),
                 payout.add(depositRefund),
                 "PROJECT_SETTLEMENT_POSTED",
-                "Đã nghiệm thu và ghi công nợ; chỉ được rút sau 7 ngày bảo trì và xử lý xong ticket.");
+                "Đã nghiệm thu và ghi công nợ; rút sau 7 ngày bảo trì và xử lý xong ticket. Nếu cần gấp, bạn có thể xin rút sớm thù lao kèm lý do và ảnh bằng chứng để admin xét duyệt; nghĩa vụ bảo trì vẫn giữ nguyên.");
         notificationService.sendPaymentNotification(
                 contract.getClient().getId(),
                 contract.getId(),

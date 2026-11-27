@@ -22,6 +22,7 @@ public class FinanceController {
     private final FinanceIncomeService income;
     private final BankAccountService banks;
     private final WithdrawalService withdrawals;
+    private final WithdrawalImageService withdrawalImages;
     private final MaintenanceService maintenance;
     private final UserRepository users;
     private final PasswordEncoder passwords;
@@ -75,6 +76,27 @@ public class FinanceController {
         @Override
         public String toString() {
             return "PaymentProof[REDACTED]";
+        }
+    }
+
+    public record EarlyWithdrawInput(
+            @NotNull UUID bankAccountId,
+            @NotNull UUID requestKey,
+            @NotNull UUID payableId,
+            @NotNull @DecimalMin("1") @Digits(integer = 12, fraction = 0) BigDecimal amount,
+            @NotBlank @Size(max = 2000) String reason,
+            @NotBlank @Size(max = 200) String password) {
+        @Override
+        public String toString() {
+            return "EarlyWithdrawInput[REDACTED]";
+        }
+    }
+
+    public record ApproveInput(
+            @NotBlank @Size(max = 200) String password, @Size(max = 1000) String note) {
+        @Override
+        public String toString() {
+            return "ApproveInput[REDACTED]";
         }
     }
 
@@ -225,6 +247,47 @@ public class FinanceController {
         return ok(true);
     }
 
+    @PostMapping(
+            value = "/withdrawals/early",
+            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('FREELANCER')")
+    @RateLimit(
+            type = RateLimit.Type.USER_ID,
+            action = "finance_sensitive",
+            limit = 5,
+            duration = 300,
+            failClosed = true)
+    public ApiResponse<?> earlyWithdraw(
+            @Valid @RequestPart("request") EarlyWithdrawInput input,
+            @RequestPart("images") List<org.springframework.web.multipart.MultipartFile> images) {
+        reauthenticate(input.password());
+        return ok(
+                withdrawals.createEarly(
+                        user(),
+                        input.bankAccountId(),
+                        input.requestKey(),
+                        input.amount(),
+                        input.payableId(),
+                        input.reason(),
+                        images));
+    }
+
+    @GetMapping("/withdrawals/{id}/images/{imageId}")
+    public org.springframework.http.ResponseEntity<byte[]> withdrawalImage(
+            @PathVariable UUID id, @PathVariable UUID imageId) {
+        var image = withdrawalImages.read(user(), SecurityUtils.isAdmin(), id, imageId);
+        return org.springframework.http.ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.parseMediaType(image.type()))
+                .header("X-Content-Type-Options", "nosniff")
+                .header(
+                        "Content-Disposition",
+                        org.springframework.http.ContentDisposition.inline()
+                                .filename(image.name(), java.nio.charset.StandardCharsets.UTF_8)
+                                .build()
+                                .toString())
+                .body(image.bytes());
+    }
+
     @GetMapping("/admin/bank-accounts")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<?> adminBanks(
@@ -263,8 +326,9 @@ public class FinanceController {
     @GetMapping("/admin/withdrawals")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<?> adminWithdrawals(
-            @RequestParam(defaultValue = "0") @Min(0) @Max(100000) int page) {
-        return ok(withdrawals.adminList(page));
+            @RequestParam(defaultValue = "0") @Min(0) @Max(100000) int page,
+            @RequestParam(required = false) @Pattern(regexp = "NORMAL|EARLY") String type) {
+        return ok(withdrawals.adminList(page, type));
     }
 
     @PostMapping("/admin/withdrawals/{id}/approve")
@@ -275,9 +339,9 @@ public class FinanceController {
             limit = 5,
             duration = 300,
             failClosed = true)
-    public ApiResponse<?> approve(@PathVariable UUID id, @Valid @RequestBody PasswordInput input) {
+    public ApiResponse<?> approve(@PathVariable UUID id, @Valid @RequestBody ApproveInput input) {
         reauthenticate(input.password());
-        withdrawals.approve(user(), id);
+        withdrawals.approve(user(), id, input.note());
         return ok(true);
     }
 

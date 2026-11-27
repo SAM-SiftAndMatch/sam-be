@@ -14,15 +14,19 @@ public class WithdrawalService {
     private final FinanceStore store;
     private final BankDataCipher cipher;
     private final BankAccountService banks;
+    private final WithdrawalImageService images;
+    private final WithdrawalNotifications notifications;
     private final boolean enabled, dualControl;
     private final BigDecimal minimum, dailyLimit;
-    private static final String PUBLIC =
-            "id,owner_id,bank_account_id,bank_code,last_four,amount,status,approved_by,operator_id,bank_reference,evidence_reference,created_at,updated_at";
+    static final String PUBLIC =
+            "id,owner_id,bank_account_id,bank_code,last_four,amount,status,approved_by,operator_id,bank_reference,evidence_reference,created_at,updated_at,request_type,early_payable_id,request_reason";
 
     public WithdrawalService(
             FinanceStore store,
             BankDataCipher cipher,
             BankAccountService banks,
+            WithdrawalImageService images,
+            WithdrawalNotifications notifications,
             @Value("${finance.live-payouts-enabled:false}") boolean enabled,
             @Value("${finance.dual-control:true}") boolean dualControl,
             @Value("${finance.minimum-withdrawal:50000}") BigDecimal minimum,
@@ -30,6 +34,8 @@ public class WithdrawalService {
         this.store = store;
         this.cipher = cipher;
         this.banks = banks;
+        this.images = images;
+        this.notifications = notifications;
         this.enabled = enabled;
         this.dualControl = dualControl;
         this.minimum = minimum;
@@ -65,15 +71,53 @@ public class WithdrawalService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasRole('ADMIN')")
     public List<Map<String, Object>> adminList(int page) {
+        return adminList(page, null);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<Map<String, Object>> adminList(int page, String type) {
+        if (type != null && !Set.of("NORMAL", "EARLY").contains(type))
+            throw invalid("Loại yêu cầu rút tiền không hợp lệ");
         return store.rows(
                 "SELECT "
                         + PUBLIC
-                        + " FROM finance_withdrawals ORDER BY created_at DESC,id DESC LIMIT 25 OFFSET ?",
+                        + " FROM finance_withdrawals WHERE (CAST(? AS VARCHAR) IS NULL OR request_type=?) ORDER BY created_at DESC,id DESC LIMIT 25 OFFSET ?",
+                type,
+                type,
                 Math.max(0, page) * 25L);
     }
 
     @Transactional
     public Map<String, Object> create(UUID owner, UUID bankId, UUID requestKey, BigDecimal amount) {
+        return createInternal(owner, bankId, requestKey, amount, null);
+    }
+
+    private record Early(UUID payable, String reason, List<WithdrawalImageService.Image> images) {}
+
+    @Transactional
+    public Map<String, Object> createEarly(
+            UUID owner,
+            UUID bankId,
+            UUID requestKey,
+            BigDecimal amount,
+            UUID payable,
+            String reason,
+            List<org.springframework.web.multipart.MultipartFile> files) {
+        if (!enabled) throw invalid("Chức năng chi tiền thật chưa được bật");
+        if (reason == null || reason.isBlank() || reason.trim().length() > 2000)
+            throw invalid("Cần nhập lý do xin rút sớm (tối đa 2000 ký tự)");
+        if (payable == null) throw invalid("Cần chọn dự án xin rút sớm");
+        return createInternal(
+                owner,
+                bankId,
+                requestKey,
+                amount,
+                new Early(payable, reason.trim(), images.validate(files)));
+    }
+
+    private Map<String, Object> createInternal(
+            UUID owner, UUID bankId, UUID requestKey, BigDecimal amount, Early early) {
         if (!enabled) throw invalid("Chức năng chi tiền thật chưa được bật");
         if (amount.signum() <= 0
                 || amount.stripTrailingZeros().scale() > 0
@@ -91,7 +135,13 @@ public class WithdrawalService {
         if (!old.isEmpty()) {
             var previous = old.getFirst();
             if (!bankId.equals(id(previous, "bankAccountId"))
-                    || amount.compareTo(money(previous, "amount")) != 0)
+                    || amount.compareTo(money(previous, "amount")) != 0
+                    || !(early == null ? "NORMAL" : "EARLY")
+                            .equals(previous.getOrDefault("requestType", "NORMAL"))
+                    || (early != null
+                            && (!early.payable().equals(id(previous, "earlyPayableId"))
+                                    || !early.reason().equals(previous.get("requestReason"))
+                                    || !images.matches(id(previous, "id"), early.images()))))
                 throw invalid("Khóa yêu cầu đã dùng cho nội dung khác");
             return previous;
         }
@@ -101,23 +151,40 @@ public class WithdrawalService {
                         bankId,
                         owner);
         BigDecimal today =
-                store.jdbc().queryForObject(
-                        "SELECT COALESCE(SUM(amount),0) FROM finance_withdrawals WHERE owner_id=? AND created_at>=? AND status NOT IN ('FAILED','REJECTED','CANCELLED')",
-                        BigDecimal.class,
-                        owner,
-                        store.time(
-                                store.now()
-                                        .atZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
-                                        .toLocalDate()
-                                        .atStartOfDay(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
-                                        .toInstant()));
+                store.jdbc()
+                        .queryForObject(
+                                "SELECT COALESCE(SUM(amount),0) FROM finance_withdrawals WHERE owner_id=? AND created_at>=? AND status NOT IN ('FAILED','REJECTED','CANCELLED')",
+                                BigDecimal.class,
+                                owner,
+                                store.time(
+                                        store.now()
+                                                .atZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
+                                                .toLocalDate()
+                                                .atStartOfDay(
+                                                        java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
+                                                .toInstant()));
         if (today.add(amount).compareTo(dailyLimit) > 0)
             throw invalid("Vượt hạn mức rút trong ngày");
         var payables = store.payables(owner);
+        if (early != null) {
+            payables = payables.stream().filter(p -> early.payable().equals(id(p, "id"))).toList();
+            if (payables.isEmpty()) throw missing();
+            var p = payables.getFirst();
+            if ((Boolean) p.get("sandbox")
+                    || (Boolean) p.get("blocked")
+                    || p.get("maintenanceOrderId") != null
+                    || !FinancePolicy.canOpen(instant(p, "acceptedAt"), store.now()))
+                throw invalid(
+                        "Chỉ xin rút sớm cho dự án thật đã nghiệm thu, còn trong 7 ngày bảo trì và không có ticket chặn chi");
+            if (!store.rows(
+                            "SELECT id FROM finance_withdrawals WHERE early_payable_id=? AND status IN ('REQUESTED','APPROVED','PROCESSING','RECONCILIATION_REQUIRED')",
+                            early.payable())
+                    .isEmpty()) throw invalid("Dự án đã có yêu cầu rút sớm đang xử lý");
+        }
         BigDecimal total =
                 payables.stream()
-                        .filter(store::eligible)
-                        .map(store::remaining)
+                        .filter(p -> early != null || store.eligible(p))
+                        .map(p -> early == null ? store.remaining(p) : earlyRemaining(p))
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
         if (total.compareTo(amount) < 0)
             throw invalid(
@@ -126,39 +193,60 @@ public class WithdrawalService {
         String snapshot =
                 cipher.decrypt(
                         bank.get("detailsEncrypted").toString(), "bank:" + owner + ":" + bankId);
-        store.jdbc().update(
-                """
-            INSERT INTO finance_withdrawals(id,owner_id,request_key,bank_account_id,beneficiary_encrypted,bank_code,last_four,amount,status,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,'REQUESTED',?,?)
+        store.jdbc()
+                .update(
+                        """
+            INSERT INTO finance_withdrawals(id,owner_id,request_key,bank_account_id,beneficiary_encrypted,bank_code,last_four,amount,status,created_at,updated_at,request_type,early_payable_id,request_reason)
+            VALUES (?,?,?,?,?,?,?,?,'REQUESTED',?,?,?,?,?)
             """,
-                withdrawal,
-                owner,
-                requestKey,
-                bankId,
-                cipher.encrypt(snapshot, "withdrawal:" + owner + ":" + withdrawal),
-                bank.get("bankCode"),
-                bank.get("lastFour"),
-                amount,
-                store.time(store.now()),
-                store.time(store.now()));
+                        withdrawal,
+                        owner,
+                        requestKey,
+                        bankId,
+                        cipher.encrypt(snapshot, "withdrawal:" + owner + ":" + withdrawal),
+                        bank.get("bankCode"),
+                        bank.get("lastFour"),
+                        amount,
+                        store.time(store.now()),
+                        store.time(store.now()),
+                        early == null ? "NORMAL" : "EARLY",
+                        early == null ? null : early.payable(),
+                        early == null ? null : early.reason());
         BigDecimal remaining = amount;
         for (var p : payables) {
-            if (!store.eligible(p)) continue;
-            BigDecimal part = store.remaining(p).min(remaining);
+            if (early == null && !store.eligible(p)) continue;
+            BigDecimal part =
+                    (early == null ? store.remaining(p) : earlyRemaining(p)).min(remaining);
             if (part.signum() <= 0) continue;
             UUID payable = id(p, "id");
-            store.jdbc().update(
-                    "UPDATE finance_payables SET reserved=reserved+? WHERE id=?", part, payable);
-            store.jdbc().update(
-                    "INSERT INTO finance_withdrawal_allocations VALUES (?,?,?)",
-                    withdrawal,
-                    payable,
-                    part);
+            store.jdbc()
+                    .update(
+                            "UPDATE finance_payables SET reserved=reserved+? WHERE id=?",
+                            part,
+                            payable);
+            store.jdbc()
+                    .update(
+                            "INSERT INTO finance_withdrawal_allocations VALUES (?,?,?)",
+                            withdrawal,
+                            payable,
+                            part);
             remaining = remaining.subtract(part);
             if (remaining.signum() == 0) break;
         }
         store.audit(owner, owner, withdrawal, "REQUESTED", "Đã giữ riêng số tiền của yêu cầu rút");
-        return store.one("SELECT " + PUBLIC + " FROM finance_withdrawals WHERE id=?", withdrawal);
+        if (early != null) images.save(owner, withdrawal, early.images());
+        var result =
+                store.one("SELECT " + PUBLIC + " FROM finance_withdrawals WHERE id=?", withdrawal);
+        notifications.changed(result, "REQUESTED");
+        return result;
+    }
+
+    static BigDecimal earlyRemaining(Map<String, Object> payable) {
+        return money(payable, "earnings")
+                .subtract(money(payable, "paid"))
+                .subtract(money(payable, "reserved"))
+                .subtract(money(payable, "adjusted"))
+                .max(BigDecimal.ZERO);
     }
 
     private Map<String, Object> locked(UUID withdrawal) {
@@ -171,24 +259,47 @@ public class WithdrawalService {
         return store.one("SELECT * FROM finance_withdrawals WHERE id=? FOR UPDATE", withdrawal);
     }
 
-    private void eligibleAllocations(UUID withdrawal) {
-        for (var p :
+    private void eligibleAllocations(Map<String, Object> request) {
+        eligibleAllocations(request, false);
+    }
+
+    private void eligibleAllocations(Map<String, Object> request, boolean reconciledTransfer) {
+        UUID withdrawal = id(request, "id");
+        boolean early = "EARLY".equals(request.get("requestType"));
+        var allocations =
                 store.rows(
                         "SELECT p.*, "
                                 + FinanceStore.BLOCKED
                                 + " AS blocked FROM finance_payables p JOIN finance_withdrawal_allocations a ON a.payable_id=p.id WHERE a.withdrawal_id=?",
-                        withdrawal)) {
-            if (!store.eligible(p)) throw invalid("Công nợ được phân bổ đang có chặn chi");
+                        withdrawal);
+        if (allocations.isEmpty() || (early && allocations.size() != 1))
+            throw invalid("Lệnh chi chưa được phân bổ công nợ hợp lệ");
+        for (var p : allocations) {
+            boolean eligible =
+                    early
+                            ? id(p, "id").equals(id(request, "earlyPayableId"))
+                                    && id(p, "ownerId").equals(id(request, "ownerId"))
+                                    && !(Boolean) p.get("sandbox")
+                                    && (reconciledTransfer || !(Boolean) p.get("blocked"))
+                                    && p.get("maintenanceOrderId") == null
+                            : !(Boolean) p.get("sandbox")
+                                    && FinancePolicy.canRelease(
+                                            instant(p, "availableAt"),
+                                            store.now(),
+                                            !reconciledTransfer && (Boolean) p.get("blocked"));
+            if (!eligible) throw invalid("Công nợ được phân bổ đang có chặn chi");
         }
     }
 
     private void status(UUID actor, Map<String, Object> row, String target, String note) {
-        store.jdbc().update(
-                "UPDATE finance_withdrawals SET status=?,updated_at=? WHERE id=?",
-                target,
-                store.time(store.now()),
-                id(row, "id"));
+        store.jdbc()
+                .update(
+                        "UPDATE finance_withdrawals SET status=?,updated_at=? WHERE id=?",
+                        target,
+                        store.time(store.now()),
+                        id(row, "id"));
         store.audit(actor, id(row, "ownerId"), id(row, "id"), target, note);
+        notifications.changed(row, target);
     }
 
     private void release(UUID withdrawal) {
@@ -196,10 +307,11 @@ public class WithdrawalService {
                 store.rows(
                         "SELECT * FROM finance_withdrawal_allocations WHERE withdrawal_id=?",
                         withdrawal))
-            store.jdbc().update(
-                    "UPDATE finance_payables SET reserved=reserved-? WHERE id=?",
-                    money(allocation, "amount"),
-                    id(allocation, "payableId"));
+            store.jdbc()
+                    .update(
+                            "UPDATE finance_payables SET reserved=reserved-? WHERE id=?",
+                            money(allocation, "amount"),
+                            id(allocation, "payableId"));
     }
 
     @Transactional
@@ -215,16 +327,33 @@ public class WithdrawalService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void approve(UUID actor, UUID withdrawal) {
+        approve(actor, withdrawal, null);
+    }
+
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
+    public void approve(UUID actor, UUID withdrawal, String note) {
         if (!enabled) throw invalid("Chức năng chi tiền thật chưa được bật");
         var row = locked(withdrawal);
         if (!"REQUESTED".equals(row.get("status"))) throw invalid("Yêu cầu không còn chờ duyệt");
-        eligibleAllocations(withdrawal);
+        if ("EARLY".equals(row.get("requestType"))
+                && (note == null || note.isBlank() || note.length() > 1000))
+            throw invalid("Admin cần ghi lý do chấp thuận chi sớm (tối đa 1000 ký tự)");
+        eligibleAllocations(row);
         store.one(
                 "SELECT id FROM finance_bank_accounts WHERE id=? AND status='VERIFIED'",
                 id(row, "bankAccountId"));
-        store.jdbc().update(
-                "UPDATE finance_withdrawals SET approved_by=? WHERE id=?", actor, withdrawal);
-        status(actor, row, "APPROVED", "Đã duyệt, chưa chuyển tiền ngân hàng");
+        store.jdbc()
+                .update(
+                        "UPDATE finance_withdrawals SET approved_by=? WHERE id=?",
+                        actor,
+                        withdrawal);
+        status(
+                actor,
+                row,
+                "APPROVED",
+                "Đã duyệt, chưa chuyển tiền ngân hàng"
+                        + (note == null || note.isBlank() ? "" : ". " + note.trim()));
     }
 
     @Transactional
@@ -239,7 +368,7 @@ public class WithdrawalService {
             throw invalid("Người thực hiện chuyển khoản phải khác người duyệt");
         if ("PROCESSING".equals(current) && !actor.equals(row.get("operatorId")))
             throw invalid("Lệnh chi đang được người khác thực hiện");
-        eligibleAllocations(withdrawal);
+        eligibleAllocations(row);
         store.one(
                 "SELECT id FROM finance_bank_accounts WHERE id=? AND status='VERIFIED'",
                 id(row, "bankAccountId"));
@@ -249,8 +378,11 @@ public class WithdrawalService {
                                 row.get("beneficiaryEncrypted").toString(),
                                 "withdrawal:" + id(row, "ownerId") + ":" + withdrawal));
         if ("APPROVED".equals(current)) {
-            store.jdbc().update(
-                    "UPDATE finance_withdrawals SET operator_id=? WHERE id=?", actor, withdrawal);
+            store.jdbc()
+                    .update(
+                            "UPDATE finance_withdrawals SET operator_id=? WHERE id=?",
+                            actor,
+                            withdrawal);
             status(
                     actor,
                     row,
@@ -290,22 +422,27 @@ public class WithdrawalService {
         if (!Set.of("PROCESSING", "RECONCILIATION_REQUIRED").contains(row.get("status")))
             throw invalid("Lệnh chưa ở trạng thái đối soát chuyển khoản");
         if (!actor.equals(row.get("operatorId"))) throw forbidden();
-        eligibleAllocations(withdrawal);
+        // A newly opened warranty ticket may stop a transfer, but cannot undo one already sent.
+        // An independent admin must first move a blocked, potentially sent transfer to
+        // reconciliation.
+        eligibleAllocations(row, "RECONCILIATION_REQUIRED".equals(row.get("status")));
         UUID owner = id(row, "ownerId");
-        store.jdbc().update(
-                "UPDATE finance_withdrawals SET bank_reference=?,evidence_reference=? WHERE id=?",
-                bankReference,
-                evidence,
-                withdrawal);
+        store.jdbc()
+                .update(
+                        "UPDATE finance_withdrawals SET bank_reference=?,evidence_reference=? WHERE id=?",
+                        bankReference,
+                        evidence,
+                        withdrawal);
         for (var a :
                 store.rows(
                         "SELECT * FROM finance_withdrawal_allocations WHERE withdrawal_id=?",
                         withdrawal))
-            store.jdbc().update(
-                    "UPDATE finance_payables SET reserved=reserved-?,paid=paid+? WHERE id=?",
-                    money(a, "amount"),
-                    money(a, "amount"),
-                    id(a, "payableId"));
+            store.jdbc()
+                    .update(
+                            "UPDATE finance_payables SET reserved=reserved-?,paid=paid+? WHERE id=?",
+                            money(a, "amount"),
+                            money(a, "amount"),
+                            id(a, "payableId"));
         store.journal(
                 "withdrawal-paid:" + withdrawal,
                 null,
@@ -332,6 +469,8 @@ public class WithdrawalService {
             case "RECONCILE" -> {
                 if (!Set.of("PROCESSING", "RECONCILIATION_REQUIRED").contains(current))
                     throw invalid("Lệnh không chờ đối soát");
+                if (dualControl && actor.equals(row.get("operatorId")))
+                    throw invalid("Cần admin độc lập xác nhận chuyển lệnh sang đối soát");
                 status(actor, row, "RECONCILIATION_REQUIRED", note);
             }
             case "CONFIRM_FAILED" -> {
@@ -352,6 +491,16 @@ public class WithdrawalService {
         var row =
                 store.one("SELECT " + PUBLIC + " FROM finance_withdrawals WHERE id=?", withdrawal);
         if (!actor.equals(id(row, "ownerId")) && !admin) throw missing();
+        if ("EARLY".equals(row.get("requestType"))) {
+            row.put(
+                    "project",
+                    store.one(
+                            "SELECT p.job_id,j.title AS job_title,p.accepted_at,p.available_at,p.earnings,p.deposit_refund,p.reserved,p.paid,"
+                                    + FinanceStore.BLOCKED
+                                    + " AS blocked FROM finance_payables p JOIN jobs j ON j.id=p.job_id WHERE p.id=?",
+                            id(row, "earlyPayableId")));
+            row.put("images", images.metadata(withdrawal));
+        }
         row.put(
                 "history",
                 store.rows(

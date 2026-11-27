@@ -162,7 +162,7 @@ public class FinanceStore {
     public List<Map<String, Object>> payables(UUID owner) {
         Instant now = now();
         return rows(
-                "SELECT p.*,j.title AS job_title,"
+                "SELECT p.*,j.title AS job_title,(SELECT w.id FROM finance_withdrawals w WHERE w.early_payable_id=p.id AND w.status IN ('REQUESTED','APPROVED','PROCESSING','RECONCILIATION_REQUIRED')) AS early_request_id,"
                         + BLOCKED
                         + " AS blocked FROM finance_payables p JOIN jobs j ON j.id=p.job_id WHERE p.owner_id=? ORDER BY p.available_at,p.id",
                 owner);
