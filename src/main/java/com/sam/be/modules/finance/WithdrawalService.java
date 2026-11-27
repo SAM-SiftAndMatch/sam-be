@@ -410,6 +410,32 @@ public class WithdrawalService {
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
+    public void finishManualWithImages(
+            UUID actor,
+            UUID withdrawal,
+            String bankReference,
+            String note,
+            List<org.springframework.web.multipart.MultipartFile> files) {
+        var proof = images.validate(files);
+        var row = locked(withdrawal);
+        if (!actor.equals(row.get("operatorId"))) throw forbidden();
+        String reference = WithdrawalImageService.receiptReference(withdrawal);
+        if ("PAID".equals(row.get("status"))) {
+            if (!bankReference.toUpperCase(Locale.ROOT).equals(row.get("bankReference"))
+                    || !reference.equals(row.get("evidenceReference"))
+                    || !images.receiptMatches(withdrawal, proof))
+                throw invalid(
+                        "Lệnh đã chi với mã giao dịch hoặc ảnh biên lai khác; không thể thay chứng từ");
+            return;
+        }
+        if (!Set.of("PROCESSING", "RECONCILIATION_REQUIRED").contains(row.get("status")))
+            throw invalid("Lệnh chưa ở trạng thái đối soát chuyển khoản");
+        images.saveReceipts(actor, withdrawal, proof);
+        finishManual(actor, withdrawal, bankReference, reference, note);
+    }
+
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void finishManual(
             UUID actor, UUID withdrawal, String bankReference, String evidence, String note) {
         bankReference = bankReference.toUpperCase(Locale.ROOT);
@@ -491,6 +517,7 @@ public class WithdrawalService {
         var row =
                 store.one("SELECT " + PUBLIC + " FROM finance_withdrawals WHERE id=?", withdrawal);
         if (!actor.equals(id(row, "ownerId")) && !admin) throw missing();
+        if (admin) row.put("receiptImages", images.receiptMetadata(withdrawal));
         if ("EARLY".equals(row.get("requestType"))) {
             row.put(
                     "project",

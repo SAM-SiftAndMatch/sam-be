@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,7 +28,7 @@ public class WithdrawalImageService {
 
     public List<Image> validate(List<MultipartFile> files) {
         if (files == null || files.isEmpty() || files.size() > 5)
-            throw invalid("Cần từ 1 đến 5 ảnh bằng chứng để xin rút tiền sớm");
+            throw invalid("Cần từ 1 đến 5 ảnh bằng chứng hoặc biên lai");
         List<Image> images = new ArrayList<>();
         for (var file : files) {
             if (file == null || file.isEmpty() || file.getSize() > ChatFilePolicy.IMAGE_LIMIT)
@@ -91,6 +92,71 @@ public class WithdrawalImageService {
     }
 
     public record Content(String name, String type, byte[] bytes) {}
+
+    public static String receiptReference(UUID withdrawal) {
+        return "CT-" + withdrawal.toString().toUpperCase(Locale.ROOT);
+    }
+
+    public void saveReceipts(UUID actor, UUID withdrawal, List<Image> images) {
+        for (var image : images) {
+            UUID imageId = UUID.randomUUID();
+            store.jdbc()
+                    .update(
+                            "INSERT INTO finance_payout_receipt_images(id,withdrawal_id,uploaded_by,file_name,content_type,size_bytes,sha256,content_encrypted,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                            imageId,
+                            withdrawal,
+                            actor,
+                            image.name(),
+                            image.type(),
+                            image.bytes().length,
+                            image.sha256(),
+                            cipher.encryptBytes(image.bytes(), receiptContext(withdrawal, imageId)),
+                            store.time(store.now()));
+        }
+    }
+
+    public List<Map<String, Object>> receiptMetadata(UUID withdrawal) {
+        return store.rows(
+                "SELECT id,file_name,content_type,size_bytes FROM finance_payout_receipt_images WHERE withdrawal_id=? ORDER BY id",
+                withdrawal);
+    }
+
+    public boolean receiptMatches(UUID withdrawal, List<Image> images) {
+        var stored =
+                store
+                        .rows(
+                                "SELECT file_name,sha256 FROM finance_payout_receipt_images WHERE withdrawal_id=?",
+                                withdrawal)
+                        .stream()
+                        .map(row -> row.get("fileName") + ":" + row.get("sha256"))
+                        .sorted()
+                        .toList();
+        return stored.equals(
+                images.stream()
+                        .map(image -> image.name() + ":" + image.sha256())
+                        .sorted()
+                        .toList());
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public Content readReceipt(UUID withdrawal, UUID imageId) {
+        var image =
+                store.one(
+                        "SELECT * FROM finance_payout_receipt_images WHERE id=? AND withdrawal_id=?",
+                        imageId,
+                        withdrawal);
+        return new Content(
+                image.get("fileName").toString(),
+                image.get("contentType").toString(),
+                cipher.decryptBytes(
+                        image.get("contentEncrypted").toString(),
+                        receiptContext(withdrawal, imageId)));
+    }
+
+    private String receiptContext(UUID withdrawal, UUID image) {
+        return "payout-receipt:" + withdrawal + ":" + image;
+    }
 
     @Transactional(readOnly = true)
     public Content read(UUID actor, boolean admin, UUID withdrawal, UUID imageId) {

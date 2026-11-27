@@ -73,7 +73,8 @@ class FinancePostgresTest {
                 java.util.List.of(
                         "/db/migration/V40__Durable_Checkout_Dispatch_And_Reconciliation.sql",
                         "/db/migration/V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql",
-                        "/db/migration/V52__Early_Withdrawal_Requests.sql")) {
+                        "/db/migration/V52__Early_Withdrawal_Requests.sql",
+                        "/db/migration/V53__Private_Payout_Receipt_Images.sql")) {
             try (var stream = getClass().getResourceAsStream(migration)) {
                 assertNotNull(stream);
                 db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
@@ -143,6 +144,230 @@ class FinancePostgresTest {
                 true,
                 new BigDecimal("50000"),
                 new BigDecimal("1000000"));
+    }
+
+    private record Payout(WithdrawalService service, UUID withdrawal, UUID operator) {}
+
+    private Payout processingPayout() {
+        payable(false);
+        UUID bank = verifiedBank(), approver = UUID.randomUUID(), operator = UUID.randomUUID();
+        db.update("INSERT INTO users VALUES (?),(?)", approver, operator);
+        var service = earlyService();
+        var request =
+                tx.execute(
+                        s ->
+                                service.create(
+                                        owner, bank, UUID.randomUUID(), new BigDecimal("75000")));
+        UUID withdrawal = id(request, "id");
+        tx.executeWithoutResult(s -> service.approve(approver, withdrawal, "Đã duyệt chi"));
+        tx.executeWithoutResult(s -> service.startManual(operator, withdrawal));
+        return new Payout(service, withdrawal, operator);
+    }
+
+    @Test
+    void paymentConfirmationStoresPrivateReceiptAndRetryCannotPayOrUploadTwice() throws Exception {
+        var payout = processingPayout();
+        var files =
+                List.<org.springframework.web.multipart.MultipartFile>of(
+                        WithdrawalImageServiceTest.png());
+        tx.executeWithoutResult(
+                s ->
+                        payout.service()
+                                .finishManualWithImages(
+                                        payout.operator(),
+                                        payout.withdrawal(),
+                                        "MB123",
+                                        "Đã đối chiếu",
+                                        files));
+        assertEquals(
+                "PAID",
+                db.queryForObject(
+                        "SELECT status FROM finance_withdrawals WHERE id=?",
+                        String.class,
+                        payout.withdrawal()));
+        assertEquals(
+                WithdrawalImageService.receiptReference(payout.withdrawal()),
+                db.queryForObject(
+                        "SELECT evidence_reference FROM finance_withdrawals WHERE id=?",
+                        String.class,
+                        payout.withdrawal()));
+        assertTrue(
+                db.queryForObject(
+                                "SELECT content_encrypted FROM finance_payout_receipt_images WHERE withdrawal_id=?",
+                                String.class,
+                                payout.withdrawal())
+                        .startsWith("gcm1."));
+        tx.executeWithoutResult(
+                s ->
+                        payout.service()
+                                .finishManualWithImages(
+                                        payout.operator(),
+                                        payout.withdrawal(),
+                                        "mb123",
+                                        "Gửi lại",
+                                        files));
+        assertEquals(
+                1,
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM finance_payout_receipt_images", Integer.class));
+        assertEquals(
+                1,
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM finance_journals WHERE event_key=?",
+                        Integer.class,
+                        "withdrawal-paid:" + payout.withdrawal()));
+        assertEquals(
+                1,
+                ((List<?>)
+                                payout.service()
+                                        .detail(payout.operator(), payout.withdrawal(), true)
+                                        .get("receiptImages"))
+                        .size());
+        assertFalse(
+                payout.service()
+                        .detail(owner, payout.withdrawal(), false)
+                        .containsKey("receiptImages"));
+        UUID image =
+                db.queryForObject(
+                        "SELECT id FROM finance_payout_receipt_images WHERE withdrawal_id=?",
+                        UUID.class,
+                        payout.withdrawal());
+        assertArrayEquals(
+                WithdrawalImageServiceTest.png().getBytes(),
+                new WithdrawalImageService(store(), BankDataCipherTest.cipher())
+                        .readReceipt(payout.withdrawal(), image)
+                        .bytes());
+        var changed =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "images",
+                        "changed.png",
+                        "image/png",
+                        WithdrawalImageServiceTest.png().getBytes());
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        payout.service()
+                                                .finishManualWithImages(
+                                                        payout.operator(),
+                                                        payout.withdrawal(),
+                                                        "MB123",
+                                                        "Changed",
+                                                        List.of(changed))));
+        assertThrows(
+                Exception.class,
+                () ->
+                        db.update(
+                                "DELETE FROM finance_payout_receipt_images WHERE withdrawal_id=?",
+                                payout.withdrawal()));
+        assertThrows(
+                Exception.class,
+                () ->
+                        db.update(
+                                "INSERT INTO finance_payout_receipt_images SELECT ?,withdrawal_id,uploaded_by,file_name,content_type,size_bytes,sha256,content_encrypted,created_at FROM finance_payout_receipt_images WHERE withdrawal_id=?",
+                                UUID.randomUUID(),
+                                payout.withdrawal()));
+    }
+
+    @Test
+    void failedReceiptPersistenceKeepsTheTransferProcessingAndMoneyReserved() {
+        var payout = processingPayout();
+        var store = store();
+        var cipher = BankDataCipherTest.cipher();
+        var service =
+                new WithdrawalService(
+                        store,
+                        cipher,
+                        new BankAccountService(
+                                store, cipher, new com.fasterxml.jackson.databind.ObjectMapper()),
+                        new WithdrawalImageService(store, new BankDataCipher("v1", "", "")),
+                        org.mockito.Mockito.mock(WithdrawalNotifications.class),
+                        true,
+                        true,
+                        new BigDecimal("50000"),
+                        new BigDecimal("1000000"));
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        service.finishManualWithImages(
+                                                payout.operator(),
+                                                payout.withdrawal(),
+                                                "MB123",
+                                                "Đã đối chiếu",
+                                                List.of(WithdrawalImageServiceTest.png()))));
+        assertEquals(
+                "PROCESSING",
+                db.queryForObject(
+                        "SELECT status FROM finance_withdrawals WHERE id=?",
+                        String.class,
+                        payout.withdrawal()));
+        assertEquals(
+                new BigDecimal("75000.00"),
+                db.queryForObject("SELECT reserved FROM finance_payables", BigDecimal.class));
+        assertEquals(
+                new BigDecimal("0.00"),
+                db.queryForObject("SELECT paid FROM finance_payables", BigDecimal.class));
+        assertEquals(
+                0,
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM finance_payout_receipt_images", Integer.class));
+    }
+
+    @Test
+    void paymentReceiptsRequireImagesAndTheAssignedOperator() {
+        var payout = processingPayout();
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        payout.service()
+                                                .finishManualWithImages(
+                                                        payout.operator(),
+                                                        payout.withdrawal(),
+                                                        "MB123",
+                                                        "Đã đối chiếu",
+                                                        List.of())));
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        payout.service()
+                                                .finishManualWithImages(
+                                                        client,
+                                                        payout.withdrawal(),
+                                                        "MB123",
+                                                        "Đã đối chiếu",
+                                                        List.of(
+                                                                WithdrawalImageServiceTest
+                                                                        .png()))));
+        var images = new WithdrawalImageService(store(), BankDataCipherTest.cipher());
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        images.saveReceipts(
+                                                payout.operator(),
+                                                payout.withdrawal(),
+                                                images.validate(
+                                                        List.of(
+                                                                WithdrawalImageServiceTest
+                                                                        .png())))));
+        assertEquals(
+                "PROCESSING",
+                db.queryForObject(
+                        "SELECT status FROM finance_withdrawals WHERE id=?",
+                        String.class,
+                        payout.withdrawal()));
+        assertEquals(
+                0,
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM finance_payout_receipt_images", Integer.class));
     }
 
     @Test

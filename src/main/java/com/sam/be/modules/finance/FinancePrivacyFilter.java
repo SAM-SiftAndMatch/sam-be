@@ -19,17 +19,20 @@ public class FinancePrivacyFilter extends OncePerRequestFilter {
             response.setHeader("Cache-Control", "no-store, max-age=0");
             response.setHeader("Pragma", "no-cache");
         }
-        boolean earlyMultipart =
-                path.equals("/api/v1/finance/withdrawals/early")
+        boolean financeMultipart =
+                "POST".equals(request.getMethod())
+                        && (path.equals("/api/v1/finance/withdrawals/early")
+                                || path.matches(
+                                        "/api/v1/finance/admin/withdrawals/[0-9a-fA-F-]{36}/confirm-manual-payment"))
                         && request.getContentType() != null
                         && request.getContentType()
                                 .toLowerCase(java.util.Locale.ROOT)
                                 .startsWith("multipart/form-data");
-        if (earlyMultipart && request.getContentLengthLong() > 26L * 1024 * 1024) {
+        if (financeMultipart && request.getContentLengthLong() > 26L * 1024 * 1024) {
             response.sendError(413);
             return;
         }
-        if (!earlyMultipart
+        if (!financeMultipart
                 && (path.equals("/api/v1/payments/pay2s-ipn")
                         || (java.util.Set.of("POST", "PUT").contains(request.getMethod())
                                 && (path.startsWith("/api/v1/finance")
