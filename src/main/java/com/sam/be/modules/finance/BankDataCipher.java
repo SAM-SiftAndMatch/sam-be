@@ -60,6 +60,10 @@ public class BankDataCipher {
     }
 
     public String encrypt(String plaintext, String context) {
+        return encryptBytes(plaintext.getBytes(StandardCharsets.UTF_8), context);
+    }
+
+    public String encryptBytes(byte[] plaintext, String context) {
         requireConfigured();
         try {
             byte[] iv = new byte[12];
@@ -77,17 +81,23 @@ public class BankDataCipher {
                     + "."
                     + Base64.getUrlEncoder()
                             .withoutPadding()
-                            .encodeToString(
-                                    cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8)));
+                            .encodeToString(cipher.doFinal(plaintext));
         } catch (Exception ex) {
             throw new IllegalStateException("Bank encryption failed");
         }
     }
 
     public String decrypt(String encoded, String context) {
+        if (encoded == null || encoded.length() > 8192)
+            throw new IllegalStateException("Invalid bank data length");
+        return new String(decryptBytes(encoded, context), StandardCharsets.UTF_8);
+    }
+
+    public byte[] decryptBytes(String encoded, String context) {
         requireConfigured();
         try {
-            if (encoded == null || encoded.length() > 8192) throw new IllegalArgumentException();
+            if (encoded == null || encoded.length() > 7 * 1024 * 1024)
+                throw new IllegalArgumentException();
             String[] p = encoded.split("\\.");
             if (p.length != 4 || !p[0].equals("gcm1") || !keys.containsKey(p[1]))
                 throw new IllegalArgumentException();
@@ -99,8 +109,7 @@ public class BankDataCipher {
                     new SecretKeySpec(keys.get(p[1]), "AES"),
                     new GCMParameterSpec(128, iv));
             cipher.updateAAD(context.getBytes(StandardCharsets.UTF_8));
-            return new String(
-                    cipher.doFinal(Base64.getUrlDecoder().decode(p[3])), StandardCharsets.UTF_8);
+            return cipher.doFinal(Base64.getUrlDecoder().decode(p[3]));
         } catch (Exception ex) {
             throw new IllegalStateException("Bank data cannot be authenticated or decrypted");
         }

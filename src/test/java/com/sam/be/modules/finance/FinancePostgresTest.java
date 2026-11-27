@@ -69,9 +69,11 @@ class FinancePostgresTest {
             assertNotNull(stream);
             db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
-        for (String migration : java.util.List.of(
-                "/db/migration/V40__Durable_Checkout_Dispatch_And_Reconciliation.sql",
-                "/db/migration/V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql")) {
+        for (String migration :
+                java.util.List.of(
+                        "/db/migration/V40__Durable_Checkout_Dispatch_And_Reconciliation.sql",
+                        "/db/migration/V41__Allow_Confirmed_Expired_Checkout_Cancellation.sql",
+                        "/db/migration/V52__Early_Withdrawal_Requests.sql")) {
             try (var stream = getClass().getResourceAsStream(migration)) {
                 assertNotNull(stream);
                 db.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
@@ -93,6 +95,10 @@ class FinancePostgresTest {
     }
 
     private UUID payable() {
+        return payable(false);
+    }
+
+    private UUID payable(boolean pending) {
         UUID id = UUID.randomUUID();
         tx.executeWithoutResult(
                 s ->
@@ -104,9 +110,357 @@ class FinancePostgresTest {
                                 job,
                                 owner,
                                 client,
-                                store().time(now.minus(Duration.ofDays(10))),
-                                store().time(now.minus(Duration.ofDays(3)))));
+                                store().time(now.minus(Duration.ofDays(pending ? 1 : 10))),
+                                store().time(now.plus(Duration.ofDays(pending ? 6 : -3)))));
         return id;
+    }
+
+    private UUID verifiedBank() {
+        UUID bank = UUID.randomUUID();
+        var cipher = BankDataCipherTest.cipher();
+        db.update(
+                "INSERT INTO finance_bank_accounts(id,owner_id,bank_code,details_encrypted,last_four,fingerprint,status,created_at) VALUES (?,?,'VCB',?,'6789',?,'VERIFIED',now())",
+                bank,
+                owner,
+                cipher.encrypt(
+                        "{\"accountNumber\":\"00123456789\",\"accountHolder\":\"TEST USER\"}",
+                        "bank:" + owner + ":" + bank),
+                UUID.randomUUID().toString());
+        return bank;
+    }
+
+    private WithdrawalService earlyService() {
+        var store = store();
+        var cipher = BankDataCipherTest.cipher();
+        return new WithdrawalService(
+                store,
+                cipher,
+                new BankAccountService(
+                        store, cipher, new com.fasterxml.jackson.databind.ObjectMapper()),
+                new WithdrawalImageService(store, cipher),
+                org.mockito.Mockito.mock(WithdrawalNotifications.class),
+                true,
+                true,
+                new BigDecimal("50000"),
+                new BigDecimal("1000000"));
+    }
+
+    @Test
+    void earlyRequestStoresPrivateEvidenceAndDoesNotChangeWarrantyOrExposeDeposit() {
+        UUID payable = payable(true), bank = verifiedBank(), key = UUID.randomUUID();
+        var service = earlyService();
+        var request =
+                tx.execute(
+                        s ->
+                                service.createEarly(
+                                        owner,
+                                        bank,
+                                        key,
+                                        new BigDecimal("75000"),
+                                        payable,
+                                        "Cần tiền gấp",
+                                        List.of(WithdrawalImageServiceTest.png())));
+        UUID withdrawal = id(request, "id");
+        assertEquals("EARLY", request.get("requestType"));
+        assertEquals(
+                new BigDecimal("75000.00"),
+                db.queryForObject(
+                        "SELECT reserved FROM finance_payables WHERE id=?",
+                        BigDecimal.class,
+                        payable));
+        assertEquals(
+                store().time(now.plus(Duration.ofDays(6))),
+                db.queryForObject(
+                        "SELECT available_at FROM finance_payables WHERE id=?",
+                        java.time.OffsetDateTime.class,
+                        payable));
+        String encrypted =
+                db.queryForObject(
+                        "SELECT content_encrypted FROM finance_withdrawal_images WHERE withdrawal_id=?",
+                        String.class,
+                        withdrawal);
+        assertTrue(encrypted.startsWith("gcm1."));
+        var retry =
+                tx.execute(
+                        s ->
+                                service.createEarly(
+                                        owner,
+                                        bank,
+                                        key,
+                                        new BigDecimal("75000"),
+                                        payable,
+                                        "Cần tiền gấp",
+                                        List.of(WithdrawalImageServiceTest.png())));
+        assertEquals(withdrawal, id(retry, "id"));
+        assertEquals(
+                1,
+                db.queryForObject("SELECT COUNT(*) FROM finance_withdrawal_images", Integer.class));
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        service.createEarly(
+                                                owner,
+                                                bank,
+                                                key,
+                                                new BigDecimal("75000"),
+                                                payable,
+                                                "Lý do khác",
+                                                List.of(WithdrawalImageServiceTest.png()))));
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        service.create(
+                                                owner,
+                                                bank,
+                                                UUID.randomUUID(),
+                                                new BigDecimal("50000"))));
+        tx.executeWithoutResult(s -> service.cancel(owner, withdrawal));
+        assertEquals(
+                new BigDecimal("0.00"),
+                db.queryForObject(
+                        "SELECT reserved FROM finance_payables WHERE id=?",
+                        BigDecimal.class,
+                        payable));
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        service.createEarly(
+                                                owner,
+                                                bank,
+                                                UUID.randomUUID(),
+                                                new BigDecimal("95000"),
+                                                payable,
+                                                "Cần tiền gấp",
+                                                List.of(WithdrawalImageServiceTest.png()))));
+    }
+
+    @Test
+    void earlyPayoutRequiresApprovalAndSeparateOperatorAndStillRespectsWarrantyTickets() {
+        UUID payable = payable(true),
+                bank = verifiedBank(),
+                approver = UUID.randomUUID(),
+                operator = UUID.randomUUID();
+        db.update("INSERT INTO users VALUES (?),(?)", approver, operator);
+        var service = earlyService();
+        var request =
+                tx.execute(
+                        s ->
+                                service.createEarly(
+                                        owner,
+                                        bank,
+                                        UUID.randomUUID(),
+                                        new BigDecimal("75000"),
+                                        payable,
+                                        "Cần tiền gấp",
+                                        List.of(WithdrawalImageServiceTest.png())));
+        UUID withdrawal = id(request, "id");
+        assertThrows(
+                Exception.class,
+                () -> tx.executeWithoutResult(s -> service.startManual(operator, withdrawal)));
+        tx.executeWithoutResult(
+                s -> service.approve(approver, withdrawal, "Đã kiểm tra bằng chứng"));
+        assertThrows(
+                Exception.class,
+                () -> tx.executeWithoutResult(s -> service.startManual(approver, withdrawal)));
+        UUID ticket = UUID.randomUUID();
+        db.update(
+                "INSERT INTO maintenance_tickets(id,payable_id,creator_id,request_key,kind,title,description,status,created_at,response_due_at,resolution_due_at) VALUES (?,?,?,?,'WARRANTY','Bug','Bug','OPEN',?,?,?)",
+                ticket,
+                payable,
+                client,
+                UUID.randomUUID(),
+                store().time(now),
+                store().time(now.plus(Duration.ofDays(1))),
+                store().time(now.plus(Duration.ofDays(2))));
+        assertThrows(
+                Exception.class,
+                () -> tx.executeWithoutResult(s -> service.startManual(operator, withdrawal)));
+        db.update(
+                "UPDATE maintenance_tickets SET status='RESOLVED',closed_at=? WHERE id=?",
+                store().time(now),
+                ticket);
+        tx.executeWithoutResult(s -> service.startManual(operator, withdrawal));
+        tx.executeWithoutResult(
+                s ->
+                        service.finishManual(
+                                operator,
+                                withdrawal,
+                                "EARLY001",
+                                "private-proof",
+                                "Đã đối chiếu ngân hàng"));
+        tx.executeWithoutResult(
+                s ->
+                        service.finishManual(
+                                operator, withdrawal, "EARLY001", "private-proof", "Gửi lại"));
+        assertEquals(
+                "PAID",
+                db.queryForObject(
+                        "SELECT status FROM finance_withdrawals WHERE id=?",
+                        String.class,
+                        withdrawal));
+        assertEquals(
+                new BigDecimal("75000.00"),
+                db.queryForObject(
+                        "SELECT paid FROM finance_payables WHERE id=?", BigDecimal.class, payable));
+        assertEquals(
+                1,
+                db.queryForObject(
+                        "SELECT COUNT(*) FROM finance_journals WHERE event_key=?",
+                        Integer.class,
+                        "withdrawal-paid:" + withdrawal));
+    }
+
+    @Test
+    void concurrentEarlyRequestsCannotReserveTheSameProjectTwice() throws Exception {
+        UUID payable = payable(true), bank = verifiedBank();
+        var service = earlyService();
+        var barrier = new CyclicBarrier(2);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Boolean> attempt =
+                    () -> {
+                        barrier.await(5, TimeUnit.SECONDS);
+                        try {
+                            tx.executeWithoutResult(
+                                    s ->
+                                            service.createEarly(
+                                                    owner,
+                                                    bank,
+                                                    UUID.randomUUID(),
+                                                    new BigDecimal("50000"),
+                                                    payable,
+                                                    "Cần tiền gấp",
+                                                    List.of(WithdrawalImageServiceTest.png())));
+                            return true;
+                        } catch (org.springframework.web.server.ResponseStatusException ex) {
+                            return false;
+                        }
+                    };
+            var a = pool.submit(attempt);
+            var b = pool.submit(attempt);
+            assertNotEquals(a.get(10, TimeUnit.SECONDS), b.get(10, TimeUnit.SECONDS));
+            assertEquals(
+                    new BigDecimal("50000.00"),
+                    db.queryForObject(
+                            "SELECT reserved FROM finance_payables WHERE id=?",
+                            BigDecimal.class,
+                            payable));
+            assertEquals(
+                    1,
+                    db.queryForObject("SELECT COUNT(*) FROM finance_withdrawals", Integer.class));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void evidencePersistenceFailureRollsBackBothRequestAndReservation() {
+        UUID payable = payable(true), bank = verifiedBank();
+        var store = store();
+        var cipher = BankDataCipherTest.cipher();
+        var brokenImages = new WithdrawalImageService(store, new BankDataCipher("v1", "", ""));
+        var service =
+                new WithdrawalService(
+                        store,
+                        cipher,
+                        new BankAccountService(
+                                store, cipher, new com.fasterxml.jackson.databind.ObjectMapper()),
+                        brokenImages,
+                        org.mockito.Mockito.mock(WithdrawalNotifications.class),
+                        true,
+                        true,
+                        new BigDecimal("50000"),
+                        new BigDecimal("1000000"));
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        service.createEarly(
+                                                owner,
+                                                bank,
+                                                UUID.randomUUID(),
+                                                new BigDecimal("50000"),
+                                                payable,
+                                                "Việc gấp",
+                                                List.of(WithdrawalImageServiceTest.png()))));
+        assertEquals(
+                0, db.queryForObject("SELECT COUNT(*) FROM finance_withdrawals", Integer.class));
+        assertEquals(
+                0,
+                db.queryForObject("SELECT COUNT(*) FROM finance_withdrawal_images", Integer.class));
+        assertEquals(
+                new BigDecimal("0.00"),
+                db.queryForObject(
+                        "SELECT reserved FROM finance_payables WHERE id=?",
+                        BigDecimal.class,
+                        payable));
+    }
+
+    @Test
+    void submittedReasonAndEvidenceCannotBeChangedOrExtended() {
+        UUID payable = payable(true), bank = verifiedBank();
+        var request =
+                tx.execute(
+                        s ->
+                                earlyService()
+                                        .createEarly(
+                                                owner,
+                                                bank,
+                                                UUID.randomUUID(),
+                                                new BigDecimal("50000"),
+                                                payable,
+                                                "Việc gấp",
+                                                List.of(WithdrawalImageServiceTest.png())));
+        UUID withdrawal = id(request, "id");
+        assertThrows(
+                Exception.class,
+                () ->
+                        db.update(
+                                "UPDATE finance_withdrawals SET request_reason='Changed' WHERE id=?",
+                                withdrawal));
+        assertThrows(
+                Exception.class,
+                () ->
+                        db.update(
+                                "DELETE FROM finance_withdrawal_images WHERE withdrawal_id=?",
+                                withdrawal));
+        assertThrows(
+                Exception.class,
+                () ->
+                        db.update(
+                                "INSERT INTO finance_withdrawal_images SELECT ?,withdrawal_id,file_name,content_type,size_bytes,sha256,content_encrypted,created_at FROM finance_withdrawal_images WHERE withdrawal_id=?",
+                                UUID.randomUUID(),
+                                withdrawal));
+    }
+
+    @Test
+    void elapsedWarrantyUsesNormalWithdrawalAndCannotCreateNewEarlyRequest() {
+        UUID payable = payable(false), bank = verifiedBank();
+        assertThrows(
+                Exception.class,
+                () ->
+                        tx.executeWithoutResult(
+                                s ->
+                                        earlyService()
+                                                .createEarly(
+                                                        owner,
+                                                        bank,
+                                                        UUID.randomUUID(),
+                                                        new BigDecimal("50000"),
+                                                        payable,
+                                                        "Việc gấp",
+                                                        List.of(
+                                                                WithdrawalImageServiceTest
+                                                                        .png()))));
+        assertEquals(
+                0, db.queryForObject("SELECT COUNT(*) FROM finance_withdrawals", Integer.class));
     }
 
     @Test
@@ -209,6 +563,8 @@ class FinancePostgresTest {
                         cipher,
                         new BankAccountService(
                                 store, cipher, new com.fasterxml.jackson.databind.ObjectMapper()),
+                        org.mockito.Mockito.mock(WithdrawalImageService.class),
+                        org.mockito.Mockito.mock(WithdrawalNotifications.class),
                         true,
                         false,
                         new BigDecimal("50000"),
