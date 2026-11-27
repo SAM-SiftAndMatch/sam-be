@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 public final class ParticipationPolicy {
-    public static final String VERSION = "2026-11-09";
+    public static final String VERSION = "2026-11-27";
     public static final BigDecimal MINIMUM_PROJECT_BUDGET = new BigDecimal("3000000");
     public static final String CONTRACT_NOTICE =
             "Hai bên xác nhận thông tin liên hệ chính xác; "
@@ -19,6 +19,7 @@ public final class ParticipationPolicy {
                     + "Client nạp 100% giá trị hợp đồng; freelancer đóng cọc cam kết 2%. Thời hạn bảo trì "
                     + "là 168 giờ (7 ngày) kể từ nghiệm thu. Công nợ chỉ được giải phóng khi hết thời hạn "
                     + "bảo trì và không còn yêu cầu bảo trì hoặc tranh chấp chặn chi. "
+                    + "Trong thời hạn bảo trì, freelancer có thể xin rút sớm thù lao sau phí bằng yêu cầu kèm lý do và ảnh bằng chứng; admin xét duyệt từng khoản khi không có ticket chặn chi. Tiền hoàn cọc vẫn chờ đủ điều kiện thông thường. Chi sớm không thay đổi thời hạn hoặc nghĩa vụ bảo trì. "
                     + "Thanh toán, bàn giao, bảo trì và tranh chấp được xử lý qua quy trình trên nền tảng. "
                     + "Thông tin liên hệ được sử dụng để lập hợp đồng và phối hợp thực hiện dự án.";
 

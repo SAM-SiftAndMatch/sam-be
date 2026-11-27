@@ -42,24 +42,25 @@ public class FinanceLedgerService {
                             credit(prefix + "escrow:" + p.getId(), p.getAmount()));
                 }
         var accepted = settlement.getCompletedAt().toInstant(java.time.ZoneOffset.UTC);
-        store.jdbc().update(
-                """
+        store.jdbc()
+                .update(
+                        """
             INSERT INTO finance_payables
             (id,settlement_id,contract_id,job_id,owner_id,client_id,amount,earnings,deposit_refund,sandbox,accepted_at,available_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-                UUID.randomUUID(),
-                settlement.getId(),
-                contract.getId(),
-                contract.getJob().getId(),
-                owner,
-                contract.getClient().getId(),
-                settlement.getFreelancerPayout().add(settlement.getDepositRefund()),
-                settlement.getFreelancerPayout(),
-                settlement.getDepositRefund(),
-                sandbox,
-                store.time(accepted),
-                store.time(accepted.plus(FinancePolicy.WARRANTY)));
+                        UUID.randomUUID(),
+                        settlement.getId(),
+                        contract.getId(),
+                        contract.getJob().getId(),
+                        owner,
+                        contract.getClient().getId(),
+                        settlement.getFreelancerPayout().add(settlement.getDepositRefund()),
+                        settlement.getFreelancerPayout(),
+                        settlement.getDepositRefund(),
+                        sandbox,
+                        store.time(accepted),
+                        store.time(accepted.plus(FinancePolicy.WARRANTY)));
         store.journal(
                 "settlement:" + settlement.getId(),
                 contract.getId(),
@@ -91,6 +92,18 @@ public class FinanceLedgerService {
                 simulation = BigDecimal.ZERO;
         for (Map<String, Object> p : payables) {
             BigDecimal remainder = store.remaining(p);
+            boolean canRequestEarly =
+                    !(Boolean) p.get("sandbox")
+                            && !(Boolean) p.get("blocked")
+                            && p.get("maintenanceOrderId") == null
+                            && p.get("earlyRequestId") == null
+                            && FinancePolicy.canOpen(instant(p, "acceptedAt"), store.now());
+            p.put(
+                    "earlyAvailableAmount",
+                    canRequestEarly ? WithdrawalService.earlyRemaining(p) : BigDecimal.ZERO);
+            p.put(
+                    "canRequestEarly",
+                    canRequestEarly && WithdrawalService.earlyRemaining(p).signum() > 0);
             if ((Boolean) p.get("sandbox")) {
                 simulation = simulation.add(remainder);
                 continue;

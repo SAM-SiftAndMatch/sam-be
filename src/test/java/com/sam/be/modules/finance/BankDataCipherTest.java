@@ -78,4 +78,19 @@ class BankDataCipherTest {
         assertNotEquals(c.fingerprint("owner1:VCB:00123456"), c.fingerprint("owner2:VCB:00123456"));
         assertNotEquals(c.fingerprint("owner:VCB:00123456"), c.fingerprint("owner:ACB:00123456"));
     }
+
+    @Test
+    void evidenceBytesUpToFiveMegabytesAreEncryptedAndBoundToTheirOwner() {
+        byte[] bytes = new byte[5 * 1024 * 1024];
+        new java.security.SecureRandom().nextBytes(bytes);
+        var cipher = cipher();
+        String encrypted = cipher.encryptBytes(bytes, "withdrawal-image:owner:1");
+        assertArrayEquals(bytes, cipher.decryptBytes(encrypted, "withdrawal-image:owner:1"));
+        assertThrows(
+                IllegalStateException.class,
+                () -> cipher.decryptBytes(encrypted, "withdrawal-image:other:1"));
+        assertThrows(
+                IllegalStateException.class,
+                () -> cipher.decrypt(encrypted, "withdrawal-image:owner:1"));
+    }
 }

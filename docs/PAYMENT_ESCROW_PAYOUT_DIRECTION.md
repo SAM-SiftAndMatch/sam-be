@@ -1,5 +1,7 @@
 # Định hướng thanh toán, escrow, công nợ và chi trả cho SAM
 
+> Cập nhật 27/11/2026 — V52 bổ sung ngoại lệ rút sớm thù lao theo từng yêu cầu có lý do và ảnh bằng chứng, do admin xét duyệt. Quy tắc 168 giờ trong tài liệu này tiếp tục là mặc định; hạn bảo trì và tiền hoàn cọc không thay đổi. Luồng và API hiện hành xem [EARLY_WITHDRAWAL.md](EARLY_WITHDRAWAL.md).
+
 Ngày lập: 06/11/2026.
 
 Cập nhật theo yêu cầu mới: giữ công nợ tối thiểu 7 ngày kể từ nghiệm thu; hỗ trợ ticket bảo trì sau khi dự án đã hoàn thành. Yêu cầu này thay thế định hướng cho rút ngay sau nghiệm thu trong bản trước.

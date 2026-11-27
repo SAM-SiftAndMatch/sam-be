@@ -20,7 +20,7 @@ class WithdrawalServiceTest {
         doReturn(List.of())
                 .when(store)
                 .rows(
-                        "SELECT id,owner_id,bank_account_id,bank_code,last_four,amount,status,approved_by,operator_id,bank_reference,evidence_reference,created_at,updated_at FROM finance_withdrawals WHERE owner_id=? AND request_key=?",
+                        "SELECT id,owner_id,bank_account_id,bank_code,last_four,amount,status,approved_by,operator_id,bank_reference,evidence_reference,created_at,updated_at,request_type,early_payable_id,request_reason FROM finance_withdrawals WHERE owner_id=? AND request_key=?",
                         owner,
                         new UUID(0, 1));
         doReturn(Map.of("id", bank))
@@ -51,6 +51,8 @@ class WithdrawalServiceTest {
                         store,
                         BankDataCipherTest.cipher(),
                         mock(BankAccountService.class),
+                        org.mockito.Mockito.mock(WithdrawalImageService.class),
+                        org.mockito.Mockito.mock(WithdrawalNotifications.class),
                         true,
                         true,
                         new BigDecimal("50000"),
@@ -73,6 +75,8 @@ class WithdrawalServiceTest {
                         store,
                         BankDataCipherTest.cipher(),
                         mock(BankAccountService.class),
+                        org.mockito.Mockito.mock(WithdrawalImageService.class),
+                        org.mockito.Mockito.mock(WithdrawalNotifications.class),
                         true,
                         true,
                         new BigDecimal("50000"),
@@ -92,6 +96,8 @@ class WithdrawalServiceTest {
                                 mock(FinanceStore.class),
                                 new BankDataCipher("v1", "", ""),
                                 mock(BankAccountService.class),
+                                org.mockito.Mockito.mock(WithdrawalImageService.class),
+                                org.mockito.Mockito.mock(WithdrawalNotifications.class),
                                 true,
                                 true,
                                 new BigDecimal("1"),
@@ -106,6 +112,8 @@ class WithdrawalServiceTest {
                         store,
                         BankDataCipherTest.cipher(),
                         mock(BankAccountService.class),
+                        org.mockito.Mockito.mock(WithdrawalImageService.class),
+                        org.mockito.Mockito.mock(WithdrawalNotifications.class),
                         false,
                         true,
                         new BigDecimal("1"),
