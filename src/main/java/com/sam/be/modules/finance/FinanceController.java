@@ -92,6 +92,17 @@ public class FinanceController {
         }
     }
 
+    public record PaymentReceiptInput(
+            @NotBlank @Size(max = 200) String password,
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "[A-Za-z0-9._:/-]{3,150}")
+                    String bankReference,
+            @NotBlank @Size(max = 1000) String note) {
+        @Override
+        public String toString() {
+            return "PaymentReceiptInput[REDACTED]";
+        }
+    }
+
     public record ApproveInput(
             @NotBlank @Size(max = 200) String password, @Size(max = 1000) String note) {
         @Override
@@ -358,7 +369,9 @@ public class FinanceController {
         return ok(withdrawals.startManual(user(), id));
     }
 
-    @PostMapping("/admin/withdrawals/{id}/confirm-manual-payment")
+    @PostMapping(
+            value = "/admin/withdrawals/{id}/confirm-manual-payment",
+            consumes = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
     @RateLimit(
             type = RateLimit.Type.USER_ID,
@@ -371,6 +384,42 @@ public class FinanceController {
         withdrawals.finishManual(
                 user(), id, input.bankReference(), input.evidenceReference(), input.note());
         return ok(true);
+    }
+
+    @PostMapping(
+            value = "/admin/withdrawals/{id}/confirm-manual-payment",
+            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ADMIN')")
+    @RateLimit(
+            type = RateLimit.Type.USER_ID,
+            action = "finance_admin_sensitive",
+            limit = 5,
+            duration = 300,
+            failClosed = true)
+    public ApiResponse<?> finishWithImages(
+            @PathVariable UUID id,
+            @Valid @RequestPart("request") PaymentReceiptInput input,
+            @RequestPart("images") List<org.springframework.web.multipart.MultipartFile> images) {
+        reauthenticate(input.password());
+        withdrawals.finishManualWithImages(user(), id, input.bankReference(), input.note(), images);
+        return ok(true);
+    }
+
+    @GetMapping("/admin/withdrawals/{id}/receipt-images/{imageId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public org.springframework.http.ResponseEntity<byte[]> payoutReceiptImage(
+            @PathVariable UUID id, @PathVariable UUID imageId) {
+        var image = withdrawalImages.readReceipt(id, imageId);
+        return org.springframework.http.ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.parseMediaType(image.type()))
+                .header("X-Content-Type-Options", "nosniff")
+                .header(
+                        "Content-Disposition",
+                        org.springframework.http.ContentDisposition.inline()
+                                .filename(image.name(), java.nio.charset.StandardCharsets.UTF_8)
+                                .build()
+                                .toString())
+                .body(image.bytes());
     }
 
     @PostMapping("/admin/withdrawals/{id}/{action:reject|reconcile|confirm-failed}")
