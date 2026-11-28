@@ -18,9 +18,12 @@ public class PackageCatalogController {
             UUID id, String name, String type, java.math.BigDecimal price, String description) {}
 
     @GetMapping
-    public ApiResponse<List<Plan>> list() {
-        String suffix =
-                SecurityUtils.hasRole(UserRole.CLIENT.name()) ? "000000000005" : "000000000006";
+    public ApiResponse<List<Plan>> list(@RequestParam(required = false) String role) {
+        boolean isClient =
+                SecurityUtils.hasRole(UserRole.CLIENT.name())
+                        || (!SecurityUtils.hasRole(UserRole.FREELANCER.name())
+                                && !"FREELANCER".equalsIgnoreCase(role));
+        String suffix = isClient ? "000000000005" : "000000000006";
         var plans =
                 packages.findAll().stream()
                         .filter(

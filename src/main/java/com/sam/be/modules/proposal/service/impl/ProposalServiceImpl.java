@@ -1,6 +1,5 @@
 package com.sam.be.modules.proposal.service.impl;
 
-import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.constant.enums.ProposalStatus;
 import com.sam.be.common.exception.ApiException;
@@ -11,9 +10,9 @@ import com.sam.be.infrastructure.cache.keys.RedisKeys;
 import com.sam.be.infrastructure.cache.service.CacheInvalidationService;
 import com.sam.be.infrastructure.cache.service.RedisCacheService;
 import com.sam.be.modules.job.entity.Job;
+import com.sam.be.modules.job.entity.JobInvitation;
 import com.sam.be.modules.job.repository.AiJobRecommendationRepository;
 import com.sam.be.modules.job.repository.JobRepository;
-import com.sam.be.modules.job.entity.JobInvitation;
 import com.sam.be.modules.job.service.JobInvitationService;
 import com.sam.be.modules.notification.service.NotificationService;
 import com.sam.be.modules.proposal.dto.request.ProposalCreateRequest;
@@ -22,9 +21,12 @@ import com.sam.be.modules.proposal.dto.response.ProposalResponse;
 import com.sam.be.modules.proposal.entity.Proposal;
 import com.sam.be.modules.proposal.repository.ProposalRepository;
 import com.sam.be.modules.proposal.service.ProposalService;
+import com.sam.be.modules.user.entity.FreelancerProfile;
 import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.FreelancerProfileRepository;
+import com.sam.be.modules.user.repository.FreelancerSkillRepository;
 import com.sam.be.modules.user.repository.UserRepository;
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,6 +47,7 @@ public class ProposalServiceImpl implements ProposalService {
     private final JobRepository jobRepository;
     private final UserRepository userRepository;
     private final FreelancerProfileRepository freelancerProfileRepository;
+    private final FreelancerSkillRepository freelancerSkillRepository;
     private final AiJobRecommendationRepository aiJobRecommendationRepository;
     private final JobInvitationService invitationService;
     private final NotificationService notificationService;
@@ -63,6 +66,9 @@ public class ProposalServiceImpl implements ProposalService {
         if (job.getStatus() != JobStatus.OPEN) {
             throw new ApiException(
                     ErrorCode.REQUEST_FAILED, "Dự án đã đóng, không nhận hồ sơ nữa.");
+        }
+        if (job.getDeadline() != null && !job.getDeadline().isAfter(LocalDateTime.now())) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án đã hết hạn nhận hồ sơ.");
         }
         // Job gấp trong 5 phút độc quyền: người ngoài top 5 không được nộp
         assertCanAccess(job, freelancerId);
@@ -187,25 +193,30 @@ public class ProposalServiceImpl implements ProposalService {
     private PageResponse<ProposalResponse> mapProposalPage(Page<Proposal> page) {
         List<UUID> freelancerIds =
                 page.getContent().stream().map(p -> p.getFreelancer().getId()).distinct().toList();
-        Map<UUID, String> headlines =
+        Map<UUID, FreelancerProfile> profiles =
                 freelancerIds.isEmpty()
                         ? Map.of()
                         : freelancerProfileRepository.findAllByUserIdIn(freelancerIds).stream()
+                                .collect(Collectors.toMap(p -> p.getUser().getId(), p -> p));
+        Map<UUID, List<String>> skillsByFreelancer =
+                freelancerIds.isEmpty()
+                        ? Map.of()
+                        : freelancerSkillRepository.findByFreelancerIdIn(freelancerIds).stream()
                                 .collect(
-                                        Collectors.toMap(
-                                                p -> p.getUser().getId(),
-                                                p ->
-                                                        p.getHeadline() == null
-                                                                ? ""
-                                                                : p.getHeadline()));
+                                        Collectors.groupingBy(
+                                                fs -> fs.getFreelancer().getId(),
+                                                Collectors.mapping(
+                                                        fs -> fs.getSkill().getName(),
+                                                        Collectors.toList())));
         return new PageResponse<>(
                 page.getContent().stream()
                         .map(
                                 p ->
                                         mapToResponse(
                                                 p,
-                                                headlines.getOrDefault(
-                                                        p.getFreelancer().getId(), "")))
+                                                profiles.get(p.getFreelancer().getId()),
+                                                skillsByFreelancer.getOrDefault(
+                                                        p.getFreelancer().getId(), List.of())))
                         .toList(),
                 page.getNumber(),
                 page.getSize(),
@@ -231,8 +242,13 @@ public class ProposalServiceImpl implements ProposalService {
         if (proposal.getStatus() != ProposalStatus.PENDING) {
             throw new ApiException(ErrorCode.REQUEST_FAILED, "Chỉ mời được hồ sơ đang chờ duyệt.");
         }
-        invitationService.invite(clientId, proposal.getJob().getId(),
-                proposal.getFreelancer().getId(), null, JobInvitation.Source.PROPOSAL, proposalId);
+        invitationService.invite(
+                clientId,
+                proposal.getJob().getId(),
+                proposal.getFreelancer().getId(),
+                null,
+                JobInvitation.Source.PROPOSAL,
+                proposalId);
         proposal.setStatus(ProposalStatus.INVITED);
         proposalRepository.save(proposal);
         cacheInvalidationService.proposalChanged(
@@ -263,8 +279,10 @@ public class ProposalServiceImpl implements ProposalService {
         if (proposal.getStatus() != ProposalStatus.INVITED) {
             throw new ApiException(ErrorCode.REQUEST_FAILED, "Hồ sơ không ở trạng thái được mời.");
         }
-        var invitation = invitationService.accept(freelancerId,
-                invitationService.findId(proposal.getJob().getId(), freelancerId));
+        var invitation =
+                invitationService.accept(
+                        freelancerId,
+                        invitationService.findId(proposal.getJob().getId(), freelancerId));
         proposal.setStatus(ProposalStatus.ACCEPTED);
         proposalRepository.save(proposal);
         cacheInvalidationService.proposalChanged(
@@ -303,8 +321,8 @@ public class ProposalServiceImpl implements ProposalService {
         if (isClient && proposal.getStatus() == ProposalStatus.PENDING) {
             proposal.setStatus(ProposalStatus.REJECTED);
         } else if (isFreelancer && proposal.getStatus() == ProposalStatus.INVITED) {
-            invitationService.decline(userId,
-                    invitationService.findId(proposal.getJob().getId(), userId));
+            invitationService.decline(
+                    userId, invitationService.findId(proposal.getJob().getId(), userId));
             proposal.setStatus(ProposalStatus.REJECTED);
         } else {
             throw new ApiException(
@@ -319,12 +337,44 @@ public class ProposalServiceImpl implements ProposalService {
         notificationService.sendProposalNotification(
                 otherSide,
                 userId,
-                isClient ? proposal.getJob().getClient().getFullName() : proposal.getFreelancer().getFullName(),
+                isClient
+                        ? proposal.getJob().getClient().getFullName()
+                        : proposal.getFreelancer().getFullName(),
                 proposal.getJob().getId(),
                 proposal.getJob().getTitle(),
                 proposal.getId(),
                 "PROPOSAL_REJECTED",
                 "Một hồ sơ vừa bị từ chối.");
+    }
+
+    @Override
+    @Transactional
+    public void withdrawProposal(UUID freelancerId, UUID proposalId) {
+        Proposal proposal =
+                proposalRepository
+                        .findById(proposalId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (proposal.getFreelancer() == null
+                || !proposal.getFreelancer().getId().equals(freelancerId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        if (proposal.getStatus() != ProposalStatus.PENDING) {
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED, "Chỉ rút được hồ sơ đang ở trạng thái chờ duyệt.");
+        }
+        if (proposal.getJob() == null) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án đã đóng, không thể rút hồ sơ.");
+        }
+        UUID jobId = proposal.getJob().getId();
+        Job lockedJob =
+                jobRepository
+                        .findByIdForWorkflowUpdate(jobId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (lockedJob.getStatus() != JobStatus.OPEN) {
+            throw new ApiException(ErrorCode.REQUEST_FAILED, "Dự án đã đóng, không thể rút hồ sơ.");
+        }
+        proposalRepository.delete(proposal);
+        cacheInvalidationService.proposalChanged(jobId, freelancerId);
     }
 
     // Client chỉ thao tác hồ sơ thuộc job mình đăng
@@ -360,15 +410,17 @@ public class ProposalServiceImpl implements ProposalService {
 
     private ProposalResponse mapToResponse(Proposal proposal) {
         User dev = proposal.getFreelancer();
-        String headline =
-                freelancerProfileRepository
-                        .findByUserId(dev.getId())
-                        .map(p -> p.getHeadline())
-                        .orElse("");
-        return mapToResponse(proposal, headline);
+        FreelancerProfile profile =
+                freelancerProfileRepository.findByUserId(dev.getId()).orElse(null);
+        List<String> skills =
+                freelancerSkillRepository.findAllByFreelancerId(dev.getId()).stream()
+                        .map(fs -> fs.getSkill().getName())
+                        .toList();
+        return mapToResponse(proposal, profile, skills);
     }
 
-    private ProposalResponse mapToResponse(Proposal proposal, String headline) {
+    private ProposalResponse mapToResponse(
+            Proposal proposal, FreelancerProfile profile, List<String> skills) {
         User dev = proposal.getFreelancer();
         return ProposalResponse.builder()
                 .id(proposal.getId())
@@ -376,7 +428,15 @@ public class ProposalServiceImpl implements ProposalService {
                 .jobTitle(proposal.getJob().getTitle())
                 .freelancerId(dev.getId())
                 .freelancerName(dev.getFullName())
-                .headline(headline)
+                .headline(
+                        profile != null && profile.getHeadline() != null
+                                ? profile.getHeadline()
+                                : "")
+                .freelancerBio(profile != null ? profile.getBio() : null)
+                .freelancerSkills(skills)
+                .hourlyRate(profile != null ? profile.getHourlyRate() : null)
+                .portfolioUrl(profile != null ? profile.getPortfolioUrl() : null)
+                .githubUrl(profile != null ? profile.getGithubUrl() : null)
                 .coverLetter(proposal.getCoverLetter())
                 .proposedBudget(proposal.getProposedBudget())
                 .estimatedDurationDays(proposal.getEstimatedDurationDays())

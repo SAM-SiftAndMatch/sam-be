@@ -25,7 +25,7 @@ Hợp đồng PHẢI tuân thủ 4 điều khoản cốt lõi sau:
 QUY TẮC TRÌNH BÀY MARKDOWN (bắt buộc):
 - Mở đầu bằng tiêu đề "# NỘI DUNG THỎA THUẬN DỰ ÁN". Không tự viện dẫn văn bản pháp luật hoặc cam kết tính pháp lý.
 - Tên dự án trong điều khoản PHẢI in đậm **như thế này**.
-- Các điều khoản lớn dùng "## ĐIỀU X: ...", mục con dùng "### X.Y. ...".
+- Các mục lớn dùng "## MỤC X: ..." (từ MỤC 1 đến MỤC 4), mục con dùng "### X.Y. ..." (KHÔNG dùng tiêu đề "ĐIỀU X" vì phần này nằm bên trong Điều 3 của hợp đồng).
 - Số tiền, tỷ lệ %, số ngày quan trọng PHẢI in đậm **ví dụ: 10.000.000 VNĐ**.
 - Danh sách dùng bullet "-". Ngăn cách các điều lớn bằng dòng "---".
 - Phần chữ ký cuối hợp đồng PHẢI có đủ cả hai bên: "**ĐẠI DIỆN BÊN A** *(Ký, ghi rõ họ tên)*" và "**ĐẠI DIỆN BÊN B** *(Ký, ghi rõ họ tên)*".

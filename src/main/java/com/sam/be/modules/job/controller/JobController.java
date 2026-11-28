@@ -5,11 +5,12 @@ import com.sam.be.common.response.ApiResponse;
 import com.sam.be.common.response.PageResponse;
 import com.sam.be.common.security.util.SecurityUtils;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.request.JobUpdateRequest;
 import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
-import com.sam.be.modules.job.service.JobService;
 import com.sam.be.modules.job.service.JobPublishingService;
+import com.sam.be.modules.job.service.JobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -35,7 +36,20 @@ public class JobController {
             summary = "Create a new job",
             description = "Client creates a new job post after SRS is generated")
     public ApiResponse<JobResponse> createJob(@Valid @RequestBody JobCreateRequest request) {
-        JobResponse response = jobPublishingService.create(SecurityUtils.getCurrentUserId(), request);
+        JobResponse response =
+                jobPublishingService.create(SecurityUtils.getCurrentUserId(), request);
+        return ApiResponse.<JobResponse>builder().result(response).build();
+    }
+
+    @PutMapping("/{jobId}")
+    @PreAuthorize("hasRole('CLIENT') and @jobAccessGuard.isOwner(#jobId)")
+    @Operation(
+            summary = "Update an OPEN job",
+            description = "Client updates basic fields of an OPEN job")
+    public ApiResponse<JobResponse> updateJob(
+            @PathVariable UUID jobId, @Valid @RequestBody JobUpdateRequest request) {
+        JobResponse response =
+                jobService.updateJob(SecurityUtils.getCurrentUserId(), jobId, request);
         return ApiResponse.<JobResponse>builder().result(response).build();
     }
 
