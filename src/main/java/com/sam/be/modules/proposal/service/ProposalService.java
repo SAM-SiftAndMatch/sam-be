@@ -34,4 +34,7 @@ public interface ProposalService {
 
     // Từ chối: client (PENDING -> REJECTED) hoặc freelancer (INVITED -> REJECTED)
     void rejectProposal(UUID userId, UUID proposalId);
+
+    // Freelancer rút hồ sơ đang PENDING
+    void withdrawProposal(UUID freelancerId, UUID proposalId);
 }

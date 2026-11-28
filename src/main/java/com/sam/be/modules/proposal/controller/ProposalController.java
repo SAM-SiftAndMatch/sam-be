@@ -106,4 +106,14 @@ public class ProposalController {
         proposalService.rejectProposal(SecurityUtils.getCurrentUserId(), proposalId);
         return ApiResponse.<Void>builder().build();
     }
+
+    @PostMapping("/{proposalId}/withdraw")
+    @PreAuthorize("hasRole('FREELANCER')")
+    @Operation(
+            summary = "Withdraw a PENDING proposal",
+            description = "Freelancer withdraws their own PENDING proposal while job is OPEN")
+    public ApiResponse<Void> withdrawProposal(@PathVariable UUID proposalId) {
+        proposalService.withdrawProposal(SecurityUtils.getCurrentUserId(), proposalId);
+        return ApiResponse.<Void>builder().build();
+    }
 }
