@@ -3,6 +3,7 @@ package com.sam.be.modules.job.service;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.response.PageResponse;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.request.JobUpdateRequest;
 import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
@@ -19,6 +20,8 @@ public interface JobService {
     void processPaidRecommendations(UUID jobId);
 
     JobResponse cancelJob(UUID clientId, UUID jobId);
+
+    JobResponse updateJob(UUID clientId, UUID jobId, JobUpdateRequest request);
 
     JobResponse getJobById(UUID jobId);
 

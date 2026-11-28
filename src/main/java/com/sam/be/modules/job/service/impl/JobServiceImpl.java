@@ -1,6 +1,5 @@
 package com.sam.be.modules.job.service.impl;
 
-import com.sam.be.modules.user.service.ParticipationPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.be.common.constant.enums.JobStatus;
 import com.sam.be.common.constant.enums.RecommendationStatus;
@@ -16,6 +15,7 @@ import com.sam.be.modules.ai.dto.response.AiCandidateScore;
 import com.sam.be.modules.ai.dto.response.AiExtractedSkill;
 import com.sam.be.modules.ai.service.AiService;
 import com.sam.be.modules.job.dto.request.JobCreateRequest;
+import com.sam.be.modules.job.dto.request.JobUpdateRequest;
 import com.sam.be.modules.job.dto.response.AcceptInvitationResponse;
 import com.sam.be.modules.job.dto.response.AiRecommendationResponse;
 import com.sam.be.modules.job.dto.response.JobResponse;
@@ -42,6 +42,7 @@ import com.sam.be.modules.user.entity.User;
 import com.sam.be.modules.user.repository.FreelancerProfileRepository;
 import com.sam.be.modules.user.repository.FreelancerSkillRepository;
 import com.sam.be.modules.user.repository.UserRepository;
+import com.sam.be.modules.user.service.ParticipationPolicy;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -482,9 +483,11 @@ public class JobServiceImpl implements JobService {
         jobRepository.save(job);
         cacheInvalidationService.jobChanged(jobId, job.getClient().getId(), null);
         if (newlyUrgent)
-            financeStore.jdbc().update(
-                    "INSERT INTO job_addon_tasks(job_id) VALUES (?) ON CONFLICT(job_id) DO NOTHING",
-                    jobId);
+            financeStore
+                    .jdbc()
+                    .update(
+                            "INSERT INTO job_addon_tasks(job_id) VALUES (?) ON CONFLICT(job_id) DO NOTHING",
+                            jobId);
     }
 
     @Override
@@ -507,6 +510,41 @@ public class JobServiceImpl implements JobService {
                         .toList();
         processUrgentHiring(detailed, detailed.getSrsContent(), skills);
         cacheInvalidationService.recommendationChanged(jobId);
+    }
+
+    @Override
+    @Transactional
+    public JobResponse updateJob(UUID clientId, UUID jobId, JobUpdateRequest request) {
+        Job job =
+                jobRepository
+                        .findByIdForWorkflowUpdate(jobId)
+                        .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!job.getClient().getId().equals(clientId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN_ACTION);
+        }
+        if (job.getStatus() != JobStatus.OPEN) {
+            throw new ApiException(
+                    ErrorCode.REQUEST_FAILED, "Chỉ dự án đang mở tuyển mới có thể chỉnh sửa.");
+        }
+        ParticipationPolicy.validateBudget(request.getBudgetMin(), request.getBudgetMax());
+        if (request.getDeadline() != null && !request.getDeadline().isAfter(LocalDateTime.now())) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_ERROR, "Hạn nộp hồ sơ phải nằm trong tương lai.");
+        }
+        job.setTitle(request.getTitle().trim());
+        job.setDescription(request.getDescription().trim());
+        job.setBudgetMin(request.getBudgetMin());
+        job.setBudgetMax(request.getBudgetMax());
+        if (request.getEstimatedDurationMonths() != null) {
+            job.setEstimatedDurationMonths(request.getEstimatedDurationMonths());
+        }
+        if (request.getDeadline() != null) {
+            job.setDeadline(request.getDeadline());
+        }
+        Job saved = jobRepository.save(job);
+        JobResponse response = mapToResponse(saved);
+        cacheInvalidationService.jobChanged(jobId, clientId, null);
+        return response;
     }
 
     @Override

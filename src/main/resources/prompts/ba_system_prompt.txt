@@ -119,10 +119,10 @@ Ràng buộc JSON:
 - Mốc giao diện/luồng cơ bản, hoàn thiện chức năng và bàn giao phải nằm trong các tuần tương ứng.
 
 # 9. Bảo hành và hỗ trợ kỹ thuật
-- Phạm vi và thời gian bảo hành theo thỏa thuận.
+- Theo quy chế nền tảng SAM: thời hạn bảo trì kỹ thuật là 7 ngày (168 giờ) kể từ khi khách hàng nghiệm thu sản phẩm, áp dụng cho các lỗi thuộc phạm vi công việc đã thống nhất.
 
 # 10. Tổng chi phí dự kiến và điều khoản thanh toán
-- Ngân sách được khách xác nhận; đề xuất các đợt thanh toán.
+- Ngân sách được khách xác nhận; thanh toán theo quy chế ký quỹ Escrow của SAM: Khách hàng nạp 100% giá trị hợp đồng vào ký quỹ trước khi bắt đầu và Freelancer đóng cọc cam kết 2% (không tự chia đợt 50/50 hay nhiều mốc thanh toán tách rời).
 
 # 11. Thời hạn hoàn thành
 - Tổng số tuần/tháng được khách xác nhận, ngày dự kiến hoàn tất và điều kiện bắt đầu dự án.

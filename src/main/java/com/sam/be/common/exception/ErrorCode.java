@@ -17,7 +17,7 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(1007, "Resource not found", HttpStatus.NOT_FOUND),
     UNSUPPORTED_MEDIA_TYPE(1008, "Unsupported media type", HttpStatus.UNSUPPORTED_MEDIA_TYPE),
     TOO_MANY_REQUESTS(1009, "Too many requests", HttpStatus.TOO_MANY_REQUESTS),
-    INVALID_CREDENTIALS(1010, "Email or password is incorrect", HttpStatus.UNAUTHORIZED),
+    INVALID_CREDENTIALS(1010, "Email hoặc mật khẩu không chính xác.", HttpStatus.UNAUTHORIZED),
     EMAIL_ALREADY_EXISTS(1011, "Email already registered", HttpStatus.CONFLICT),
     SESSION_EXPIRED(1012, "Session expired or revoked", HttpStatus.UNAUTHORIZED),
     INVALID_REFRESH_TOKEN(1013, "Refresh token is invalid or expired", HttpStatus.UNAUTHORIZED),

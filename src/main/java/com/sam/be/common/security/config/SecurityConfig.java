@@ -123,7 +123,10 @@ public class SecurityConfig {
                                 auth.requestMatchers(HttpMethod.OPTIONS, "/**")
                                         .permitAll()
                                         .requestMatchers(
-                                                HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/**")
+                                                HttpMethod.GET,
+                                                "/api/v1/jobs",
+                                                "/api/v1/jobs/**",
+                                                "/api/v1/packages")
                                         .permitAll()
                                         .anyRequest()
                                         .authenticated())
